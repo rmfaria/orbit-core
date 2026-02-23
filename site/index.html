@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>orbit-core — API-first telemetry core (OSS)</title>
+  <meta name="description" content="orbit-core is an API-first telemetry + events core backed by Postgres. Ingest security & ops signals (Nagios/Wazuh), query timeseries/events with performance-first defaults, retention + rollups." />
+
+  <!-- OpenGraph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="orbit-core — API-first telemetry core (OSS)" />
+  <meta property="og:description" content="Ingest metrics + events, query with performance-first defaults, store in Postgres with rollups and retention. Open source (Apache-2.0)." />
+  <meta property="og:url" content="https://orbit-core.org" />
+
+  <meta name="theme-color" content="#0b1220" />
+
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="header">
+    <div class="container header__inner">
+      <div class="brand">
+        <div class="brand__mark" aria-hidden="true"></div>
+        <div class="brand__text">
+          <div class="brand__name">orbit-core</div>
+          <div class="brand__tag">API-first telemetry core • OSS</div>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Primary">
+        <a href="#why">Why</a>
+        <a href="#how">How</a>
+        <a href="#quickstart">Quickstart</a>
+        <a href="#connectors">Connectors</a>
+        <a href="#roadmap">Roadmap</a>
+        <a href="#contributing">Contributing</a>
+      </nav>
+
+      <div class="header__cta">
+        <a class="btn btn--ghost" href="#quickstart">Quickstart</a>
+        <a class="btn btn--primary" href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <div class="container hero__grid">
+        <div class="hero__copy">
+          <div class="pill">Apache-2.0 • Postgres-first • Subpath-friendly</div>
+          <h1>API-first telemetry core for <span class="grad">security & ops signals</span>.</h1>
+          <p class="lead">
+            orbit-core ingests <strong>metrics</strong> and <strong>events</strong> (starting with Nagios; Wazuh next),
+            stores them in <strong>Postgres</strong> with <strong>rollups + retention</strong>, and exposes a stable HTTP API
+            for <strong>timeseries</strong>, <strong>events</strong> and <strong>multi-series group-by</strong> queries.
+          </p>
+
+          <div class="hero__buttons">
+            <a class="btn btn--primary" href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">View on GitHub</a>
+            <a class="btn btn--ghost" href="#quickstart">Run locally</a>
+            <a class="btn btn--ghost" href="#how">Architecture</a>
+          </div>
+
+          <div class="hero__meta">
+            <div class="kpi">
+              <div class="kpi__k">Ingest</div>
+              <div class="kpi__v">/api/v1/ingest/*</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__k">Query</div>
+              <div class="kpi__v">/api/v1/query</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi__k">Metrics</div>
+              <div class="kpi__v">/api/v1/metrics/prom</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero__panel" role="img" aria-label="Architecture preview">
+          <div class="panel__title">At a glance</div>
+          <div class="panel__sub">Sources → Connectors → API → Postgres → UI/Clients</div>
+
+          <svg class="diagram" viewBox="0 0 920 420" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#55f3ff" stop-opacity="0.9"/>
+                <stop offset="1" stop-color="#9b7cff" stop-opacity="0.9"/>
+              </linearGradient>
+              <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.35"/>
+              </filter>
+            </defs>
+
+            <!-- boxes -->
+            <g filter="url(#soft)">
+              <rect x="30" y="70" width="210" height="120" rx="16" fill="#0f1a33" stroke="#273659"/>
+              <rect x="30" y="230" width="210" height="120" rx="16" fill="#0f1a33" stroke="#273659"/>
+
+              <rect x="290" y="150" width="240" height="120" rx="16" fill="#0f1a33" stroke="#273659"/>
+
+              <rect x="590" y="110" width="300" height="90" rx="16" fill="#0f1a33" stroke="#273659"/>
+              <rect x="590" y="220" width="300" height="130" rx="16" fill="#0f1a33" stroke="#273659"/>
+            </g>
+
+            <!-- labels -->
+            <g fill="#e9eeff" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="16">
+              <text x="52" y="105" font-weight="700">Nagios</text>
+              <text x="52" y="130" fill="#9fb0d9" font-size="13">perfdata + HARD events</text>
+
+              <text x="52" y="265" font-weight="700">Wazuh</text>
+              <text x="52" y="290" fill="#9fb0d9" font-size="13">API + OpenSearch aggregates</text>
+              <text x="52" y="312" fill="#9fb0d9" font-size="13">(connector planned)</text>
+
+              <text x="312" y="185" font-weight="700">Connectors (no-AI)</text>
+              <text x="312" y="210" fill="#9fb0d9" font-size="13">cron-friendly shippers</text>
+              <text x="312" y="232" fill="#9fb0d9" font-size="13">deterministic ingestion</text>
+
+              <text x="612" y="145" font-weight="700">orbit-core API</text>
+              <text x="612" y="170" fill="#9fb0d9" font-size="13">ingest • catalog • query</text>
+
+              <text x="612" y="255" font-weight="700">Postgres</text>
+              <text x="612" y="280" fill="#9fb0d9" font-size="13">raw + rollups (5m / 1h)</text>
+              <text x="612" y="302" fill="#9fb0d9" font-size="13">retention (14d / 90d / 180d)</text>
+              <text x="612" y="324" fill="#9fb0d9" font-size="13">indexes + safe limits</text>
+            </g>
+
+            <!-- arrows -->
+            <g stroke="url(#g)" stroke-width="3" fill="none" opacity="0.95">
+              <path d="M240 130 C 270 130, 270 200, 290 210" />
+              <path d="M240 290 C 270 290, 270 240, 290 230" />
+              <path d="M530 210 C 560 210, 560 155, 590 155" />
+              <path d="M740 200 C 740 215, 740 220, 740 220" />
+            </g>
+
+            <!-- badges -->
+            <g>
+              <rect x="610" y="120" width="160" height="26" rx="13" fill="#0b1220" stroke="#273659"/>
+              <text x="622" y="138" fill="#cfe0ff" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas" font-size="12">/api/v1/query</text>
+
+              <rect x="610" y="150" width="210" height="26" rx="13" fill="#0b1220" stroke="#273659"/>
+              <text x="622" y="168" fill="#cfe0ff" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas" font-size="12">/api/v1/ingest/*</text>
+            </g>
+          </svg>
+
+          <div class="panel__foot">
+            <span class="mono">Performance-first defaults</span>
+            <span class="sep">•</span>
+            <span class="mono">Downsample + Top‑N group-by</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="why" class="section">
+      <div class="container">
+        <h2>Why orbit-core</h2>
+        <p class="muted">
+          Most monitoring stacks drift into hard-to-maintain pipelines: metrics in one place, events in another,
+          dashboards glued to brittle queries, and unbounded dimensions that explode cardinality.
+          orbit-core is built to stay fast and predictable.
+        </p>
+
+        <div class="cards">
+          <article class="card">
+            <h3>Unify metrics + events</h3>
+            <p>Store both telemetry types in one canonical core and query them through a stable API.</p>
+          </article>
+          <article class="card">
+            <h3>Rollups + retention</h3>
+            <p>Plain Postgres with scheduled rollups. Target: <span class="mono">180 days</span> retained (configurable).</p>
+          </article>
+          <article class="card">
+            <h3>Performance-first queries</h3>
+            <p>Auto-bucket, safe limits and a source-table selection strategy (raw vs rollups).</p>
+          </article>
+          <article class="card">
+            <h3>Cardinality control</h3>
+            <p>Top‑N limiting for group-by dimensions to prevent runaway series explosions.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="how" class="section section--alt">
+      <div class="container">
+        <h2>How it works</h2>
+        <p class="muted">
+          Connectors ship deterministic batches to ingest endpoints. The API validates, stores and serves queries.
+          Deploy behind TLS + auth and it works behind subpaths.
+        </p>
+
+        <div class="split">
+          <div class="split__col">
+            <h3>Core endpoints</h3>
+            <ul class="list">
+              <li><span class="mono">GET /api/v1/health</span> — build + health</li>
+              <li><span class="mono">GET /api/v1/metrics</span> — JSON metrics</li>
+              <li><span class="mono">GET /api/v1/metrics/prom</span> — Prometheus exporter</li>
+              <li><span class="mono">POST /api/v1/ingest/metrics</span> — MetricPoints</li>
+              <li><span class="mono">POST /api/v1/ingest/events</span> — Events</li>
+              <li><span class="mono">POST /api/v1/query</span> — orbitql query</li>
+              <li><span class="mono">GET /api/v1/catalog/*</span> — assets/metrics/dimensions</li>
+            </ul>
+          </div>
+
+          <div class="split__col">
+            <h3>Storage strategy</h3>
+            <div class="callout">
+              <div class="callout__row">
+                <span class="mono">metric_points</span>
+                <span class="muted">raw</span>
+                <span class="mono">≤ 14d</span>
+              </div>
+              <div class="callout__row">
+                <span class="mono">metric_rollup_5m</span>
+                <span class="muted">downsample</span>
+                <span class="mono">≤ 90d</span>
+              </div>
+              <div class="callout__row">
+                <span class="mono">metric_rollup_1h</span>
+                <span class="muted">downsample</span>
+                <span class="mono">≤ 180d</span>
+              </div>
+              <div class="callout__note">
+                Query engine selects the source table automatically based on the requested time range.
+              </div>
+            </div>
+
+            <div class="small muted" style="margin-top:12px;">
+              Want details? See <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">docs/ARCHITECTURE.md</a>.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart" class="section">
+      <div class="container">
+        <div class="hgroup">
+          <h2>Quickstart</h2>
+          <p class="muted">Local dev in a few minutes (excluding Postgres image pull).</p>
+        </div>
+
+        <div class="code">
+          <div class="code__bar">
+            <div class="code__title">Terminal</div>
+            <button class="copy" data-copy="#quickstart-code" aria-label="Copy quickstart commands">Copy</button>
+          </div>
+          <pre class="mono" id="quickstart-code"><code>git clone https://github.com/rmfaria/orbit-core
+cd orbit-core
+
+pnpm install
+
+# Postgres (optional)
+docker compose -f scripts/dev-postgres.docker-compose.yml up -d
+export DATABASE_URL='postgres://postgres:postgres@localhost:5432/orbit'
+
+pnpm dev
+
+# API: http://localhost:3000/api/v1/health
+# UI:  http://localhost:5173</code></pre>
+        </div>
+
+        <div class="grid2" style="margin-top:16px;">
+          <div class="card">
+            <h3>Production note</h3>
+            <p>
+              Keep secrets server-side. Put orbit-core behind a reverse proxy with TLS and auth.
+              Subpath deployments are supported.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Observability</h3>
+            <p>
+              JSON metrics: <span class="mono">/api/v1/metrics</span><br>
+              Prometheus exporter: <span class="mono">/api/v1/metrics/prom</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="connectors" class="section section--alt">
+      <div class="container">
+        <h2>Connectors</h2>
+        <p class="muted">Primary connectors are deterministic, cron-friendly and no-AI.</p>
+
+        <div class="cards">
+          <article class="card">
+            <div class="card__k">Primary</div>
+            <h3>Nagios Connector (Python)</h3>
+            <p>Ships perfdata and HARD events into orbit-core ingest endpoints.</p>
+            <p class="small">
+              Install guide: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/nagios/INSTALL.md" target="_blank" rel="noreferrer">connectors/nagios/INSTALL.md</a>
+            </p>
+          </article>
+          <article class="card">
+            <div class="card__k">Optional</div>
+            <h3>Nagios shipper (TypeScript)</h3>
+            <p>Monorepo-integrated shipper package (use if you prefer TS toolchains).</p>
+            <p class="small">
+              Docs: <a href="https://github.com/rmfaria/orbit-core/tree/main/packages/nagios-shipper" target="_blank" rel="noreferrer">packages/nagios-shipper</a>
+            </p>
+          </article>
+          <article class="card">
+            <div class="card__k">Planned</div>
+            <h3>Wazuh/OpenSearch connector</h3>
+            <p>MVP: windowed aggregates + Top‑N snapshots → canonical metrics/events.</p>
+            <p class="small">
+              Notes: <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/wazuh-queries.md" target="_blank" rel="noreferrer">docs/wazuh-queries.md</a>
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="security">
+      <div class="container">
+        <h2>Security</h2>
+        <div class="split">
+          <div class="split__col">
+            <ul class="list">
+              <li>No secrets in the browser (server-side only).</li>
+              <li>Prefer TLS + auth in front of the API.</li>
+              <li>Use safe limits and avoid unbounded queries.</li>
+            </ul>
+          </div>
+          <div class="split__col">
+            <div class="callout">
+              <div class="callout__note">
+                Security policy: <a href="https://github.com/rmfaria/orbit-core/blob/main/SECURITY.md" target="_blank" rel="noreferrer">SECURITY.md</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap" class="section section--alt">
+      <div class="container">
+        <h2>Roadmap</h2>
+        <div class="cards">
+          <article class="card"><h3>Wazuh connector MVP</h3><p>Ingest OpenSearch aggregates and create canonical metrics/events.</p></article>
+          <article class="card"><h3>Dashboard builder</h3><p>Guided, dropdown-driven dashboards/widgets powered by catalog/tags.</p></article>
+          <article class="card"><h3>Observability upgrades</h3><p>Route latency histograms, pg pool stats, richer internal metrics.</p></article>
+          <article class="card"><h3>Storage adapters (optional)</h3><p>ClickHouse adapter for higher volumes (keep Postgres as default).</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="contributing" class="section">
+      <div class="container">
+        <h2>Contributing</h2>
+        <p class="muted">
+          orbit-core aims to be easy to run, easy to understand, and safe by default.
+          If you want to help, start with docs or a small connector improvement.
+        </p>
+
+        <div class="grid2">
+          <div class="card">
+            <h3>How to contribute</h3>
+            <ul class="list">
+              <li><a href="https://github.com/rmfaria/orbit-core/blob/main/CONTRIBUTING.md" target="_blank" rel="noreferrer">CONTRIBUTING.md</a></li>
+              <li><a href="https://github.com/rmfaria/orbit-core/issues" target="_blank" rel="noreferrer">Issues</a> (look for <span class="mono">good first issue</span>)</li>
+              <li><a href="https://github.com/rmfaria/orbit-core/discussions" target="_blank" rel="noreferrer">Discussions</a></li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Project stance</h3>
+            <ul class="list">
+              <li>Operational scheduled flows remain deterministic (no-AI).</li>
+              <li>Performance-first defaults, safe limits.</li>
+              <li>API-first contracts, UI is optional.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="cta">
+          <a class="btn btn--primary" href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">Star on GitHub</a>
+          <a class="btn btn--ghost" href="https://github.com/rmfaria/orbit-core/issues/new/choose" target="_blank" rel="noreferrer">Open an issue</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div>
+        <div class="footer__brand">orbit-core</div>
+        <div class="small muted">Apache-2.0 • Built for predictable ops.</div>
+      </div>
+      <div class="footer__links">
+        <a href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">Architecture</a>
+        <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/nagios/INSTALL.md" target="_blank" rel="noreferrer">Nagios install</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
