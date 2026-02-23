@@ -6,7 +6,7 @@ type Row        = { ts: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'metrics' | 'events' | 'nagios';
+type Tab        = 'home' | 'sources' | 'nagios' | 'events' | 'metrics';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -849,10 +849,138 @@ function HealthBadge() {
   );
 }
 
+// ─── HOME + SOURCES ──────────────────────────────────────────────────────────
+
+function HomeTab() {
+  const [health, setHealth] = React.useState<any>(null);
+  const [err, setErr] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    fetch('api/v1/health', { headers: apiGetHeaders() })
+      .then((r) => r.json())
+      .then(setHealth)
+      .catch((e) => setErr(String(e)));
+  }, []);
+
+  return (
+    <div>
+      <div style={S.card}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Home</div>
+            <div style={{ fontSize: 20, fontWeight: 900, marginTop: 4 }}>Orbit Core</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', marginTop: 6, fontSize: 13 }}>
+              Portal principal. Selecione uma <b>Fonte</b> (Nagios/Wazuh/…) para explorar métricas e eventos.
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <a href="#" onClick={(e) => { e.preventDefault(); window.location.href = '/orbit-studio/'; }} style={{ ...S.btnSm, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Orbit‑Studio</a>
+            <a href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer" style={{ ...S.btnSm, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>GitHub</a>
+          </div>
+        </div>
+
+        <div style={{ ...S.grid3, marginTop: 12 }}>
+          <div style={S.card}>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>API</div>
+            <div style={{ fontWeight: 900, marginTop: 6 }}>{health?.ok ? 'ok' : '…'}</div>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.70)', marginTop: 6 }} className="mono">
+              /api/v1/health
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>DB</div>
+            <div style={{ fontWeight: 900, marginTop: 6 }}>{health?.db ?? '…'}</div>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.70)', marginTop: 6 }}>
+              Postgres
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Build</div>
+            <div style={{ fontWeight: 900, marginTop: 6 }} className="mono">{health?.build?.git ? String(health.build.git).slice(0, 10) : '—'}</div>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.70)', marginTop: 6 }}>
+              {health?.build?.time ? fmtTs(health.build.time) : ''}
+            </div>
+          </div>
+        </div>
+
+        {err && <div style={S.err}>{err}</div>}
+      </div>
+
+      <div style={S.card}>
+        <div style={{ fontWeight: 900, marginBottom: 10 }}>Fontes</div>
+        <div style={{ ...S.grid3 }}>
+          <div style={S.card}>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Nagios</div>
+            <div style={{ marginTop: 6, color: 'rgba(233,238,255,0.82)', fontSize: 13 }}>Métricas perfdata + eventos HARD</div>
+            <div style={{ marginTop: 10 }}>
+              <span style={{ ...S.btnSm, display: 'inline-flex', cursor: 'default' }}>Use: Sources → Nagios</span>
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Wazuh</div>
+            <div style={{ marginTop: 6, color: 'rgba(233,238,255,0.82)', fontSize: 13 }}>Conector planejado (agregados OpenSearch)</div>
+            <div style={{ marginTop: 10 }}>
+              <span style={{ ...S.btnSm, display: 'inline-flex', cursor: 'default', opacity: 0.7 }}>Em breve</span>
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Custom</div>
+            <div style={{ marginTop: 6, color: 'rgba(233,238,255,0.82)', fontSize: 13 }}>Ingest API para integrações</div>
+            <div style={{ marginTop: 10 }}>
+              <span style={{ ...S.btnSm, display: 'inline-flex', cursor: 'default' }} className="mono">/api/v1/ingest/*</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
+  return (
+    <div>
+      <div style={S.card}>
+        <div style={{ fontWeight: 900, fontSize: 18 }}>Sources</div>
+        <div style={{ color: 'rgba(233,238,255,0.78)', marginTop: 6, fontSize: 13 }}>
+          Selecione uma fonte configurada para abrir o workspace.
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={{ ...S.grid3 }}>
+          <div style={S.card}>
+            <div style={{ fontWeight: 900 }}>Nagios</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Serviços, eventos e métricas (perfdata)</div>
+            <div style={{ marginTop: 10 }}>
+              <button style={S.btn} onClick={() => setTab('nagios')}>Open Nagios</button>
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontWeight: 900 }}>Wazuh</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Planned connector</div>
+            <div style={{ marginTop: 10 }}>
+              <button style={{ ...S.btn, opacity: 0.55, cursor: 'not-allowed' }} disabled>Coming soon</button>
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontWeight: 900 }}>Explore</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Core metrics/events explorer</div>
+            <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button style={S.btnSm} onClick={() => setTab('metrics')}>Metrics</button>
+              <button style={S.btnSm} onClick={() => setTab('events')}>Events</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export function App() {
-  const [tab, setTab]       = React.useState<Tab>('nagios');
+  const [tab, setTab]       = React.useState<Tab>('home');
   const [assets, setAssets] = React.useState<AssetOpt[]>([]);
 
   React.useEffect(() => {
@@ -868,7 +996,9 @@ export function App() {
       <div style={S.header}>
         <span style={S.logo}>◎ Orbit</span>
         <div style={S.tabBar}>
-          <TabBtn active={tab === 'nagios'}  onClick={() => setTab('nagios')}>Serviços Nagios</TabBtn>
+          <TabBtn active={tab === 'home'}    onClick={() => setTab('home')}>Home</TabBtn>
+          <TabBtn active={tab === 'sources'} onClick={() => setTab('sources')}>Fontes</TabBtn>
+          <TabBtn active={tab === 'nagios'}  onClick={() => setTab('nagios')}>Nagios</TabBtn>
           <TabBtn active={tab === 'events'}  onClick={() => setTab('events')}>Eventos</TabBtn>
           <TabBtn active={tab === 'metrics'} onClick={() => setTab('metrics')}>Métricas</TabBtn>
         </div>
@@ -878,6 +1008,8 @@ export function App() {
       {/* Body */}
       <div style={S.body}>
         <ApiKeyBanner />
+        {tab === 'home'    && <HomeTab />}
+        {tab === 'sources' && <SourcesTab setTab={setTab} />}
         {tab === 'nagios'  && <NagiosTab  assets={assets} />}
         {tab === 'events'  && <EventsTab  assets={assets} />}
         {tab === 'metrics' && <MetricsTab assets={assets} />}
