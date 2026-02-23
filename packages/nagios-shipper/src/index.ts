@@ -75,17 +75,19 @@ async function processPerfdata(config: Config): Promise<void> {
     const parsed = parsePerfline(line);
     if (!parsed || !parsed.metrics.length) continue;
 
-    const servicePrefix = parsed.service ? `${parsed.service}.` : '';
+    // service name is tracked via dimensions.service
 
     for (const m of parsed.metrics) {
       metrics.push({
         ts: parsed.ts.toISOString(),
-        asset_id: parsed.hostname,
+        asset_id: `host:${parsed.hostname}`,
         namespace: config.NAGIOS_DEFAULT_NAMESPACE,
-        metric: `${servicePrefix}${m.label}`,
+        // Keep metric semantics stable: metric is the perfdata label,
+        // service name is a dimension (prevents breaking existing dashboards).
+        metric: m.label,
         value: m.value,
         unit: m.unit || undefined,
-        dimensions: parsed.service ? { service: parsed.service } : undefined,
+        dimensions: parsed.service ? { service: parsed.service, kind: 'service' } : { service: '__host__', kind: 'host' },
       });
     }
 
@@ -120,23 +122,26 @@ async function processLog(config: Config): Promise<void> {
     if (alert.stateType !== 'HARD') continue;
 
     const title = alert.type === 'SERVICE'
-      ? `${alert.service}: ${alert.state}`
-      : `${alert.hostname}: ${alert.state}`;
+      ? `${alert.hostname} ${alert.service ?? '?'} state=${alert.state}`
+      : `${alert.hostname} HOST state=${alert.state}`;
 
     events.push({
       ts: alert.ts.toISOString(),
-      asset_id: alert.hostname,
+      asset_id: `host:${alert.hostname}`,
       namespace: config.NAGIOS_DEFAULT_NAMESPACE,
-      kind: alert.type === 'SERVICE' ? 'service_alert' : 'host_alert',
+      kind: 'state_change',
       severity: stateToSeverity(alert.state),
       title,
       message: alert.output || undefined,
-      fingerprint: `${alert.hostname}:${alert.service ?? ''}:${alert.state}`,
+      fingerprint: `${alert.type.toLowerCase()}:${alert.hostname}:${alert.service ?? ''}`,
       attributes: {
+        kind: alert.type === 'SERVICE' ? 'service' : 'host',
+        host: alert.hostname,
+        service: alert.service ?? null,
         state: alert.state,
         state_type: alert.stateType,
         attempt: alert.attempt,
-        ...(alert.service ? { service: alert.service } : {}),
+        output: alert.output,
       },
     });
 
