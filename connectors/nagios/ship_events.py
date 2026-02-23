@@ -3,24 +3,24 @@ import os, json
 from datetime import datetime, timezone
 import requests
 
-SPOOL = os.environ.get("NAGIOS_HARD_EVENTS_JSONL", "/var/log/nagios4/neb-hard-events.jsonl")
+SPOOL      = os.environ.get("NAGIOS_HARD_EVENTS_JSONL", "/var/log/nagios4/neb-hard-events.jsonl")
 STATE_PATH = os.environ.get("STATE_PATH", "/var/lib/orbit-core/nagios-events.state.json")
-MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "400"))
+MAX_BYTES_PER_RUN = int(os.environ.get("MAX_BYTES_PER_RUN", str(5 * 1024 * 1024)))  # 5 MB
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 
 ORBIT_API = os.environ.get("ORBIT_API", "http://127.0.0.1:3000").rstrip("/")
-ENDPOINT = f"{ORBIT_API}/api/v1/ingest/events"
+ENDPOINT  = f"{ORBIT_API}/api/v1/ingest/events"
 
 # Optional BasicAuth
 ORBIT_BASIC_USER = os.environ.get("ORBIT_BASIC_USER")
 ORBIT_BASIC_PASS = os.environ.get("ORBIT_BASIC_PASS")
-ORBIT_BASIC = os.environ.get("ORBIT_BASIC")
+ORBIT_BASIC      = os.environ.get("ORBIT_BASIC")
 ORBIT_BASIC_FILE = os.environ.get("ORBIT_BASIC_FILE")
 
 
 def _load_basic_auth():
     user = ORBIT_BASIC_USER
-    pwd = ORBIT_BASIC_PASS
+    pwd  = ORBIT_BASIC_PASS
 
     if ORBIT_BASIC and ":" in ORBIT_BASIC:
         user, pwd = ORBIT_BASIC.split(":", 1)
@@ -36,13 +36,27 @@ def _load_basic_auth():
     return None
 
 
+# Nagios numeric states:
+#   Host:    0=UP, 1=DOWN, 2=UNREACHABLE, 3=UNKNOWN
+#   Service: 0=OK, 1=WARNING, 2=CRITICAL,    3=UNKNOWN
+_HOST_SEV = {0: "info", 1: "critical", 2: "high", 3: "medium"}
+_SVC_SEV  = {0: "info", 1: "medium",   2: "critical", 3: "low"}
+
+
+def sev(kind, state):
+    if kind == "host":
+        return _HOST_SEV.get(state, "medium")
+    return _SVC_SEV.get(state, "medium")
+
+
 def load_state():
     if not os.path.exists(STATE_PATH):
-        return {"lastLine": 0}
+        return {"offset": 0}
     try:
-        return json.load(open(STATE_PATH, "r"))
+        st = json.load(open(STATE_PATH, "r"))
+        return {"offset": int(st.get("offset", 0))}
     except Exception:
-        return {"lastLine": 0}
+        return {"offset": 0}
 
 
 def save_state(st):
@@ -50,60 +64,78 @@ def save_state(st):
     json.dump(st, open(STATE_PATH, "w"))
 
 
-def sev(kind, state):
-    # map Nagios states to Orbit severities
-    if kind == "host":
-        return "info" if state == 0 else ("high" if state == 1 else ("critical" if state == 2 else "medium"))
-    return "info" if state == 0 else ("medium" if state == 1 else ("critical" if state == 2 else "high"))
+def read_new_lines(path, offset):
+    """Read new complete lines from file since byte offset.
+    Detects file rotation: if file is smaller than offset, resets to 0."""
+    if not os.path.exists(path):
+        return [], offset
+
+    size = os.path.getsize(path)
+
+    # File was rotated (truncated or replaced) — restart from beginning
+    if size < offset:
+        offset = 0
+
+    if offset >= size:
+        return [], offset
+
+    read_size = min(size - offset, MAX_BYTES_PER_RUN)
+
+    with open(path, "rb") as f:
+        f.seek(offset)
+        data = f.read(read_size)
+
+    # Only process complete lines — trim trailing partial line
+    last_nl = data.rfind(b"\n")
+    if last_nl == -1:
+        return [], offset  # no complete line yet
+
+    complete = data[:last_nl + 1]
+    text  = complete.decode("utf-8", errors="replace")
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+
+    return lines, offset + len(complete)
 
 
 def main():
-    if not os.path.exists(SPOOL):
-        return
-
     st = load_state()
-    last = int(st.get("lastLine", 0) or 0)
 
-    with open(SPOOL, "r", encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()
-
-    total = len(lines)
-    if last >= total:
+    lines, st["offset"] = read_new_lines(SPOOL, st["offset"])
+    if not lines:
+        save_state(st)
         return
 
-    new = lines[last : last + MAX_PER_RUN]
     events = []
-    for ln in new:
-        ln = ln.strip()
-        if not ln:
-            continue
+    for ln in lines:
         try:
             j = json.loads(ln)
         except Exception:
             continue
 
-        kind = j.get("kind")
-        host = j.get("host")
-        state = int(j.get("state", 3))
+        kind    = j.get("kind")
+        host    = j.get("host")
+        state   = int(j.get("state", 3))
         service = j.get("service")
-        ts = j.get("ts") or datetime.now(timezone.utc).isoformat()
-        title = f"{host} HOST state={state}" if kind == "host" else f"{host} {service or '?'} state={state}"
-
-        events.append(
-            {
-                "ts": ts,
-                "asset_id": f"host:{host}",
-                "namespace": "nagios",
-                "kind": "state_change",
-                "severity": sev(kind, state),
-                "title": title,
-                "message": j.get("output") or "",
-                "fingerprint": f"{kind}:{host}:{service or ''}",
-                "attributes": j,
-            }
+        ts      = j.get("ts") or datetime.now(timezone.utc).isoformat()
+        title   = (
+            f"{host} HOST state={j.get('state_str', state)}"
+            if kind == "host"
+            else f"{host} {service or '?'} state={j.get('state_str', state)}"
         )
 
-    s = requests.Session()
+        events.append({
+            "ts":          ts,
+            "asset_id":    f"host:{host}",
+            "namespace":   "nagios",
+            "kind":        "state_change",
+            "severity":    sev(kind, state),
+            "title":       title,
+            "message":     j.get("output") or "",
+            "fingerprint": f"{kind}:{host}:{service or ''}",
+            "attributes":  j,
+        })
+
+    s     = requests.Session()
     basic = _load_basic_auth()
     if basic:
         s.auth = basic
@@ -114,7 +146,6 @@ def main():
         if r.status_code not in (200, 201):
             raise SystemExit(f"orbit ingest events failed HTTP {r.status_code}: {r.text[:300]}")
 
-    st["lastLine"] = last + len(new)
     save_state(st)
 
 

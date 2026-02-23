@@ -3,25 +3,25 @@ import os, json, re
 from datetime import datetime, timezone
 import requests
 
-SVC_FILE = os.environ.get("NAGIOS_SERVICE_PERFDATA_FILE", "/var/lib/nagios4/service-perfdata.out")
-HOST_FILE = os.environ.get("NAGIOS_HOST_PERFDATA_FILE", "/var/lib/nagios4/host-perfdata.out")
-STATE_PATH = os.environ.get("STATE_PATH", "/var/lib/orbit-core/nagios-metrics.state.json")
-MAX_LINES_PER_RUN = int(os.environ.get("MAX_LINES_PER_RUN", "600"))
-BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "1000"))
+SVC_FILE  = os.environ.get("NAGIOS_SERVICE_PERFDATA_FILE", "/var/lib/nagios4/service-perfdata.out")
+HOST_FILE = os.environ.get("NAGIOS_HOST_PERFDATA_FILE",    "/var/lib/nagios4/host-perfdata.out")
+STATE_PATH        = os.environ.get("STATE_PATH",        "/var/lib/orbit-core/nagios-metrics.state.json")
+MAX_BYTES_PER_RUN = int(os.environ.get("MAX_BYTES_PER_RUN", str(5 * 1024 * 1024)))  # 5 MB
+BATCH_SIZE        = int(os.environ.get("BATCH_SIZE", "1000"))
 
 ORBIT_API = os.environ.get("ORBIT_API", "http://127.0.0.1:3000").rstrip("/")
-ENDPOINT = f"{ORBIT_API}/api/v1/ingest/metrics"
+ENDPOINT  = f"{ORBIT_API}/api/v1/ingest/metrics"
 
 # Optional BasicAuth
 ORBIT_BASIC_USER = os.environ.get("ORBIT_BASIC_USER")
 ORBIT_BASIC_PASS = os.environ.get("ORBIT_BASIC_PASS")
-ORBIT_BASIC = os.environ.get("ORBIT_BASIC")
+ORBIT_BASIC      = os.environ.get("ORBIT_BASIC")
 ORBIT_BASIC_FILE = os.environ.get("ORBIT_BASIC_FILE")
 
 
 def _load_basic_auth():
     user = ORBIT_BASIC_USER
-    pwd = ORBIT_BASIC_PASS
+    pwd  = ORBIT_BASIC_PASS
 
     if ORBIT_BASIC and ":" in ORBIT_BASIC:
         user, pwd = ORBIT_BASIC.split(":", 1)
@@ -49,11 +49,11 @@ def parse_perf(perf: str):
         if not m:
             continue
         label = m.group("label")
-        val = m.group("value")
-        mnum = re.match(r"^(-?\d+(?:\.\d+)?)([a-zA-Z%]+)?$", val)
+        val   = m.group("value")
+        mnum  = re.match(r"^(-?\d+(?:\.\d+)?)([a-zA-Z%]+)?$", val)
         if not mnum:
             continue
-        num = float(mnum.group(1))
+        num  = float(mnum.group(1))
         unit = mnum.group(2)
         out.append((label, num, unit))
     return out
@@ -61,12 +61,15 @@ def parse_perf(perf: str):
 
 def load_state():
     if not os.path.exists(STATE_PATH):
-        return {"host_last": 0, "svc_last": 0}
+        return {"svc_offset": 0, "host_offset": 0}
     try:
-        with open(STATE_PATH, "r") as f:
-            return json.load(f)
+        st = json.load(open(STATE_PATH, "r"))
+        return {
+            "svc_offset":  int(st.get("svc_offset",  0)),
+            "host_offset": int(st.get("host_offset", 0)),
+        }
     except Exception:
-        return {"host_last": 0, "svc_last": 0}
+        return {"svc_offset": 0, "host_offset": 0}
 
 
 def save_state(st):
@@ -75,16 +78,37 @@ def save_state(st):
         json.dump(st, f)
 
 
-def read_new_lines(path, last):
+def read_new_lines(path, offset):
+    """Read new complete lines from file since byte offset.
+    Detects file rotation: if file is smaller than offset, resets to 0."""
     if not os.path.exists(path):
-        return [], last
-    with open(path, "r", errors="ignore") as f:
-        lines = f.readlines()
-    total = len(lines)
-    if last >= total:
-        return [], last
-    new = lines[last : last + MAX_LINES_PER_RUN]
-    return new, last + len(new)
+        return [], offset
+
+    size = os.path.getsize(path)
+
+    # File was rotated (truncated or replaced) — restart from beginning
+    if size < offset:
+        offset = 0
+
+    if offset >= size:
+        return [], offset
+
+    read_size = min(size - offset, MAX_BYTES_PER_RUN)
+
+    with open(path, "rb") as f:
+        f.seek(offset)
+        data = f.read(read_size)
+
+    # Only process complete lines — trim trailing partial line
+    last_nl = data.rfind(b"\n")
+    if last_nl == -1:
+        return [], offset  # no complete line yet
+
+    complete = data[:last_nl + 1]
+    text  = complete.decode("utf-8", errors="replace")
+    lines = [l for l in text.splitlines() if l.strip()]
+
+    return lines, offset + len(complete)
 
 
 def to_ts(epoch_str: str):
@@ -98,7 +122,7 @@ def to_ts(epoch_str: str):
 def post_batches(points):
     if not points:
         return
-    s = requests.Session()
+    s     = requests.Session()
     basic = _load_basic_auth()
     if basic:
         s.auth = basic
@@ -114,46 +138,51 @@ def post_batches(points):
 def main():
     st = load_state()
 
-    svc_lines, st["svc_last"] = read_new_lines(SVC_FILE, int(st.get("svc_last", 0)))
-    host_lines, st["host_last"] = read_new_lines(HOST_FILE, int(st.get("host_last", 0)))
+    svc_lines,  st["svc_offset"]  = read_new_lines(SVC_FILE,  st["svc_offset"])
+    host_lines, st["host_offset"] = read_new_lines(HOST_FILE, st["host_offset"])
 
     out = []
 
+    # Default Nagios service perfdata template (tab-separated, positional):
+    # [0]epoch [1]host [2]servicedesc [3]state [4]attempt [5]statetype
+    # [6]exectime [7]latency [8]output [9]perfdata
     for line in svc_lines:
         parts = line.rstrip("\n").split("\t")
         if len(parts) < 10:
             continue
-        ts = to_ts(parts[0])
+        ts   = to_ts(parts[0])
         host = parts[1]
-        svc = parts[2]
+        svc  = parts[2]
         perf = parts[9]
         for label, num, unit in parse_perf(perf):
             item = {
-                "ts": ts,
-                "asset_id": f"host:{host}",
-                "namespace": "nagios",
-                "metric": label,
-                "value": num,
+                "ts":         ts,
+                "asset_id":   f"host:{host}",
+                "namespace":  "nagios",
+                "metric":     label,
+                "value":      num,
                 "dimensions": {"service": svc, "kind": "service"},
             }
             if unit:
                 item["unit"] = unit
             out.append(item)
 
+    # Default Nagios host perfdata template (tab-separated, positional):
+    # [0]epoch [1]host [2]state [3]attempt [4]statetype [5]exectime [6]latency [7]perfdata
     for line in host_lines:
         parts = line.rstrip("\n").split("\t")
         if len(parts) < 8:
             continue
-        ts = to_ts(parts[0])
+        ts   = to_ts(parts[0])
         host = parts[1]
         perf = parts[7]
         for label, num, unit in parse_perf(perf):
             item = {
-                "ts": ts,
-                "asset_id": f"host:{host}",
-                "namespace": "nagios",
-                "metric": label,
-                "value": num,
+                "ts":         ts,
+                "asset_id":   f"host:{host}",
+                "namespace":  "nagios",
+                "metric":     label,
+                "value":      num,
                 "dimensions": {"service": "__host__", "kind": "host"},
             }
             if unit:

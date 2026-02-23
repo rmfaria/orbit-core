@@ -63,14 +63,21 @@ process_performance_data=1
 service_perfdata_file=/var/lib/nagios4/service-perfdata.out
 service_perfdata_file_mode=a
 service_perfdata_file_processing_interval=0
-# NOTE: we rely on the default Nagios perfdata output format (tab-separated)
-# If you use a custom template, adjust the shipper or the template accordingly.
 
 # Host perfdata spool (optional)
 host_perfdata_file=/var/lib/nagios4/host-perfdata.out
 host_perfdata_file_mode=a
 host_perfdata_file_processing_interval=0
 ```
+
+> **Important — perfdata file format**: `ship_metrics.py` expects the **default Nagios
+> tab-separated template** (no `DATATYPE::` prefix). Do **not** set a custom
+> `service_perfdata_file_template` or `host_perfdata_file_template` unless you also
+> update the shipper. The default template columns are:
+>
+> Service: `epoch  host  servicedesc  state  attempt  statetype  exectime  latency  output  perfdata`
+>
+> Host: `epoch  host  state  attempt  statetype  exectime  latency  perfdata`
 
 Restart Nagios:
 
@@ -87,55 +94,64 @@ tail -n 3 /var/lib/nagios4/service-perfdata.out
 
 ---
 
-## 3) Produce HARD events JSONL (recommended: NEB module)
+## 3) Produce HARD events JSONL (global event handler)
 
 The connector expects a JSONL spool file, default:
 
 - `/var/log/nagios4/neb-hard-events.jsonl`
 
-### Option A (recommended): build and enable the NEB module
+The included `write_hard_event.py` produces this spool when configured as a
+Nagios **global event handler** — no compiled NEB module required.
 
-This repo contains a simple NEB module source (HARD-only) you can compile:
+### 3.1) Register the command
 
-- Path: `src/nagios-neb-supabase/ne_supabase_broker.c`
+Add to `/etc/nagios4/conf.d/orbit-commands.cfg` (create if missing):
 
-Build requirements:
+```nagios
+define command {
+    command_name  orbit-svc-event
+    command_line  /usr/bin/python3 /opt/orbit-core/connectors/nagios/write_hard_event.py \
+                  service "$HOSTNAME$" "$SERVICEDESC$" "$SERVICESTATE$" \
+                  "$SERVICESTATETYPE$" "$SERVICEATTEMPT$" "$SERVICEOUTPUT$" \
+                  "$LASTSERVICECHECK$"
+}
 
-```bash
-apt-get install -y build-essential
+define command {
+    command_name  orbit-host-event
+    command_line  /usr/bin/python3 /opt/orbit-core/connectors/nagios/write_hard_event.py \
+                  host "$HOSTNAME$" "" "$HOSTSTATE$" \
+                  "$HOSTSTATETYPE$" "$HOSTATTEMPT$" "$HOSTOUTPUT$" \
+                  "$LASTHOSTCHECK$"
+}
 ```
 
-Build and install the module:
+### 3.2) Enable global event handlers
 
-```bash
-cd src/nagios-neb-supabase
-make
-make install
-```
-
-Enable it in `/etc/nagios4/nagios.cfg`:
+Add to `/etc/nagios4/nagios.cfg`:
 
 ```ini
-broker_module=/usr/local/lib/nagios/nebmods/ne_supabase_broker.so
+event_handler_enabled=1
+global_service_event_handler=orbit-svc-event
+global_host_event_handler=orbit-host-event
 ```
 
-Restart Nagios:
+### 3.3) Create spool directory and restart
 
 ```bash
+mkdir -p /var/log/nagios4
+chown nagios:nagios /var/log/nagios4
 systemctl restart nagios4
 ```
 
-Validate JSONL spool:
+Validate spool after the first HARD state change (or test manually):
 
 ```bash
 ls -la /var/log/nagios4/neb-hard-events.jsonl
 tail -n 5 /var/log/nagios4/neb-hard-events.jsonl
 ```
 
-### Option B: alternative producer
-
-If you already have an event handler / broker that writes HARD events to a JSONL file, you can keep it.
-Just point the shipper to it via `NAGIOS_HARD_EVENTS_JSONL`.
+> **Note**: `write_hard_event.py` silently ignores SOFT state changes.
+> Only HARD transitions are written to the spool.
 
 ---
 
@@ -211,7 +227,7 @@ python3 /opt/orbit-core/connectors/nagios/ship_events.py
 
 - **401/403 from orbit-core**: BasicAuth not set / wrong credentials / wrong URL.
 - **No metrics**: perfdata files not enabled or empty; check `nagios.cfg` and file paths.
-- **No events**: JSONL spool not being written; confirm NEB module is loaded and Nagios restarted.
+- **No events**: JSONL spool not being written; confirm `write_hard_event.py` is configured as global event handler and Nagios restarted. Check Nagios logs for command errors.
 - **File rotation**: both shippers detect file truncation by comparing last known position with current file length and will restart from 0.
 
 ---
