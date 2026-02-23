@@ -1,0 +1,17 @@
+# Example cron entries (edit paths and auth)
+
+# Metrics (perfdata -> ingest/metrics)
+* * * * * root \
+  ORBIT_API=https://prod.example.com/orbit-core \
+  ORBIT_BASIC_USER=orbitadmin \
+  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  python3 /opt/orbit-core/connectors/nagios/ship_metrics.py \
+  >>/var/log/orbit-core/nagios_metrics_shipper.log 2>&1
+
+# Events (neb-hard-events.jsonl -> ingest/events)
+* * * * * root \
+  ORBIT_API=https://prod.example.com/orbit-core \
+  ORBIT_BASIC_USER=orbitadmin \
+  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  python3 /opt/orbit-core/connectors/nagios/ship_events.py \
+  >>/var/log/orbit-core/nagios_events_shipper.log 2>&1
