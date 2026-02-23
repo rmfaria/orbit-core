@@ -1,19 +1,19 @@
 # orbit-core (OSS)
 
-**orbit-core** é o núcleo do Orbit: um **core de telemetria/eventos** com **API-first** + **Postgres**, pensado para ingestão de dados (Nagios/Wazuh/etc.), consultas rápidas (timeseries + eventos) e evolução para um produto (builder de dashboards, catálogo, conectores).
+**orbit-core** is the Orbit product core: an **API-first telemetry + events core** backed by **Postgres**. It is designed for data ingestion (Nagios/Wazuh/etc.), fast exploration (timeseries + events), and evolution into a product (dashboard builder, catalog, connectors).
 
 - Monorepo: **pnpm + Turborepo**
 - Backend: **Node/TypeScript + Express**
-- Storage: **Postgres puro (sem TimescaleDB no MVP1)**
-- Licença: **Apache-2.0**
+- Storage: **Plain Postgres (no TimescaleDB in MVP1)**
+- License: **Apache-2.0**
 
 ## Packages
 
-- `@orbit/core-contracts` — tipos e contratos de API
+- `@orbit/core-contracts` — shared types and HTTP contracts
 - `@orbit/engine` — orbitql (query engine/types)
 - `@orbit/storage-pg` — schema + migrations + helpers
-- `@orbit/api` — API Express
-- `@orbit/ui` — UI (Vite + React) para validar o core
+- `@orbit/api` — Express API
+- `@orbit/ui` — Vite + React UI (core validation UI)
 
 ## Endpoints (MVP)
 
@@ -24,30 +24,30 @@
 - Query: `POST /api/v1/query` (orbitql: `timeseries`, `timeseries_multi`, `events`)
 - Catalog: `GET /api/v1/catalog/assets|metrics|dimensions`
 
-## Retenção + rollups (no-AI)
+## Retention + rollups (no-AI)
 
 - RAW: `metric_points` (≤ 14d)
 - Rollup 5m: `metric_rollup_5m` (≤ 90d)
 - Rollup 1h: `metric_rollup_1h` (≤ 180d)
 
-O `/api/v1/query` seleciona automaticamente a fonte com base no range e retorna `meta.source_table`.
+`/api/v1/query` automatically selects the source table based on the requested time range and returns `meta.source_table`.
 
 ## Quickstart (dev)
 
-### 1) Instalar
+### 1) Install
 
 ```bash
 pnpm install
 ```
 
-### 2) Subir Postgres (opcional)
+### 2) Start Postgres (optional)
 
 ```bash
 docker compose -f scripts/dev-postgres.docker-compose.yml up -d
 export DATABASE_URL='postgres://postgres:postgres@localhost:5432/orbit'
 ```
 
-### 3) Rodar API + UI
+### 3) Run API + UI
 
 ```bash
 pnpm dev
@@ -58,7 +58,7 @@ pnpm dev
 
 ## Docs
 
-- Arquitetura (atual): `docs/ARCHITECTURE.md`
-- RFC de arquitetura: `docs/rfc-0001-architecture.md`
+- Architecture (current): `docs/ARCHITECTURE.md`
+- Architecture RFC: `docs/rfc-0001-architecture.md`
 - Product MVP1: `docs/product-mvp1.md`
 - Wazuh query notes: `docs/wazuh-queries.md`

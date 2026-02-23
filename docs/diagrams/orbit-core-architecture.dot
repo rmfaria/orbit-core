@@ -1,49 +1,49 @@
 digraph orbitcore {
   rankdir=LR;
-  graph [fontname="Inter,Helvetica,Arial", fontsize=10, labelloc=t, label="orbit-core — Arquitetura (Atual)\nprod.nesecurity.com.br/orbit-core/", bgcolor="white"];
+  graph [fontname="Inter,Helvetica,Arial", fontsize=10, labelloc=t, label="orbit-core — Architecture (current)", bgcolor="white"];
   node  [shape=box, style="rounded,filled", fontname="Inter,Helvetica,Arial", fontsize=10, fillcolor="#F8FAFC", color="#CBD5E1"];
   edge  [color="#94A3B8"];
 
   subgraph cluster_sources {
-    label="Fontes";
+    label="Sources";
     color="#E2E8F0";
     NAGIOS [label="Nagios Core\nperfdata + HARD events"];
-    WAZUH [label="Wazuh\n(API + OpenSearch)\n(conector pendente)"];
+    WAZUH [label="Wazuh\n(API + OpenSearch)\n(connector: pending)"];
   }
 
   subgraph cluster_connectors {
-    label="Conectores / Shippers (no-AI)";
+    label="Connectors / Shippers (no-AI)";
     color="#E2E8F0";
     MS [label="nagios_orbitcore_metrics_shipper.py\n(cron, batch)"];
     ES [label="nagios_orbitcore_events_shipper.py\n(cron, batch)"];
-    WC [label="wazuh_orbitcore_connector.py\n(cron, agregados)\n(rede: pendente)"];
+    WC [label="wazuh_orbitcore_connector.py\n(cron, aggregates)\n(network: pending)"];
   }
 
   subgraph cluster_edge {
     label="Edge";
     color="#E2E8F0";
-    TRAEFIK [label="Traefik\nTLS + BasicAuth\nStripPrefix(/orbit-core)\nRedirect /orbit-core → /orbit-core/"];
+    RP [label="Reverse proxy\nTLS + Auth\nStripPrefix (optional)\nRedirect /orbit-core → /orbit-core/ (optional)"];
   }
 
   subgraph cluster_core {
     label="orbit-core";
     color="#E2E8F0";
-    UI [label="UI (Vite/React + nginx)\n/orbit-core/\n\n- Query runner MVP\n- Dropdowns via Catalog"];
-    API [label="API (Node/Express)\n/orbit-core/api/v1/*\n\n- ingest/metrics\n- ingest/events\n- query (orbitql)\n- catalog/*\n- metrics/prom"];
-    PG [shape=cylinder, label="Postgres 16\nSchema canônico\nassets / metric_points / orbit_events\nrollups: 5m + 1h" , fillcolor="#EEF2FF", color="#A5B4FC"];
+    UI [label="UI (Vite/React + nginx)\n\n- Query runner MVP\n- Dropdowns via Catalog"];
+    API [label="API (Node/Express)\n\n- ingest/metrics\n- ingest/events\n- query (orbitql)\n- catalog/*\n- metrics/prom"];
+    PG [shape=cylinder, label="Postgres 16\nCanonical schema\nassets / metric_points / orbit_events\nrollups: 5m + 1h" , fillcolor="#EEF2FF", color="#A5B4FC"];
   }
 
   NAGIOS -> MS;
   NAGIOS -> ES;
   WAZUH -> WC;
 
-  MS -> TRAEFIK [label="POST /api/v1/ingest/metrics"];
-  ES -> TRAEFIK [label="POST /api/v1/ingest/events"];
-  WC -> TRAEFIK [style=dashed, label="POST /api/v1/ingest/*"];
+  MS -> RP [label="POST /api/v1/ingest/metrics"];
+  ES -> RP [label="POST /api/v1/ingest/events"];
+  WC -> RP [style=dashed, label="POST /api/v1/ingest/*"];
 
-  TRAEFIK -> API;
-  TRAEFIK -> UI;
+  RP -> API;
+  RP -> UI;
 
-  UI -> TRAEFIK [label="fetch api/v1/catalog/*\nfetch api/v1/query"];
+  UI -> RP [label="fetch /api/v1/catalog/*\nfetch /api/v1/query"];
   API -> PG;
 }

@@ -1,34 +1,35 @@
-# orbit-core — Arquitetura (Atual)
+# orbit-core — Architecture (current)
 
-> Documento de arquitetura “estilo arquiteto de sistemas”, com foco no backend e nos fluxos de dados.
+This document describes the current **system architecture** of orbit-core, focusing on backend components and data flows.
 
-## 1) Visão geral
+## 1) Overview
 
-O **orbit-core** é o núcleo do produto Orbit: um **API-first core** + **Postgres** com um schema canônico para:
+**orbit-core** is the Orbit product core: an **API-first core** + **Postgres** with a canonical schema for:
 
 - **Assets** (`assets`)
-- **Séries temporais** (`metric_points`) + **rollups** (`metric_rollup_5m`, `metric_rollup_1h`)
-- **Eventos** (`orbit_events`)
+- **Time series** (`metric_points`) + **rollups** (`metric_rollup_5m`, `metric_rollup_1h`)
+- **Events** (`orbit_events`)
 
-Conectores (Nagios, Wazuh/OpenSearch, etc.) enviam dados via endpoints de ingestão e o Orbit consome via `/api/v1/query`.
+Connectors (Nagios, Wazuh/OpenSearch, etc.) send data via ingest endpoints and Orbit consumers query via `/api/v1/query`.
 
-## 2) Diagrama
+## 2) Diagram
 
 ![orbit-core diagram](./diagrams/orbit-core-architecture.png)
 
-> Fonte do diagrama: `docs/diagrams/orbit-core-architecture.dot`.
+Diagram source: `docs/diagrams/orbit-core-architecture.dot`.
 
-## 3) Componentes
+## 3) Components
 
-### 3.1 Edge (Traefik)
-- Publicação em subpath: `https://prod.nesecurity.com.br/orbit-core/`
-- TLS + BasicAuth
-- `StripPrefix(/orbit-core)`
-- Redirect `/orbit-core` → `/orbit-core/` (evita bug de paths relativos)
+### 3.1 Edge (reverse proxy)
+Typical production setup:
+- TLS termination
+- Authentication (BasicAuth, SSO, etc.)
+- Subpath deployments supported (e.g. `/orbit-core/`)
+- Optional redirect `/orbit-core` → `/orbit-core/` to avoid SPA relative-path issues
 
 ### 3.2 API (Node/Express)
-Principais rotas:
-- `GET /api/v1/health` (inclui build info)
+Main routes:
+- `GET /api/v1/health` (includes build info)
 - `GET /api/v1/metrics` (JSON)
 - `GET /api/v1/metrics/prom` (Prometheus text/plain)
 - `POST /api/v1/ingest/metrics`
@@ -37,48 +38,48 @@ Principais rotas:
 - `GET /api/v1/catalog/*` (assets, metrics, dimensions)
 
 ### 3.3 UI (Vite/React)
-UI é MVP (query runner). Serve como “osciloscópio” para validar o core.
+The UI is an MVP (query runner). It acts as an “oscilloscope” to validate the core.
 
 ### 3.4 Postgres
-Schema canônico e rollups:
-- `metric_points` (RAW) — retenção: **14 dias**
-- `metric_rollup_5m` — retenção: **90 dias**
-- `metric_rollup_1h` — retenção: **180 dias**
+Canonical schema and rollups:
+- `metric_points` (RAW) — retention: **14 days**
+- `metric_rollup_5m` — retention: **90 days**
+- `metric_rollup_1h` — retention: **180 days**
 
-## 4) Fluxo de dados
+## 4) Data flows
 
 ### 4.1 Nagios → orbit-core
-- Perfdata e HARD events são coletados por shippers (cron, no-AI)
-- Shippers fazem POST em `/api/v1/ingest/*`
+- Perfdata and HARD events are collected by shippers (cron, no-AI)
+- Shippers `POST` to `/api/v1/ingest/*`
 
-### 4.2 Query → seleção automática de fonte (RAW vs rollup)
-O backend escolhe automaticamente a tabela:
+### 4.2 Query → automatic source selection (RAW vs rollup)
+The backend automatically selects the source table:
 - range ≤ 14d → `metric_points`
 - 14–90d → `metric_rollup_5m`
 - > 90d → `metric_rollup_1h`
 
-A resposta inclui `meta.source_table`.
+The response includes `meta.source_table`.
 
 ## 5) Query (orbitql)
 
 ### 5.1 `timeseries`
 - Single series
-- Downsample + agregação (avg/min/max/sum)
+- Downsample + aggregation (avg/min/max/sum)
 
 ### 5.2 `timeseries_multi`
 - Multi-series
-- `group_by_dimension` opcional
+- Optional `group_by_dimension`
 - `top_n` (default 20), `top_by` (default count), `top_lookback_days` (default 7)
 
-## 6) Operação (no-AI)
+## 6) Ops (no-AI)
 
-### 6.1 Rollups + retenção
-Jobs em cron:
-- raw→5m a cada 5 minutos
-- 5m→1h a cada hora
-- retenção diária
+### 6.1 Rollups + retention
+Cron jobs:
+- raw→5m every 5 minutes
+- 5m→1h every hour
+- retention daily
 
-## 7) Próximos passos
-- Conector Wazuh/OpenSearch (depende de rede/endpoint reachability)
-- Dashboard builder consumindo orbit-core
-- Catalog avançado (dim keys/values + topN server-side)
+## 7) Next steps
+- Wazuh/OpenSearch connector (depends on network reachability)
+- Dashboard builder consuming orbit-core
+- Advanced catalog (dimension keys/values + server-side topN)
