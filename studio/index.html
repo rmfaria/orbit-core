@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>orbit-studio — Dashboard Authoring</title>
+  <meta name="description" content="orbit-studio proposes Orbit dashboards as DashboardSpec and validates them against orbit-core guardrails." />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="container top__inner">
+      <div class="brand">
+        <div class="brand__mark"></div>
+        <div>
+          <div class="brand__name">orbit-studio</div>
+          <div class="brand__tag">Dashboard authoring • strict specs • validate via orbit-core</div>
+        </div>
+      </div>
+      <div class="top__links">
+        <a class="chip" href="/orbit-core/" title="Open orbit-core UI">orbit-core</a>
+        <a class="chip" href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" style="padding:18px 0 40px;">
+    <section class="grid">
+      <div class="panel">
+        <h1>Generate a <span class="grad">DashboardSpec</span></h1>
+        <p class="muted">This MVP is a safe authoring UI. It generates a deterministic baseline spec and validates it using <span class="mono">POST /api/v1/dashboards/validate</span>. (AI generation can be added later.)</p>
+
+        <div class="row">
+          <label class="label">Asset (scope)</label>
+          <select id="asset" class="select"></select>
+        </div>
+
+        <div class="row">
+          <label class="label">Name</label>
+          <input id="name" class="input" placeholder="portn8n — Core Health" />
+        </div>
+
+        <div class="row">
+          <label class="label">Prompt (optional, for future AI)</label>
+          <textarea id="prompt" class="textarea" rows="4" placeholder="Example: Create a dashboard for network traffic + Suricata alerts for hostgroup portn8n. Include an events feed."></textarea>
+        </div>
+
+        <div class="buttons">
+          <button id="btn-generate" class="btn btn--primary">Generate baseline spec</button>
+          <button id="btn-validate" class="btn">Validate</button>
+          <button id="btn-copy" class="btn">Copy JSON</button>
+        </div>
+
+        <div class="hint">
+          Tip: choose the correct asset_id format (<span class="mono">host:portn8n</span>). This UI reads assets from the catalog.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="splitHead">
+          <h2>DashboardSpec (JSON)</h2>
+          <span id="status" class="status">idle</span>
+        </div>
+        <textarea id="spec" class="textarea mono" rows="22" spellcheck="false"></textarea>
+        <div class="splitHead" style="margin-top:14px;">
+          <h2>Validation output</h2>
+        </div>
+        <pre id="out" class="out mono">(empty)</pre>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-top:14px;">
+      <h2>Guardrails</h2>
+      <ul class="list">
+        <li>Only orbitql specs (no raw SQL).</li>
+        <li>Prefer performance-first defaults (auto-bucket, safe limits).</li>
+        <li>When using <span class="mono">group_by_dimension</span>, use <span class="mono">top_n</span> to prevent cardinality explosion.</li>
+      </ul>
+      <div class="muted small">Playbook: <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/dashboard-playbook.md" target="_blank" rel="noreferrer">docs/dashboard-playbook.md</a></div>
+    </section>
+  </main>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
