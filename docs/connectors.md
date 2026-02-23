@@ -17,3 +17,16 @@ TypeScript shipper package:
 - `packages/nagios-shipper`
 
 See: `packages/nagios-shipper/README.md`
+
+---
+
+## Wazuh
+
+Use the **Python shipper** (deterministic, cron-friendly):
+
+- `connectors/wazuh/ship_events.py` → `POST /api/v1/ingest/events`
+
+Ships Wazuh alerts from `alerts.json` as normalized events with severity
+derived from `rule.level` (0–15).
+
+See: `connectors/wazuh/README.md` | `connectors/wazuh/INSTALL.md`

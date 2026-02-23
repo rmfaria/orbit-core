@@ -1,0 +1,11 @@
+# Wazuh → orbit-core event shipper — cron example
+# Run every minute as root (adjust paths and auth)
+
+* * * * * root \
+  ORBIT_API=https://prod.example.com/orbit-core \
+  ORBIT_BASIC_USER=orbitadmin \
+  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  WAZUH_ALERTS_JSON=/var/ossec/logs/alerts/alerts.json \
+  STATE_PATH=/var/lib/orbit-core/wazuh-events.state.json \
+  python3 /opt/orbit-core/connectors/wazuh/ship_events.py \
+  >>/var/log/orbit-core/wazuh_shipper.log 2>&1
