@@ -1,0 +1,14 @@
+node_modules
+.DS_Store
+.env
+.env.*
+dist
+build
+coverage
+.turbo
+pnpm-debug.log*
+**/*.tsbuildinfo
+.pnpm-store
+packages/**/dist
+packages/**/.vite
+packages/**/build

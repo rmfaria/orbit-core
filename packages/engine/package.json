@@ -1,0 +1,23 @@
+{
+  "name": "@orbit/engine",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@orbit/core-contracts": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'lint:todo'",
+    "test": "echo 'test:todo'"
+  }
+}

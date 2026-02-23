@@ -1,0 +1,32 @@
+{
+  "name": "@orbit/api",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo 'lint:todo'",
+    "test": "echo 'test:todo'"
+  },
+  "dependencies": {
+    "@orbit/core-contracts": "workspace:*",
+    "@orbit/engine": "workspace:*",
+    "@orbit/storage-pg": "workspace:*",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "pg": "^8.12.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2"
+  }
+}
