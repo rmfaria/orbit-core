@@ -3,6 +3,7 @@ import React from 'react';
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type Row        = { ts: string; value: number };
+type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
@@ -134,6 +135,113 @@ function drawChart(canvas: HTMLCanvasElement, rows: Row[]) {
   if (rows.length > 2) ctx.fillText(fmt(rows[Math.floor(rows.length / 2)].ts), (x0 + x1) / 2 - 16, h - 10);
   ctx.fillText(fmt(rows[rows.length - 1].ts), x1 - 36, h - 10);
 }
+
+function drawMultiChart(canvas: HTMLCanvasElement, rows: MultiRow[]) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#0b1220';
+  ctx.fillRect(0, 0, w, h);
+
+  const padL = 56, padR = 16, padT = 16, padB = 32;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + ((h - padT - padB) * i) / 4;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+  }
+
+  if (!rows.length) {
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '14px system-ui';
+    ctx.fillText('No data', padL + 8, padT + 28);
+    return;
+  }
+
+  const bySeries = new Map<string, Array<{ ts: string; value: number }>>();
+  for (const r of rows) {
+    const arr = bySeries.get(r.series) ?? [];
+    arr.push({ ts: r.ts, value: r.value });
+    bySeries.set(r.series, arr);
+  }
+  // sort each series by ts
+  for (const [k, arr] of bySeries) {
+    arr.sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+    bySeries.set(k, arr);
+  }
+
+  const allVals: number[] = [];
+  for (const arr of bySeries.values()) for (const p of arr) allVals.push(p.value);
+  let vmin = Math.min(...allVals), vmax = Math.max(...allVals);
+  if (vmin === vmax) { vmin -= 1; vmax += 1; }
+
+  // build a global timeline (unique timestamps)
+  const tsSet = new Set<string>();
+  for (const arr of bySeries.values()) for (const p of arr) tsSet.add(p.ts);
+  const tsList = Array.from(tsSet).sort((a, b) => Date.parse(a) - Date.parse(b));
+
+  const x0 = padL, x1 = w - padR, y0 = padT, y1 = h - padB;
+  const toX = (i: number) => x0 + ((x1 - x0) * i) / Math.max(1, tsList.length - 1);
+  const toY = (v: number) => y1 - ((y1 - y0) * (v - vmin)) / (vmax - vmin);
+
+  const palette = ['#55f3ff', '#9b7cff', '#60a5fa', '#fbbf24', '#a3e635', '#fb7185'];
+  const keys = Array.from(bySeries.keys());
+
+  // draw lines
+  keys.forEach((seriesKey, idx) => {
+    const color = palette[idx % palette.length];
+    const points = bySeries.get(seriesKey)!;
+    const map = new Map(points.map(p => [p.ts, p.value] as const));
+
+    ctx.beginPath();
+    let started = false;
+    tsList.forEach((ts, i) => {
+      const v = map.get(ts);
+      if (v === undefined || v === null) return;
+      const x = toX(i);
+      const y = toY(v);
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
+  // Y labels
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '11px system-ui';
+  const fmtV = (v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v.toFixed(2);
+  ctx.fillText(fmtV(vmax), 4, y0 + 12);
+  ctx.fillText(fmtV((vmin + vmax) / 2), 4, (y0 + y1) / 2 + 4);
+  ctx.fillText(fmtV(vmin), 4, y1);
+
+  // X labels (first / mid / last)
+  const fmt = (ts: string) => {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+  ctx.fillText(fmt(tsList[0]), x0, h - 10);
+  if (tsList.length > 2) ctx.fillText(fmt(tsList[Math.floor(tsList.length / 2)]), (x0 + x1) / 2 - 16, h - 10);
+  ctx.fillText(fmt(tsList[tsList.length - 1]), x1 - 36, h - 10);
+
+  // Legend (top-right)
+  ctx.font = '11px system-ui';
+  let lx = w - padR - 140;
+  let ly = padT + 10;
+  keys.slice(0, 6).forEach((seriesKey, idx) => {
+    const color = palette[idx % palette.length];
+    ctx.fillStyle = color;
+    ctx.fillRect(lx, ly - 8, 10, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    const label = seriesKey.length > 18 ? seriesKey.slice(0, 18) + '…' : seriesKey;
+    ctx.fillText(label, lx + 14, ly - 4);
+    ly += 14;
+  });
+}
+
 
 // ─── styles (inline, no deps) ─────────────────────────────────────────────────
 
@@ -851,9 +959,24 @@ function HealthBadge() {
 
 // ─── HOME + SOURCES ──────────────────────────────────────────────────────────
 
-function HomeTab() {
+function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => void }) {
   const [health, setHealth] = React.useState<any>(null);
   const [err, setErr] = React.useState<string | null>(null);
+
+  const [assetId, setAssetId] = React.useState('');
+  const [from, setFrom] = React.useState(() => relativeFrom(1));
+  const [to, setTo] = React.useState(() => new Date().toISOString());
+
+  const [cpuRows, setCpuRows] = React.useState<MultiRow[]>([]);
+  const [diskRows, setDiskRows] = React.useState<MultiRow[]>([]);
+  const [netRows, setNetRows] = React.useState<MultiRow[]>([]);
+  const [suriRows, setSuriRows] = React.useState<Row[]>([]);
+  const [feed, setFeed] = React.useState<EventRow[]>([]);
+
+  const cpuRef = React.useRef<HTMLCanvasElement | null>(null);
+  const diskRef = React.useRef<HTMLCanvasElement | null>(null);
+  const netRef = React.useRef<HTMLCanvasElement | null>(null);
+  const suriRef = React.useRef<HTMLCanvasElement | null>(null);
 
   React.useEffect(() => {
     fetch('api/v1/health', { headers: apiGetHeaders() })
@@ -861,6 +984,153 @@ function HomeTab() {
       .then(setHealth)
       .catch((e) => setErr(String(e)));
   }, []);
+
+  // pick a default asset
+  React.useEffect(() => {
+    if (assetId) return;
+    if (!assets.length) return;
+    const prefer = assets.find(a => a.asset_id === 'host:portn8n') ?? assets[0];
+    setAssetId(prefer.asset_id);
+  }, [assets, assetId]);
+
+  async function runPulse() {
+    if (!assetId) return;
+    setErr(null);
+    try {
+      const qCpu = {
+        language: 'orbitql',
+        query: {
+          kind: 'timeseries_multi',
+          from,
+          to,
+          agg: 'avg',
+          series: [
+            { asset_id: assetId, namespace: 'nagios', metric: 'load1', dimensions: { service: 'CPU Load' }, label: 'load1' },
+            { asset_id: assetId, namespace: 'nagios', metric: 'load5', dimensions: { service: 'CPU Load' }, label: 'load5' },
+            { asset_id: assetId, namespace: 'nagios', metric: 'load15', dimensions: { service: 'CPU Load' }, label: 'load15' },
+          ],
+          limit: 12000,
+        }
+      };
+
+      const qDisk = {
+        language: 'orbitql',
+        query: {
+          kind: 'timeseries_multi',
+          from,
+          to,
+          agg: 'avg',
+          series: [
+            { asset_id: assetId, namespace: 'nagios', metric: 'aqu', dimensions: { service: 'Disk_Queue_sda' }, label: 'aqu-sz' },
+            { asset_id: assetId, namespace: 'nagios', metric: 'util', dimensions: { service: 'Disk_Queue_sda' }, label: '%util' },
+          ],
+          limit: 12000,
+        }
+      };
+
+      const qNet = {
+        language: 'orbitql',
+        query: {
+          kind: 'timeseries_multi',
+          from,
+          to,
+          agg: 'avg',
+          series: [
+            { asset_id: assetId, namespace: 'nagios', metric: 'rx_mbps', dimensions: { service: 'Network_Traffic_eth0' }, label: 'RX Mbps' },
+            { asset_id: assetId, namespace: 'nagios', metric: 'tx_mbps', dimensions: { service: 'Network_Traffic_eth0' }, label: 'TX Mbps' },
+          ],
+          limit: 12000,
+        }
+      };
+
+      const qSuri = {
+        language: 'orbitql',
+        query: {
+          kind: 'timeseries',
+          asset_id: assetId,
+          namespace: 'nagios',
+          metric: 'alerts',
+          from,
+          to,
+          agg: 'sum',
+          dimensions: { service: 'Suricata_Alerts_5m' },
+          limit: 20000,
+        }
+      };
+
+      const qEvents = {
+        language: 'orbitql',
+        query: {
+          kind: 'events',
+          asset_id: assetId,
+          namespace: 'nagios',
+          from,
+          to,
+          limit: 60,
+        }
+      };
+
+      const [rCpu, rDisk, rNet, rSuri, rEv] = await Promise.all([
+        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qCpu) }).then(r => r.json()),
+        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qDisk) }).then(r => r.json()),
+        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qNet) }).then(r => r.json()),
+        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qSuri) }).then(r => r.json()),
+        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qEvents) }).then(r => r.json()),
+      ]);
+
+      if (!rCpu.ok) throw new Error(rCpu.error ?? JSON.stringify(rCpu));
+      if (!rDisk.ok) throw new Error(rDisk.error ?? JSON.stringify(rDisk));
+      if (!rNet.ok) throw new Error(rNet.error ?? JSON.stringify(rNet));
+      if (!rSuri.ok) throw new Error(rSuri.error ?? JSON.stringify(rSuri));
+      if (!rEv.ok) throw new Error(rEv.error ?? JSON.stringify(rEv));
+
+      setCpuRows((rCpu.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
+      setDiskRows((rDisk.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
+      setNetRows((rNet.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
+      setSuriRows((rSuri.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })));
+      setFeed((rEv.result?.rows ?? []) as EventRow[]);
+
+    } catch (e: any) {
+      setErr(String(e));
+    }
+  }
+
+  React.useEffect(() => {
+    if (!assetId) return;
+    runPulse();
+    const t = setInterval(() => {
+      setTo(new Date().toISOString());
+    }, 30_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId]);
+
+  React.useEffect(() => {
+    if (!assetId) return;
+    runPulse();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to]);
+
+  function resizeAndDraw(ref: React.RefObject<HTMLCanvasElement>, kind: 'multi' | 'single', rows: any[]) {
+    const c = ref.current;
+    if (!c) return;
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    c.style.width = '100%';
+    const cssW = c.offsetWidth || 800;
+    const cssH = 220;
+    c.style.height = `${cssH}px`;
+    c.width = cssW * dpr;
+    c.height = cssH * dpr;
+    const ctx = c.getContext('2d');
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (kind === 'multi') drawMultiChart(c, rows);
+    else drawChart(c, rows);
+  }
+
+  React.useEffect(() => { resizeAndDraw(cpuRef, 'multi', cpuRows); }, [cpuRows]);
+  React.useEffect(() => { resizeAndDraw(diskRef, 'multi', diskRows); }, [diskRows]);
+  React.useEffect(() => { resizeAndDraw(netRef, 'multi', netRows); }, [netRows]);
+  React.useEffect(() => { resizeAndDraw(suriRef, 'single', suriRows); }, [suriRows]);
 
   return (
     <div>
@@ -908,30 +1178,123 @@ function HomeTab() {
       </div>
 
       <div style={S.card}>
-        <div style={{ fontWeight: 900, marginBottom: 10 }}>Fontes</div>
-        <div style={{ ...S.grid3 }}>
-          <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Nagios</div>
-            <div style={{ marginTop: 6, color: 'rgba(233,238,255,0.82)', fontSize: 13 }}>Métricas perfdata + eventos HARD</div>
-            <div style={{ marginTop: 10 }}>
-              <span style={{ ...S.btnSm, display: 'inline-flex', cursor: 'default' }}>Use: Sources → Nagios</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 900 }}>Pulse (last 60m)</div>
+            <div style={{ color: 'rgba(233,238,255,0.70)', fontSize: 12, marginTop: 4 }}>
+              Asset: <span className="mono">{assetId || '—'}</span>
             </div>
           </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+              {assets.map(a => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
+            </select>
+            <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(1)); setTo(new Date().toISOString()); }}>60m</button>
+            <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(6)); setTo(new Date().toISOString()); }}>6h</button>
+            <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(24)); setTo(new Date().toISOString()); }}>24h</button>
+            <button style={S.btn} onClick={runPulse}>Refresh</button>
+            <button style={S.btnSm} onClick={() => setTab('nagios')}>Open Nagios</button>
+          </div>
+        </div>
+
+        <div style={{ ...S.grid4, marginTop: 12 }}>
           <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Wazuh</div>
-            <div style={{ marginTop: 6, color: 'rgba(233,238,255,0.82)', fontSize: 13 }}>Conector planejado (agregados OpenSearch)</div>
-            <div style={{ marginTop: 10 }}>
-              <span style={{ ...S.btnSm, display: 'inline-flex', cursor: 'default', opacity: 0.7 }}>Em breve</span>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>CPU Load</div>
+            <div style={{ fontWeight: 900, marginTop: 6 }}>
+              {(() => {
+                const last: Record<string, number> = {};
+                for (const r of cpuRows) last[r.series] = r.value;
+                const a = (v: any) => (typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '—');
+                return `${a(last['load1'])} • ${a(last['load5'])} • ${a(last['load15'])}`;
+              })()}
             </div>
+            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>load1 • load5 • load15</div>
           </div>
           <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Custom</div>
-            <div style={{ marginTop: 6, color: 'rgba(233,238,255,0.82)', fontSize: 13 }}>Ingest API para integrações</div>
-            <div style={{ marginTop: 10 }}>
-              <span style={{ ...S.btnSm, display: 'inline-flex', cursor: 'default' }} className="mono">/api/v1/ingest/*</span>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Disk Queue</div>
+            <div style={{ fontWeight: 900, marginTop: 6 }}>
+              {(() => {
+                const last: Record<string, number> = {};
+                for (const r of diskRows) last[r.series] = r.value;
+                const a = (v: any) => (typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '—');
+                return `${a(last['aqu-sz'])} • ${a(last['%util'])}`;
+              })()}
+            </div>
+            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>aqu-sz • %util</div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Net Traffic</div>
+            <div style={{ fontWeight: 900, marginTop: 6 }}>
+              {(() => {
+                const last: Record<string, number> = {};
+                for (const r of netRows) last[r.series] = r.value;
+                const a = (v: any) => (typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '—');
+                return `${a(last['RX Mbps'])} • ${a(last['TX Mbps'])}`;
+              })()}
+            </div>
+            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>RX Mbps • TX Mbps</div>
+          </div>
+          <div style={S.card}>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Suricata</div>
+            <div style={{ fontWeight: 900, marginTop: 6 }}>
+              {(() => {
+                const last = suriRows.length ? suriRows[suriRows.length - 1].value : null;
+                return typeof last === 'number' && isFinite(last) ? last.toFixed(0) : '—';
+              })()}
+            </div>
+            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>alerts (bucketed)</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1.25fr 0.75fr', marginTop: 12 }}>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
+            <div style={S.card}>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>CPU Load</div>
+              <canvas ref={cpuRef} style={{ display: 'block', width: '100%' }} />
+            </div>
+            <div style={S.card}>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>Disk Queue</div>
+              <canvas ref={diskRef} style={{ display: 'block', width: '100%' }} />
+            </div>
+            <div style={S.card}>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>Net Traffic</div>
+              <canvas ref={netRef} style={{ display: 'block', width: '100%' }} />
+            </div>
+            <div style={S.card}>
+              <div style={{ fontWeight: 900, marginBottom: 8 }}>Suricata Alerts</div>
+              <canvas ref={suriRef} style={{ display: 'block', width: '100%' }} />
+            </div>
+          </div>
+
+          <div style={S.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+              <div style={{ fontWeight: 900 }}>Live feed</div>
+              <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12 }}>last 60m</div>
+            </div>
+            <div style={{ marginTop: 10, maxHeight: 520, overflow: 'auto' }}>
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>When</th>
+                    <th style={S.th}>Severity</th>
+                    <th style={S.th}>Title</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {feed.slice().reverse().map((e, idx) => (
+                    <tr key={idx}>
+                      <td style={S.td}>{fmtTs(e.ts)}</td>
+                      <td style={S.td}><SevBadge sev={e.severity} /></td>
+                      <td style={S.td} title={e.message || ''}>{e.title}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
+
+        {err && <div style={S.err}>{err}</div>}
       </div>
     </div>
   );
@@ -1008,7 +1371,7 @@ export function App() {
       {/* Body */}
       <div style={S.body}>
         <ApiKeyBanner />
-        {tab === 'home'    && <HomeTab />}
+        {tab === 'home'    && <HomeTab assets={assets} setTab={setTab} />}
         {tab === 'sources' && <SourcesTab setTab={setTab} />}
         {tab === 'nagios'  && <NagiosTab  assets={assets} />}
         {tab === 'events'  && <EventsTab  assets={assets} />}
