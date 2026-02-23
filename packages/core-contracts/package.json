@@ -16,5 +16,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo 'lint:todo'",
     "test": "echo 'test:todo'"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
   }
 }

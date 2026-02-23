@@ -12,6 +12,7 @@ import { ingestEventsHandler, ingestMetricsHandler } from './routes/ingest.js';
 import { catalogAssetsHandler, catalogMetricsHandler, catalogDimensionsHandler } from './routes/catalog.js';
 import { metricsHandler, metricsMiddleware } from './metrics.js';
 import { metricsPromHandler } from './metrics_prom.js';
+import { dashboardsRouter } from './routes/dashboards.js';
 import { startRollupWorker } from './rollup.js';
 import { pool } from './db.js';
 
@@ -48,6 +49,9 @@ app.post('/api/v1/query', a(queryHandler));
 // ingestion (MVP1)
 app.post('/api/v1/ingest/metrics', a(ingestMetricsHandler));
 app.post('/api/v1/ingest/events', a(ingestEventsHandler));
+
+// dashboards (AI builders should call validate/apply routes; the AI itself should live outside)
+app.use('/api/v1', dashboardsRouter());
 
 // Global error handler — catches ZodErrors (→ 400) and all other thrown errors (→ 500).
 // Must have 4 parameters for Express to recognise it as an error handler.

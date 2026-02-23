@@ -148,3 +148,6 @@ export interface QueryResponse {
     source_table?: 'metric_points' | 'metric_rollup_5m' | 'metric_rollup_1h';
   };
 }
+
+// Dashboard specs (for builders)
+export * from './dashboard.js';

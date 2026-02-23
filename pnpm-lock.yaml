@@ -67,7 +67,11 @@ importers:
         specifier: ^4.19.2
         version: 4.21.0
 
-  packages/core-contracts: {}
+  packages/core-contracts:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
   packages/engine:
     dependencies:
