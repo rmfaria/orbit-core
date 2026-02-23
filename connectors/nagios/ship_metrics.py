@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import os, json, re
+import os, json, re, fcntl
 from datetime import datetime, timezone
 import requests
 
@@ -65,7 +65,12 @@ def load_state():
     if not os.path.exists(STATE_PATH):
         return {"svc_offset": 0, "host_offset": 0}
     try:
-        st = json.load(open(STATE_PATH, "r"))
+        with open(STATE_PATH, "r") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                st = json.load(f)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
         return {
             "svc_offset":  int(st.get("svc_offset",  0)),
             "host_offset": int(st.get("host_offset", 0)),
@@ -75,9 +80,13 @@ def load_state():
 
 
 def save_state(st):
-    os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(STATE_PATH)), exist_ok=True)
     with open(STATE_PATH, "w") as f:
-        json.dump(st, f)
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            json.dump(st, f)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def read_new_lines(path, offset):

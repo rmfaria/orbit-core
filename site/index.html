@@ -52,7 +52,7 @@
           <div class="pill">Apache-2.0 • Postgres-first • Subpath-friendly</div>
           <h1>API-first telemetry core for <span class="grad">security & ops signals</span>.</h1>
           <p class="lead">
-            orbit-core ingests <strong>metrics</strong> and <strong>events</strong> (starting with Nagios; Wazuh next),
+            orbit-core ingests <strong>metrics</strong> and <strong>events</strong> from <strong>Nagios</strong> and <strong>Wazuh</strong>,
             stores them in <strong>Postgres</strong> with <strong>rollups + retention</strong>, and exposes a stable HTTP API
             for <strong>timeseries</strong>, <strong>events</strong> and <strong>multi-series group-by</strong> queries.
           </p>
@@ -111,8 +111,8 @@
               <text x="52" y="130" fill="#9fb0d9" font-size="13">perfdata + HARD events</text>
 
               <text x="52" y="265" font-weight="700">Wazuh</text>
-              <text x="52" y="290" fill="#9fb0d9" font-size="13">API + OpenSearch aggregates</text>
-              <text x="52" y="312" fill="#9fb0d9" font-size="13">(connector planned)</text>
+              <text x="52" y="290" fill="#9fb0d9" font-size="13">alerts.json → orbit events</text>
+              <text x="52" y="312" fill="#9fb0d9" font-size="13">severity + byte-offset state</text>
 
               <text x="312" y="185" font-weight="700">Connectors (no-AI)</text>
               <text x="312" y="210" fill="#9fb0d9" font-size="13">cron-friendly shippers</text>
@@ -306,11 +306,11 @@ pnpm dev
             </p>
           </article>
           <article class="card">
-            <div class="card__k">Planned</div>
-            <h3>Wazuh/OpenSearch connector</h3>
-            <p>MVP: windowed aggregates + Top‑N snapshots → canonical metrics/events.</p>
+            <div class="card__k">Ready</div>
+            <h3>Wazuh connector (Python)</h3>
+            <p>Ships Wazuh alerts from <code>alerts.json</code> into orbit-core events with severity mapping and byte-offset state tracking.</p>
             <p class="small">
-              Notes: <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/wazuh-queries.md" target="_blank" rel="noreferrer">docs/wazuh-queries.md</a>
+              Install guide: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/INSTALL.md" target="_blank" rel="noreferrer">connectors/wazuh/INSTALL.md</a>
             </p>
           </article>
         </div>
@@ -343,7 +343,7 @@ pnpm dev
       <div class="container">
         <h2>Roadmap</h2>
         <div class="cards">
-          <article class="card"><h3>Wazuh connector MVP</h3><p>Ingest OpenSearch aggregates and create canonical metrics/events.</p></article>
+          <article class="card"><h3>Event-metric correlation</h3><p>Automatically detect which metrics spiked when a Wazuh or Nagios alert fired. Surface correlated anomalies in the UI.</p></article>
           <article class="card"><h3>Dashboard builder</h3><p>Guided, dropdown-driven dashboards/widgets powered by catalog/tags.</p></article>
           <article class="card"><h3>Observability upgrades</h3><p>Route latency histograms, pg pool stats, richer internal metrics.</p></article>
           <article class="card"><h3>Storage adapters (optional)</h3><p>ClickHouse adapter for higher volumes (keep Postgres as default).</p></article>

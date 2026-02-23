@@ -6,15 +6,24 @@
 // Every 60 minutes: materialise metric_rollup_1h for the last 2 completed
 // 1-hour buckets.
 //
-// Both queries use INSERT … ON CONFLICT DO UPDATE so re-runs are idempotent.
+// Every 24 hours: purge old data via purge_old_data() (migration 0006).
+//
+// Both rollup queries use INSERT … ON CONFLICT DO UPDATE so re-runs are idempotent.
 
 import type { Pool } from 'pg';
 import pino from 'pino';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 'rollup' });
 
-const ROLLUP_5M_INTERVAL_MS = 5 * 60 * 1000;
-const ROLLUP_1H_INTERVAL_MS = 60 * 60 * 1000;
+const ROLLUP_5M_INTERVAL_MS  =  5 * 60 * 1000;
+const ROLLUP_1H_INTERVAL_MS  = 60 * 60 * 1000;
+const RETENTION_INTERVAL_MS  = 24 * 60 * 60 * 1000;
+
+// Retention windows — override via env vars (values in days).
+const RETAIN_RAW_DAYS     = Number(process.env.ORBIT_RETAIN_RAW_DAYS     ?? 14);
+const RETAIN_5M_DAYS      = Number(process.env.ORBIT_RETAIN_5M_DAYS      ?? 90);
+const RETAIN_1H_DAYS      = Number(process.env.ORBIT_RETAIN_1H_DAYS      ?? 180);
+const RETAIN_EVENTS_DAYS  = Number(process.env.ORBIT_RETAIN_EVENTS_DAYS  ?? 180);
 
 // Number of completed buckets to (re)compute on each run — handles late data.
 const LOOKBACK_BUCKETS_5M = 2;
@@ -101,9 +110,21 @@ async function runSafe(name: string, fn: () => Promise<void>): Promise<void> {
   }
 }
 
+async function purgeOldData(pool: Pool): Promise<void> {
+  const res = await pool.query(
+    `select * from purge_old_data($1, $2, $3, $4)`,
+    [RETAIN_RAW_DAYS, RETAIN_5M_DAYS, RETAIN_1H_DAYS, RETAIN_EVENTS_DAYS]
+  );
+  for (const row of res.rows) {
+    if (row.rows_deleted > 0) {
+      logger.info({ table: row.table_name, deleted: Number(row.rows_deleted) }, 'retention purge');
+    }
+  }
+}
+
 export function startRollupWorker(pool: Pool): () => void {
-  // Run both immediately on start (catches any gap since last restart), then
-  // on their respective intervals.
+  // Run rollups immediately on start (catches any gap since last restart),
+  // then on their respective intervals.
   runSafe('rollup_5m', () => rollup5m(pool));
 
   const t5m = setInterval(() => runSafe('rollup_5m', () => rollup5m(pool)), ROLLUP_5M_INTERVAL_MS);
@@ -112,11 +133,21 @@ export function startRollupWorker(pool: Pool): () => void {
   // Run 1h rollup once at start as well, offset by 30 s to avoid thundering.
   const t1hInit = setTimeout(() => runSafe('rollup_1h', () => rollup1h(pool)), 30_000);
 
-  logger.info('rollup worker started (5m + 1h)');
+  // Retention: run once at startup (offset 60 s) then every 24 h.
+  const tRetentionInit = setTimeout(() => runSafe('retention', () => purgeOldData(pool)), 60_000);
+  const tRetention = setInterval(() => runSafe('retention', () => purgeOldData(pool)), RETENTION_INTERVAL_MS);
+
+  logger.info(
+    { retain_raw_days: RETAIN_RAW_DAYS, retain_5m_days: RETAIN_5M_DAYS,
+      retain_1h_days: RETAIN_1H_DAYS, retain_events_days: RETAIN_EVENTS_DAYS },
+    'rollup worker started (5m + 1h + retention)'
+  );
 
   return () => {
     clearInterval(t5m);
     clearInterval(t1h);
+    clearInterval(tRetention);
     clearTimeout(t1hInit);
+    clearTimeout(tRetentionInit);
   };
 }

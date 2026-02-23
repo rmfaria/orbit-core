@@ -69,7 +69,12 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
     return (res as Response).status(400).json({ ok: false, error: 'sql language not enabled' });
   }
 
-  const q: OrbitQlQuery = typeof reqBody.query === 'string' ? JSON.parse(reqBody.query) : reqBody.query;
+  let q: OrbitQlQuery;
+  try {
+    q = typeof reqBody.query === 'string' ? JSON.parse(reqBody.query) : reqBody.query;
+  } catch {
+    return (res as Response).status(400).json({ ok: false, error: 'query is not valid JSON' });
+  }
 
   const aggExpr = (agg?: string) => {
     switch (agg) {
