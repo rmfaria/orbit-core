@@ -66,8 +66,10 @@ function apiGetHeaders(): HeadersInit {
 function drawChart(canvas: HTMLCanvasElement, rows: Row[]) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const w = canvas.width;
-  const h = canvas.height;
+  // We draw in CSS pixel coordinates (ctx is scaled in the resize step).
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(canvas.width / dpr));
+  const h = Math.max(1, Math.floor(canvas.height / dpr));
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#0b1220';
   ctx.fillRect(0, 0, w, h);
@@ -139,8 +141,10 @@ function drawChart(canvas: HTMLCanvasElement, rows: Row[]) {
 function drawMultiChart(canvas: HTMLCanvasElement, rows: MultiRow[]) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const w = canvas.width;
-  const h = canvas.height;
+  // We draw in CSS pixel coordinates (ctx is scaled in the resize step).
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(canvas.width / dpr));
+  const h = Math.max(1, Math.floor(canvas.height / dpr));
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#0b1220';
   ctx.fillRect(0, 0, w, h);
