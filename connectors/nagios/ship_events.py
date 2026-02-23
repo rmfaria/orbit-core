@@ -11,7 +11,9 @@ BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "200"))
 ORBIT_API = os.environ.get("ORBIT_API", "http://127.0.0.1:3000").rstrip("/")
 ENDPOINT  = f"{ORBIT_API}/api/v1/ingest/events"
 
-# Optional BasicAuth
+# Authentication — API key takes precedence over BasicAuth when both are set.
+ORBIT_API_KEY    = os.environ.get("ORBIT_API_KEY")
+# Optional BasicAuth (used when ORBIT_API_KEY is not set)
 ORBIT_BASIC_USER = os.environ.get("ORBIT_BASIC_USER")
 ORBIT_BASIC_PASS = os.environ.get("ORBIT_BASIC_PASS")
 ORBIT_BASIC      = os.environ.get("ORBIT_BASIC")
@@ -135,10 +137,13 @@ def main():
             "attributes":  j,
         })
 
-    s     = requests.Session()
-    basic = _load_basic_auth()
-    if basic:
-        s.auth = basic
+    s = requests.Session()
+    if ORBIT_API_KEY:
+        s.headers["X-Api-Key"] = ORBIT_API_KEY
+    else:
+        basic = _load_basic_auth()
+        if basic:
+            s.auth = basic
 
     for i in range(0, len(events), BATCH_SIZE):
         batch = events[i : i + BATCH_SIZE]
