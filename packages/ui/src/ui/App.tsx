@@ -1178,75 +1178,63 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
       </div>
 
       <div style={S.card}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        {/* Legacy-like header */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontWeight: 900 }}>Pulse (last 60m)</div>
-            <div style={{ color: 'rgba(233,238,255,0.70)', fontSize: 12, marginTop: 4 }}>
-              Asset: <span className="mono">{assetId || '—'}</span>
+            <div style={{ fontWeight: 900 }}>Pulse (últimos 60 min)</div>
+            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>
+              rows: {Math.max(cpuRows.length, diskRows.length, netRows.length, suriRows.length)} • last: {new Date().toLocaleString()}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-              {assets.map(a => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
-            </select>
-            <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(1)); setTo(new Date().toISOString()); }}>60m</button>
-            <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(6)); setTo(new Date().toISOString()); }}>6h</button>
-            <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(24)); setTo(new Date().toISOString()); }}>24h</button>
+            <div style={{ ...S.btnSm, display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ opacity: 0.7 }}>view</span>
+              <select style={{ ...S.select, border: 'none', padding: 0, background: 'transparent' }} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+                {assets.map(a => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
+              </select>
+            </div>
+            <div style={{ ...S.btnSm, display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ opacity: 0.7 }}>range</span>
+              <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(1)); setTo(new Date().toISOString()); }}>60m</button>
+              <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(6)); setTo(new Date().toISOString()); }}>6h</button>
+              <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(24)); setTo(new Date().toISOString()); }}>24h</button>
+            </div>
             <button style={S.btn} onClick={runPulse}>Refresh</button>
-            <button style={S.btnSm} onClick={() => setTab('nagios')}>Open Nagios</button>
+            <button style={S.btnSm} onClick={() => setTab('nagios')}>Nagios</button>
           </div>
         </div>
 
-        <div style={{ ...S.grid4, marginTop: 12 }}>
-          <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>CPU Load</div>
-            <div style={{ fontWeight: 900, marginTop: 6 }}>
-              {(() => {
-                const last: Record<string, number> = {};
-                for (const r of cpuRows) last[r.series] = r.value;
-                const a = (v: any) => (typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '—');
-                return `${a(last['load1'])} • ${a(last['load5'])} • ${a(last['load15'])}`;
-              })()}
-            </div>
-            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>load1 • load5 • load15</div>
-          </div>
-          <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Disk Queue</div>
-            <div style={{ fontWeight: 900, marginTop: 6 }}>
-              {(() => {
-                const last: Record<string, number> = {};
-                for (const r of diskRows) last[r.series] = r.value;
-                const a = (v: any) => (typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '—');
-                return `${a(last['aqu-sz'])} • ${a(last['%util'])}`;
-              })()}
-            </div>
-            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>aqu-sz • %util</div>
-          </div>
-          <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Net Traffic</div>
-            <div style={{ fontWeight: 900, marginTop: 6 }}>
-              {(() => {
-                const last: Record<string, number> = {};
-                for (const r of netRows) last[r.series] = r.value;
-                const a = (v: any) => (typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '—');
-                return `${a(last['RX Mbps'])} • ${a(last['TX Mbps'])}`;
-              })()}
-            </div>
-            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>RX Mbps • TX Mbps</div>
-          </div>
-          <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Suricata</div>
-            <div style={{ fontWeight: 900, marginTop: 6 }}>
-              {(() => {
-                const last = suriRows.length ? suriRows[suriRows.length - 1].value : null;
-                return typeof last === 'number' && isFinite(last) ? last.toFixed(0) : '—';
-              })()}
-            </div>
-            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>alerts (bucketed)</div>
-          </div>
+        {/* KPI strip (scrollable like legacy) */}
+        <div style={{ display: 'flex', gap: 12, marginTop: 12, overflowX: 'auto', paddingBottom: 6 }}>
+          {(() => {
+            const lastCpu: Record<string, number> = {};
+            for (const r of cpuRows) lastCpu[r.series] = r.value;
+            const lastDisk: Record<string, number> = {};
+            for (const r of diskRows) lastDisk[r.series] = r.value;
+            const lastNet: Record<string, number> = {};
+            for (const r of netRows) lastNet[r.series] = r.value;
+            const fmt = (v: any, d = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(d) : '—');
+            const suriLast = suriRows.length ? suriRows[suriRows.length - 1].value : null;
+
+            const kpis = [
+              { label: 'CPU Load', value: `${fmt(lastCpu['load1'])} • ${fmt(lastCpu['load5'])} • ${fmt(lastCpu['load15'])}`, hint: 'load1 • load5 • load15' },
+              { label: 'Disk Queue', value: `${fmt(lastDisk['aqu-sz'])} • ${fmt(lastDisk['%util'])}`, hint: 'aqu-sz • %util' },
+              { label: 'Net Traffic', value: `${fmt(lastNet['RX Mbps'])} • ${fmt(lastNet['TX Mbps'])}`, hint: 'RX Mbps • TX Mbps' },
+              { label: 'Suricata Alerts (5m)', value: fmt(suriLast, 0), hint: 'contador' },
+            ];
+
+            return kpis.map((k) => (
+              <div key={k.label} style={{ minWidth: 220, padding: 12, borderRadius: 16, border: '1px solid rgba(140,160,255,0.14)', background: 'rgba(3,6,18,0.35)' }}>
+                <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>{k.label}</div>
+                <div style={{ fontSize: 20, fontWeight: 900, marginTop: 8 }}>{k.value}</div>
+                <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)', marginTop: 6 }}>{k.hint}</div>
+              </div>
+            ));
+          })()}
         </div>
 
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1.25fr 0.75fr', marginTop: 12 }}>
+        {/* Legacy-like layout: charts (left) + feed (right) */}
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1.1fr .9fr', marginTop: 12 }}>
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
             <div style={S.card}>
               <div style={{ fontWeight: 900, marginBottom: 8 }}>CPU Load</div>
@@ -1268,28 +1256,26 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
 
           <div style={S.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-              <div style={{ fontWeight: 900 }}>Live feed</div>
-              <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12 }}>last 60m</div>
+              <div>
+                <div style={{ fontWeight: 900 }}>Nagios Live Feed</div>
+                <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>últimos eventos (inclui OK/UP)</div>
+              </div>
+              <div style={S.btnSm}>stream</div>
             </div>
-            <div style={{ marginTop: 10, maxHeight: 520, overflow: 'auto' }}>
-              <table style={S.table}>
-                <thead>
-                  <tr>
-                    <th style={S.th}>When</th>
-                    <th style={S.th}>Severity</th>
-                    <th style={S.th}>Title</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {feed.slice().reverse().map((e, idx) => (
-                    <tr key={idx}>
-                      <td style={S.td}>{fmtTs(e.ts)}</td>
-                      <td style={S.td}><SevBadge sev={e.severity} /></td>
-                      <td style={S.td} title={e.message || ''}>{e.title}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 560, overflow: 'auto' }}>
+              {feed.slice(0, 20).map((e, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', border: '1px solid rgba(140,160,255,0.12)', borderRadius: 14, background: 'rgba(3,6,18,0.35)' }}>
+                  <div style={{ minWidth: 56 }}>
+                    <SevBadge sev={e.severity} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <strong style={{ display: 'block' }}>{e.title}</strong>
+                    <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)', marginTop: 4, lineHeight: 1.3 }}>{e.message || ''}</div>
+                    <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.55)', marginTop: 6 }}>{fmtTs(e.ts)}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
