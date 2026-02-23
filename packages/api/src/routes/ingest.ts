@@ -3,8 +3,11 @@ import { z } from 'zod';
 import type { IngestEventsRequest, IngestMetricsRequest } from '@orbit/core-contracts';
 import { pool } from '../db.js';
 
+const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const isoTs = z.string().regex(ISO8601_RE, 'ts must be ISO 8601 with timezone (e.g. 2024-01-01T00:00:00Z)');
+
 const MetricPointSchema = z.object({
-  ts: z.string().min(1),
+  ts: isoTs,
   asset_id: z.string().min(1),
   namespace: z.string().min(1),
   metric: z.string().min(1),
@@ -14,7 +17,7 @@ const MetricPointSchema = z.object({
 });
 
 const EventSchema = z.object({
-  ts: z.string().min(1),
+  ts: isoTs,
   asset_id: z.string().min(1),
   namespace: z.string().min(1),
   kind: z.string().min(1),

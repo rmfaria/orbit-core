@@ -31,8 +31,14 @@ export const httpMetrics: HttpMetrics = {
   durationBuckets: new Map()
 };
 
+// Prevent unbounded growth from unexpected route variations (e.g. un-parameterised URLs).
+const MAX_HTTP_KEYS = 500;
+
 export function recordHttp(method: string, route: string, status: number, durationMs: number) {
   const key = `${method} ${route} ${status}`;
+
+  // Drop new keys once cap is reached to prevent memory leak.
+  if (!httpMetrics.total.has(key) && httpMetrics.total.size >= MAX_HTTP_KEYS) return;
 
   httpMetrics.total.set(key, (httpMetrics.total.get(key) ?? 0) + 1);
   httpMetrics.durationCount.set(key, (httpMetrics.durationCount.get(key) ?? 0) + 1);

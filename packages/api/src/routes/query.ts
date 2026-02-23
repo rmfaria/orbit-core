@@ -62,17 +62,11 @@ const QueryRequestSchema = z.object({
 
 export async function queryHandler(req: Request, res: Response<QueryResponse>) {
   const reqBody: QueryRequest = QueryRequestSchema.parse(req.body);
-  if (!pool) return res.status(500).json({ ok: true, result: { columns: [], rows: [] } });
+  if (!pool) return (res as Response).status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
   if (reqBody.language === 'sql') {
     // Intentionally disabled for now (avoid exposing raw SQL execution in MVP).
-    return res.status(400).json({
-      ok: true,
-      result: {
-        columns: [{ name: 'error', type: 'text' }],
-        rows: [{ error: 'sql language not enabled' }]
-      }
-    });
+    return (res as Response).status(400).json({ ok: false, error: 'sql language not enabled' });
   }
 
   const q: OrbitQlQuery = typeof reqBody.query === 'string' ? JSON.parse(reqBody.query) : reqBody.query;
