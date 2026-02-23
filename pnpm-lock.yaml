@@ -75,6 +75,25 @@ importers:
         specifier: workspace:*
         version: link:../core-contracts
 
+  packages/nagios-shipper:
+    dependencies:
+      '@orbit/core-contracts':
+        specifier: workspace:*
+        version: link:../core-contracts
+      pino:
+        specifier: ^9.5.0
+        version: 9.14.0
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.11
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+
   packages/storage-pg:
     dependencies:
       '@orbit/engine':
