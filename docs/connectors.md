@@ -2,12 +2,18 @@
 
 orbit-core is designed to ingest telemetry from multiple sources.
 
-## Nagios (official)
+## Nagios (primary / recommended)
 
-Use **@orbit/nagios-shipper** (`packages/nagios-shipper`).
+Use the **Python shippers** (deterministic, cron-friendly):
 
-It ships:
-- perfdata → `POST /api/v1/ingest/metrics`
-- HARD alerts from `nagios.log` → `POST /api/v1/ingest/events`
+- `connectors/nagios/ship_metrics.py` → `POST /api/v1/ingest/metrics`
+- `connectors/nagios/ship_events.py` → `POST /api/v1/ingest/events`
+
+See: `connectors/nagios/README.md`
+
+## Nagios (optional)
+
+TypeScript shipper package:
+- `packages/nagios-shipper`
 
 See: `packages/nagios-shipper/README.md`
