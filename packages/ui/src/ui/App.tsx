@@ -1,4 +1,9 @@
 import React from 'react';
+import { Chart, registerables } from 'chart.js';
+
+// Register Chart.js components once.
+Chart.register(...registerables);
+
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -982,6 +987,11 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const netRef = React.useRef<HTMLCanvasElement | null>(null);
   const suriRef = React.useRef<HTMLCanvasElement | null>(null);
 
+  const cpuChart = React.useRef<Chart | null>(null);
+  const diskChart = React.useRef<Chart | null>(null);
+  const netChart = React.useRef<Chart | null>(null);
+  const suriChart = React.useRef<Chart | null>(null);
+
   React.useEffect(() => {
     fetch('api/v1/health', { headers: apiGetHeaders() })
       .then((r) => r.json())
@@ -1115,26 +1125,179 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
 
-  function resizeAndDraw(ref: React.RefObject<HTMLCanvasElement>, kind: 'multi' | 'single', rows: any[]) {
-    const c = ref.current;
-    if (!c) return;
-    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-    c.style.width = '100%';
-    const cssW = c.offsetWidth || 800;
-    const cssH = 220;
-    c.style.height = `${cssH}px`;
-    c.width = cssW * dpr;
-    c.height = cssH * dpr;
-    const ctx = c.getContext('2d');
-    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (kind === 'multi') drawMultiChart(c, rows);
-    else drawChart(c, rows);
+  function glowGradient(ctx: CanvasRenderingContext2D, colorA: string, colorB: string) {
+    const g = ctx.createLinearGradient(0, 0, 0, 320);
+    g.addColorStop(0, colorA);
+    g.addColorStop(1, colorB);
+    return g;
   }
 
-  React.useEffect(() => { resizeAndDraw(cpuRef, 'multi', cpuRows); }, [cpuRows]);
-  React.useEffect(() => { resizeAndDraw(diskRef, 'multi', diskRows); }, [diskRows]);
-  React.useEffect(() => { resizeAndDraw(netRef, 'multi', netRows); }, [netRows]);
-  React.useEffect(() => { resizeAndDraw(suriRef, 'single', suriRows); }, [suriRows]);
+  function makeNeLineChart(canvas: HTMLCanvasElement, datasetCount: number) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const colors = ['rgba(85,243,255,.95)','rgba(155,124,255,.95)','rgba(255,93,214,.85)','rgba(255,211,106,.90)'];
+
+    const datasets = Array.from({ length: datasetCount }).map((_, i) => ({
+      label: `s${i+1}`,
+      data: [] as number[],
+      borderColor: colors[i % colors.length],
+      backgroundColor: i === 0 ? glowGradient(ctx,'rgba(85,243,255,.22)','rgba(85,243,255,0)') : 'rgba(0,0,0,0)',
+      tension: 0.38,
+      fill: i === 0,
+      pointRadius: 0,
+      borderWidth: 2,
+    }));
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 450 },
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            border: { display: false },
+            grid: { color: 'rgba(140,160,255,.05)', drawTicks: false },
+            ticks: {
+              color: 'rgba(233,238,255,.50)',
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 7,
+              padding: 6,
+              font: { size: 10, weight: '600' },
+            },
+          },
+          y: {
+            border: { display: false },
+            grid: { color: 'rgba(140,160,255,.07)', drawTicks: false },
+            ticks: {
+              color: 'rgba(233,238,255,.50)',
+              autoSkip: true,
+              maxTicksLimit: 5,
+              padding: 6,
+              font: { size: 10, weight: '600' },
+            },
+          },
+        },
+        plugins: {
+          legend: {
+            labels: {
+              color: 'rgba(233,238,255,.72)',
+              boxWidth: 10,
+              boxHeight: 10,
+              usePointStyle: true,
+              pointStyle: 'rectRounded',
+              padding: 14,
+              font: { size: 10, weight: '700' },
+            },
+          },
+          tooltip: {
+            backgroundColor: 'rgba(3,6,18,.92)',
+            borderColor: 'rgba(140,160,255,.25)',
+            borderWidth: 1,
+            titleColor: 'rgba(233,238,255,.9)',
+            bodyColor: 'rgba(233,238,255,.75)',
+          },
+        },
+      },
+      plugins: [{
+        id: 'neGlow',
+        beforeDatasetsDraw(c) {
+          const { ctx } = c;
+          ctx.save();
+          ctx.shadowColor = 'rgba(85,243,255,.28)';
+          ctx.shadowBlur = 18;
+        },
+        afterDatasetsDraw(c) {
+          c.ctx.restore();
+        },
+      }]
+    });
+
+    return chart;
+  }
+
+  function ensureCharts() {
+    if (cpuRef.current && !cpuChart.current) cpuChart.current = makeNeLineChart(cpuRef.current, 3);
+    if (diskRef.current && !diskChart.current) diskChart.current = makeNeLineChart(diskRef.current, 2);
+    if (netRef.current && !netChart.current) netChart.current = makeNeLineChart(netRef.current, 2);
+    if (suriRef.current && !suriChart.current) suriChart.current = makeNeLineChart(suriRef.current, 1);
+  }
+
+  React.useEffect(() => {
+    ensureCharts();
+    return () => {
+      cpuChart.current?.destroy(); cpuChart.current = null;
+      diskChart.current?.destroy(); diskChart.current = null;
+      netChart.current?.destroy(); netChart.current = null;
+      suriChart.current?.destroy(); suriChart.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function applyChart(chart: Chart | null, rows: MultiRow[] | Row[], labels: string[], seriesKeys: string[], seriesLabels: string[]) {
+    if (!chart) return;
+    chart.data.labels = labels;
+    for (let i = 0; i < seriesKeys.length; i++) {
+      const key = seriesKeys[i];
+      const lab = seriesLabels[i] ?? key;
+      const ds = chart.data.datasets[i];
+      if (!ds) continue;
+      ds.label = lab;
+      if ('series' in (rows[0] ?? {})) {
+        const rr = rows as MultiRow[];
+        const map = new Map<string, number[]>();
+        for (const r of rr) {
+          const arr = map.get(r.series) ?? [];
+          arr.push(r.value);
+          map.set(r.series, arr);
+        }
+        // safer: rebuild by label index
+        const values: number[] = [];
+        // build ts->value map for that series
+        const perTs = new Map<string, number>();
+        for (const r of rr) if (r.series === lab || r.series === key) perTs.set(r.ts, r.value);
+        for (const ts of labels) values.push(perTs.get(ts) ?? null as any);
+        (ds.data as any) = values;
+      } else {
+        const rr = rows as Row[];
+        (ds.data as any) = rr.map(r => r.value);
+      }
+    }
+    chart.update('none');
+  }
+
+  React.useEffect(() => {
+    ensureCharts();
+
+    const toLabel = (ts: string) => {
+      const d = new Date(ts);
+      return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    };
+
+    // CPU
+    const cpuTs = Array.from(new Set(cpuRows.map(r => r.ts))).sort((a,b)=>Date.parse(a)-Date.parse(b));
+    applyChart(cpuChart.current, cpuRows, cpuTs.map(toLabel), ['load1','load5','load15'], ['load1','load5','load15']);
+
+    // Disk
+    const diskTs = Array.from(new Set(diskRows.map(r => r.ts))).sort((a,b)=>Date.parse(a)-Date.parse(b));
+    applyChart(diskChart.current, diskRows, diskTs.map(toLabel), ['aqu-sz','%util'], ['aqu-sz','%util']);
+
+    // Net
+    const netTs = Array.from(new Set(netRows.map(r => r.ts))).sort((a,b)=>Date.parse(a)-Date.parse(b));
+    applyChart(netChart.current, netRows, netTs.map(toLabel), ['RX Mbps','TX Mbps'], ['RX Mbps','TX Mbps']);
+
+    // Suricata
+    const suriLabels = suriRows.map(r => toLabel(r.ts));
+    applyChart(suriChart.current, suriRows, suriLabels, ['alerts'], ['alerts']);
+
+  }, [cpuRows, diskRows, netRows, suriRows]);
 
   return (
     <div>

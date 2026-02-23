@@ -12,6 +12,7 @@
     "test": "echo 'test:todo'"
   },
   "dependencies": {
+    "chart.js": "^4.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
