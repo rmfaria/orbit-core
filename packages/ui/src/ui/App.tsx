@@ -51,11 +51,13 @@ const NS_COLOR: Record<string, string> = {
   nagios:    '#38bdf8',
   wazuh:     '#a78bfa',
   fortigate: '#fb923c',
+  n8n:       '#4ade80',
 };
 const NS_BG: Record<string, string> = {
   nagios:    '#0c1a3a',
   wazuh:     '#1e1040',
   fortigate: '#431407',
+  n8n:       '#052e16',
 };
 
 /** Maps a raw event to its display/filter source.
@@ -1077,7 +1079,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const [suriRows, setSuriRows] = React.useState<Row[]>([]);
   const [feed, setFeed] = React.useState<EventRow[]>([]);
   // selected namespaces for the consolidated feed
-  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate']);
+  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n']);
 
   // Layout: 'side' = charts left + feed right; 'cols1/2/3' = stacked with N charts per row
   const [chartLayout, setChartLayout] = React.useState<'side' | 'cols1' | 'cols2' | 'cols3'>('side');
@@ -1694,7 +1696,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 {/* source toggle pills — built from namespaces in feed + always show known ones */}
-                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate'])].sort().map(ns => {
+                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'n8n'])].sort().map(ns => {
                   const active = feedNs.includes(ns);
                   const color  = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
                   const bg     = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';
@@ -1935,6 +1937,30 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
               <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/ship_events.py" target="_blank" rel="noreferrer"
                 style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
                 ⚙ Conector
+              </a>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <button style={S.btn} onClick={() => setTab('events')}>Ver Eventos</button>
+            </div>
+          </div>
+          <div style={S.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ fontWeight: 900 }}>n8n</div>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>ATIVO</span>
+            </div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Falhas e execuções travadas de workflows (Error Trigger + polling)</div>
+            <div style={{ marginTop: 10, display: 'flex', gap: 14 }}>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/n8n/README.md" target="_blank" rel="noreferrer"
+                style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                📄 Manual
+              </a>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/n8n/ship_events.py" target="_blank" rel="noreferrer"
+                style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                ⚙ Conector
+              </a>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/n8n/orbit_error_reporter.json" target="_blank" rel="noreferrer"
+                style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                ⚡ Plug-and-play
               </a>
             </div>
             <div style={{ marginTop: 10 }}>
