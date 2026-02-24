@@ -202,10 +202,18 @@
   grid-template-columns: 1fr;
 }
 
-/* Wide charts grid (3 cols) used in 'below' layout for better use of full width */
-.orbit-charts-grid--wide {
-  grid-template-columns: 1fr 1fr 1fr;
-}
+/* Charts grid column variants (used in stacked layouts) */
+.orbit-charts-grid--1 { grid-template-columns: 1fr; }
+
+.orbit-charts-grid--2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 560px) { .orbit-charts-grid--2 { grid-template-columns: 1fr; } }
+
+.orbit-charts-grid--3 { grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 900px) { .orbit-charts-grid--3 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .orbit-charts-grid--3 { grid-template-columns: 1fr; } }
+
+/* keep old --wide alias for back-compat */
+.orbit-charts-grid--wide { grid-template-columns: 1fr 1fr 1fr; }
 @media (max-width: 900px) { .orbit-charts-grid--wide { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .orbit-charts-grid--wide { grid-template-columns: 1fr; } }
 

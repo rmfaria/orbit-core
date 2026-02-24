@@ -1068,8 +1068,8 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   // selected namespaces for the consolidated feed
   const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh']);
 
-  // Layout toggle: 'side' = charts left + feed right; 'below' = charts above + feed below
-  const [chartLayout, setChartLayout] = React.useState<'side' | 'below'>('side');
+  // Layout: 'side' = charts left + feed right; 'cols1/2/3' = stacked with N charts per row
+  const [chartLayout, setChartLayout] = React.useState<'side' | 'cols1' | 'cols2' | 'cols3'>('side');
 
   // Extra charts (up to 2, for a max total of 6)
   type ExtraChartCfg = { id: string; ns: string; metric: string; label: string };
@@ -1520,11 +1520,29 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: dbColor, display: 'inline-block' }} />
               <span>db: {health?.db ?? '…'}</span>
             </div>
-            <button className="orbit-pill" style={{ cursor: 'pointer', border: '1px solid rgba(140,160,255,.28)', background: 'rgba(85,243,255,.08)' }}
-              onClick={() => setChartLayout(l => l === 'side' ? 'below' : 'side')}
-              title="Alternar layout dos gráficos">
-              {chartLayout === 'side' ? '⊟ lado' : '⊞ abaixo'}
-            </button>
+            <div className="orbit-pill" style={{ padding: '3px 4px', gap: 2 }}>
+              {([
+                { key: 'side',  label: '▣',  title: 'Lado a lado' },
+                { key: 'cols1', label: '1×', title: '1 por linha' },
+                { key: 'cols2', label: '2×', title: '2 por linha' },
+                { key: 'cols3', label: '3×', title: '3 por linha' },
+              ] as const).map(({ key, label, title }) => {
+                const active = chartLayout === key;
+                return (
+                  <button key={key} onClick={() => setChartLayout(key)} title={title} style={{
+                    padding: '3px 9px',
+                    fontSize: 11,
+                    fontWeight: active ? 700 : 400,
+                    borderRadius: 999,
+                    border: 'none',
+                    background: active ? 'rgba(85,243,255,.18)' : 'transparent',
+                    color: active ? 'rgba(85,243,255,.95)' : 'rgba(233,238,255,.4)',
+                    cursor: 'pointer',
+                    transition: 'all .15s',
+                  }}>{label}</button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -1540,7 +1558,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
         </div>
 
         {/* Charts + feed */}
-        <div className={chartLayout === 'below' ? 'orbit-home-below' : 'orbit-home-main'} style={{ padding: '0 16px 16px' }}>
+        <div className={chartLayout === 'side' ? 'orbit-home-main' : 'orbit-home-below'} style={{ padding: '0 16px 16px' }}>
           {/* Charts section */}
           <div>
             {/* Add-chart bar */}
@@ -1599,7 +1617,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
             )}
 
             {/* Charts grid */}
-            <div className={`orbit-charts-grid${chartLayout === 'below' ? ' orbit-charts-grid--wide' : ''}`}>
+            <div className={`orbit-charts-grid${chartLayout === 'cols1' ? ' orbit-charts-grid--1' : chartLayout === 'cols2' ? ' orbit-charts-grid--2' : chartLayout === 'cols3' ? ' orbit-charts-grid--3' : ''}`}>
               {!hiddenFixed.includes('cpu') && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">CPU Load</div>
