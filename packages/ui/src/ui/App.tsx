@@ -1256,9 +1256,17 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function applyChart(chart: Chart | null, rows: MultiRow[] | Row[], labels: string[], seriesKeys: string[], seriesLabels: string[]) {
+  // isoToHHMM: converts ISO timestamp → "HH:MM" in local time, used for chart X-axis display.
+  const isoToHHMM = (ts: string) => {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+
+  // applyChart: isoTs = sorted unique ISO timestamps (used as lookup keys).
+  // chart.data.labels is set to HH:MM formatted strings for display.
+  function applyChart(chart: Chart | null, rows: MultiRow[] | Row[], isoTs: string[], seriesKeys: string[], seriesLabels: string[]) {
     if (!chart) return;
-    chart.data.labels = labels;
+    chart.data.labels = isoTs.map(isoToHHMM);
     for (let i = 0; i < seriesKeys.length; i++) {
       const key = seriesKeys[i];
       const lab = seriesLabels[i] ?? key;
@@ -1267,19 +1275,10 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
       ds.label = lab;
       if ('series' in (rows[0] ?? {})) {
         const rr = rows as MultiRow[];
-        const map = new Map<string, number[]>();
-        for (const r of rr) {
-          const arr = map.get(r.series) ?? [];
-          arr.push(r.value);
-          map.set(r.series, arr);
-        }
-        // safer: rebuild by label index
-        const values: number[] = [];
-        // build ts->value map for that series
+        // build ISO-ts → value map for this series
         const perTs = new Map<string, number>();
         for (const r of rr) if (r.series === lab || r.series === key) perTs.set(r.ts, r.value);
-        for (const ts of labels) values.push(perTs.get(ts) ?? null as any);
-        (ds.data as any) = values;
+        (ds.data as any) = isoTs.map(ts => perTs.get(ts) ?? null);
       } else {
         const rr = rows as Row[];
         (ds.data as any) = rr.map(r => r.value);
@@ -1291,26 +1290,21 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   React.useEffect(() => {
     ensureCharts();
 
-    const toLabel = (ts: string) => {
-      const d = new Date(ts);
-      return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    };
-
     // CPU
     const cpuTs = Array.from(new Set(cpuRows.map(r => r.ts))).sort((a,b)=>Date.parse(a)-Date.parse(b));
-    applyChart(cpuChart.current, cpuRows, cpuTs.map(toLabel), ['load1','load5','load15'], ['load1','load5','load15']);
+    applyChart(cpuChart.current, cpuRows, cpuTs, ['load1','load5','load15'], ['load1','load5','load15']);
 
     // Disk
     const diskTs = Array.from(new Set(diskRows.map(r => r.ts))).sort((a,b)=>Date.parse(a)-Date.parse(b));
-    applyChart(diskChart.current, diskRows, diskTs.map(toLabel), ['aqu-sz','%util'], ['aqu-sz','%util']);
+    applyChart(diskChart.current, diskRows, diskTs, ['aqu-sz','%util'], ['aqu-sz','%util']);
 
     // Net
     const netTs = Array.from(new Set(netRows.map(r => r.ts))).sort((a,b)=>Date.parse(a)-Date.parse(b));
-    applyChart(netChart.current, netRows, netTs.map(toLabel), ['RX Mbps','TX Mbps'], ['RX Mbps','TX Mbps']);
+    applyChart(netChart.current, netRows, netTs, ['RX Mbps','TX Mbps'], ['RX Mbps','TX Mbps']);
 
     // Suricata
-    const suriLabels = suriRows.map(r => toLabel(r.ts));
-    applyChart(suriChart.current, suriRows, suriLabels, ['alerts'], ['alerts']);
+    const suriTs = suriRows.map(r => r.ts);
+    applyChart(suriChart.current, suriRows, suriTs, ['alerts'], ['alerts']);
 
   }, [cpuRows, diskRows, netRows, suriRows]);
 
