@@ -48,13 +48,23 @@ const SEV_BG: Record<string, string> = {
 };
 
 const NS_COLOR: Record<string, string> = {
-  nagios: '#38bdf8',
-  wazuh:  '#a78bfa',
+  nagios:    '#38bdf8',
+  wazuh:     '#a78bfa',
+  fortigate: '#fb923c',
 };
 const NS_BG: Record<string, string> = {
-  nagios: '#0c1a3a',
-  wazuh:  '#1e1040',
+  nagios:    '#0c1a3a',
+  wazuh:     '#1e1040',
+  fortigate: '#431407',
 };
+
+/** Maps a raw event to its display/filter source.
+ *  Fortigate syslogs arrive with namespace='wazuh', kind='fortigate' —
+ *  we surface them as a distinct 'fortigate' source. */
+function eventSource(e: { namespace: string; kind: string }): string {
+  if (e.namespace === 'wazuh' && e.kind === 'fortigate') return 'fortigate';
+  return e.namespace;
+}
 
 const NAGIOS_STATE_COLOR: Record<string, string> = {
   OK:           '#4ade80',
@@ -439,7 +449,8 @@ function NsBadge({ ns }: { ns: string }) {
 
 function FeedRow({ e }: { e: EventRow }) {
   const [open, setOpen] = React.useState(false);
-  const expandable = e.namespace === 'wazuh' && !!e.message;
+  const src = eventSource(e);
+  const expandable = (src === 'wazuh' || src === 'fortigate') && !!e.message;
   const devname = e.message?.match(/devname="([^"]+)"/)?.[1] ?? null;
   return (
     <div
@@ -448,7 +459,7 @@ function FeedRow({ e }: { e: EventRow }) {
       style={{ cursor: expandable ? 'pointer' : 'default' }}
     >
       <SevBadge sev={e.severity} />
-      <NsBadge ns={e.namespace} />
+      <NsBadge ns={src} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <strong style={{ display: 'block' }}>{e.title}</strong>
         {devname && !open && (
@@ -1066,7 +1077,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const [suriRows, setSuriRows] = React.useState<Row[]>([]);
   const [feed, setFeed] = React.useState<EventRow[]>([]);
   // selected namespaces for the consolidated feed
-  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh']);
+  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate']);
 
   // Layout: 'side' = charts left + feed right; 'cols1/2/3' = stacked with N charts per row
   const [chartLayout, setChartLayout] = React.useState<'side' | 'cols1' | 'cols2' | 'cols3'>('side');
@@ -1683,7 +1694,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 {/* source toggle pills — built from namespaces in feed + always show known ones */}
-                {[...new Set([...feed.map(e => e.namespace), 'nagios', 'wazuh'])].sort().map(ns => {
+                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate'])].sort().map(ns => {
                   const active = feedNs.includes(ns);
                   const color  = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
                   const bg     = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';
@@ -1710,7 +1721,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
             </div>
             <div className="orbit-feed">
               {(() => {
-                const visible = feed.filter(e => feedNs.includes(e.namespace));
+                const visible = feed.filter(e => feedNs.includes(eventSource(e)));
                 if (visible.length === 0) return (
                   <div style={{ color: 'rgba(233,238,255,.45)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
                     Nenhum evento no período
