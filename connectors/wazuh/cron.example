@@ -1,5 +1,9 @@
-# Wazuh → orbit-core event shipper — cron example
-# Run every minute as root (adjust paths and auth)
+# Wazuh → orbit-core — cron examples
+# Choose ONE approach depending on your deployment:
+
+# ── OPTION A: Passive (file-based) ───────────────────────────────────────────
+# Use when orbit-core runs on the SAME host as the Wazuh Manager.
+# Reads /var/ossec/logs/alerts/alerts.json directly (no credentials needed).
 
 * * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
@@ -9,3 +13,21 @@
   STATE_PATH=/var/lib/orbit-core/wazuh-events.state.json \
   python3 /opt/orbit-core/connectors/wazuh/ship_events.py \
   >>/var/log/orbit-core/wazuh_shipper.log 2>&1
+
+# ── OPTION B: Active (OpenSearch / Wazuh Indexer) ────────────────────────────
+# Use when Wazuh Manager is on a DIFFERENT host with OpenSearch/Wazuh Indexer.
+# Queries OpenSearch directly using search_after pagination.
+
+*/2 * * * * root \
+  ORBIT_API=https://prod.example.com/orbit-core \
+  ORBIT_BASIC_USER=orbitadmin \
+  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  OPENSEARCH_URL=https://wazuh-manager:9200 \
+  OPENSEARCH_USER=admin \
+  OPENSEARCH_PASS=admin \
+  OPENSEARCH_VERIFY_TLS=false \
+  WAZUH_OS_INDEX_PATTERN=wazuh-alerts-4.x-* \
+  MIN_LEVEL=3 \
+  STATE_PATH=/var/lib/orbit-core/wazuh-opensearch-events.state.json \
+  python3 /opt/orbit-core/connectors/wazuh/ship_events_opensearch.py \
+  >>/var/log/orbit-core/wazuh_os_shipper.log 2>&1
