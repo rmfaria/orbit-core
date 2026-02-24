@@ -963,17 +963,17 @@ function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string
 
   React.useEffect(() => { load(); }, [namespace, from, to]);
 
-  // Create Chart.js instance once canvas is mounted
+  // Create Chart.js instance once canvas is mounted (canvas is always in DOM)
   React.useEffect(() => {
     if (!canvasRef.current) return;
-    if (!chartRef.current) chartRef.current = makeNeLineChart(canvasRef.current, 1);
+    chartRef.current = makeNeLineChart(canvasRef.current, 1);
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
   }, []);
 
   // Update chart data whenever rows change
   React.useEffect(() => {
     const chart = chartRef.current;
-    if (!chart || !rows.length) return;
+    if (!chart) return;
     const isoToHHMM = (ts: string) => {
       const d = new Date(ts);
       return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -985,6 +985,7 @@ function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string
   }, [rows]);
 
   const bucketLabel = bucketSec >= 3600 ? `${bucketSec / 3600}h` : bucketSec >= 60 ? `${bucketSec / 60}min` : `${bucketSec}s`;
+  const isEmpty = !loading && rows.length === 0;
 
   if (variant === 'chart-box') {
     return (
@@ -993,10 +994,13 @@ function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string
           EPS — Wazuh{loading ? ' · …' : ''} · bucket: {bucketLabel}
         </div>
         <div className="orbit-chart-canvas-wrap">
-          {!loading && rows.length === 0
-            ? <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>Sem dados no período</div>
-            : <canvas ref={canvasRef} />
-          }
+          {/* canvas always in DOM so Chart.js can attach on mount */}
+          <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block' }} />
+          {isEmpty && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>
+              Sem dados no período
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1008,11 +1012,14 @@ function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string
         <span style={{ fontWeight: 700, fontSize: 13 }}>EPS — Eventos por segundo</span>
         <span style={{ fontSize: 11, color: '#94a3b8' }}>bucket: {bucketLabel}{loading ? ' · carregando…' : ''}</span>
       </div>
-      {!loading && rows.length === 0 ? (
-        <div style={{ height: 40, display: 'flex', alignItems: 'center', color: '#64748b', fontSize: 12 }}>Sem dados no período</div>
-      ) : (
-        <canvas ref={canvasRef} />
-      )}
+      <div style={{ position: 'relative', height: 160 }}>
+        <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block', width: '100%', height: '100%' }} />
+        {isEmpty && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', color: '#64748b', fontSize: 12 }}>
+            Sem dados no período
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1974,7 +1981,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               )}
               {/* EPS chart spanning full width */}
               <div style={{ gridColumn: '1 / -1' }}>
-                <EpsChart namespace="wazuh" from={from} to={to} variant="chart-box" />
+                <EpsChart namespace="wazuh" from={relativeFrom(24)} to={new Date().toISOString()} variant="chart-box" />
               </div>
             </div>
           </div>
