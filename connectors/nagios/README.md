@@ -63,9 +63,10 @@ unless you update the shipper to match.
 
 ### Orbit destination
 - `ORBIT_API` (default: `http://127.0.0.1:3000`)
-- `ORBIT_BASIC_USER` / `ORBIT_BASIC_PASS` (optional)
-- `ORBIT_BASIC` (optional, `user:pass`)
-- `ORBIT_BASIC_FILE` (optional, path containing password)
+- `ORBIT_API_KEY` — API Key (`X-Api-Key` header) — **recomendado**
+- `ORBIT_BASIC_USER` / `ORBIT_BASIC_PASS` (legado, BasicAuth)
+- `ORBIT_BASIC` (legado, `user:pass`)
+- `ORBIT_BASIC_FILE` (legado, path containing password)
 
 ### Perfdata shipper (metrics)
 - `NAGIOS_SERVICE_PERFDATA_FILE` (default: `/var/lib/nagios4/service-perfdata.out`)
@@ -115,7 +116,7 @@ unless you update the shipper to match.
 
 ```bash
 # Confirmar que eventos chegam no orbit-core (namespace=nagios)
-curl -s -u orbitadmin:PASS \
+curl -s -H "X-Api-Key: <sua-chave>" \
   -X POST https://prod.example.com/orbit-core/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{

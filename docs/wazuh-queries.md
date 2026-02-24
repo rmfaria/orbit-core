@@ -1,94 +1,150 @@
-# Wazuh Query Examples (Postgres JSONB)
+# Wazuh — Query Examples (OrbitQL)
 
-These examples assume Wazuh events are inserted into:
+Exemplos de queries para o namespace `wazuh` via `POST /api/v1/query`.
 
-- table: `events`
-- column: `raw jsonb`
+## Autenticação
 
-and that some promoted columns exist (`agent_id`, `rule_id`, `level`, `event_time`).
+```bash
+# API Key (recomendado)
+-H "X-Api-Key: <sua-chave>"
 
-## Insert example (manual)
-
-```sql
-insert into events(source, event_time, agent_id, rule_id, level, raw)
-values (
-  'wazuh',
-  now(),
-  '001',
-  '5715',
-  10,
-  '{"rule": {"id": "5715", "level": 10}, "agent": {"id": "001"}, "data": {"srcip": "10.0.0.5"}}'::jsonb
-);
+# BasicAuth (legado)
+-u orbitadmin:PASS
 ```
 
-## 1) Latest high-severity alerts
+---
 
-```sql
-select id, event_time, agent_id, rule_id, level, raw
-from events
-where level >= 10
-order by event_time desc nulls last
-limit 100;
+## 1) Últimos alertas (qualquer severidade)
+
+```bash
+curl -s -H "X-Api-Key: <chave>" \
+  -X POST https://prod.example.com/orbit-core/api/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": {
+      "kind": "events",
+      "namespace": "wazuh",
+      "from": "'"$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)"'",
+      "to":   "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+      "limit": 50
+    }
+  }'
 ```
 
-## 2) Top rules by count (last 24h)
+## 2) Alertas de alta/crítica severidade
 
-```sql
-select rule_id, count(*)
-from events
-where event_time >= now() - interval '24 hours'
-group by rule_id
-order by count(*) desc
-limit 20;
+```json
+{
+  "query": {
+    "kind": "events",
+    "namespace": "wazuh",
+    "from": "2026-02-24T00:00:00Z",
+    "to":   "2026-02-25T00:00:00Z",
+    "severities": ["high", "critical"],
+    "limit": 100
+  }
+}
 ```
 
-## 3) Alerts by agent
+## 3) Alertas de um agente específico
 
-```sql
-select agent_id, count(*)
-from events
-where level >= 7
-group by agent_id
-order by count(*) desc;
+```json
+{
+  "query": {
+    "kind": "events",
+    "namespace": "wazuh",
+    "asset_id": "host:meu-servidor",
+    "from": "2026-02-24T00:00:00Z",
+    "to":   "2026-02-25T00:00:00Z",
+    "limit": 200
+  }
+}
 ```
 
-## 4) Extract nested JSON fields
+## 4) Apenas eventos Fortigate (via Wazuh)
 
-Example: `raw->'data'->>'srcip'`
-
-```sql
-select
-  raw->'data'->>'srcip' as src_ip,
-  count(*)
-from events
-where raw->'data' ? 'srcip'
-group by 1
-order by 2 desc
-limit 50;
+```json
+{
+  "query": {
+    "kind": "events",
+    "namespace": "wazuh",
+    "kinds": ["fortigate"],
+    "from": "2026-02-24T00:00:00Z",
+    "to":   "2026-02-25T00:00:00Z",
+    "limit": 100
+  }
+}
 ```
 
-## 5) Failed logins (example pattern)
+## 5) EPS — Eventos por segundo (último 1h, bucket de 1 min)
 
-This depends on Wazuh rules/decoders in your environment.
-
-```sql
-select event_time, agent_id, raw
-from events
-where raw->'rule'->>'id' in ('5715','5716')
-order by event_time desc
-limit 200;
+```json
+{
+  "query": {
+    "kind": "event_count",
+    "namespace": "wazuh",
+    "from": "2026-02-24T11:00:00Z",
+    "to":   "2026-02-24T12:00:00Z",
+    "bucket_sec": 60
+  }
+}
 ```
 
-## Suggested indexes (future)
-
-- GIN on `raw` for JSONB containment queries:
-
-```sql
-create index if not exists idx_events_raw_gin on events using gin (raw);
+Resposta:
+```json
+{
+  "ok": true,
+  "result": {
+    "columns": [{"name": "ts", "type": "timestamptz"}, {"name": "value", "type": "float8"}],
+    "rows": [
+      {"ts": "2026-02-24T11:00:00Z", "value": 2.5},
+      {"ts": "2026-02-24T11:01:00Z", "value": 1.8},
+      ...
+    ]
+  },
+  "meta": {"effective_bucket_sec": 60}
+}
 ```
 
-- Expression indexes for common paths:
+`value` = eventos por segundo (count / bucket_sec).
 
-```sql
-create index if not exists idx_events_srcip on events ((raw->'data'->>'srcip'));
+## 6) Autenticação — seleção automática de bucket
+
+Omitir `bucket_sec` — o backend seleciona automaticamente com base no range:
+
+```json
+{
+  "query": {
+    "kind": "event_count",
+    "namespace": "wazuh",
+    "from": "2026-02-17T00:00:00Z",
+    "to":   "2026-02-24T00:00:00Z"
+  }
+}
 ```
+
+---
+
+## Mapeamento de campos
+
+| Campo orbit-core | Origem no alerta Wazuh |
+|-----------------|------------------------|
+| `ts` | `timestamp` |
+| `asset_id` | `host:<agent.name>` |
+| `namespace` | `"wazuh"` (fixo) |
+| `kind` | `rule.groups[0]` |
+| `severity` | mapeado de `rule.level` (0–15) |
+| `title` | `rule.description` |
+| `message` | `full_log` |
+| `fingerprint` | `agent.id:rule.id:alert.id` |
+| `attributes` | `rule.*`, `agent.*`, `data.*` |
+
+**Severidade por nível:**
+
+| Level | Severity |
+|-------|---------|
+| 0–3 | `info` |
+| 4–6 | `low` |
+| 7–10 | `medium` |
+| 11–13 | `high` |
+| 14–15 | `critical` |

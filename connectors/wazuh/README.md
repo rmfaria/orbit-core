@@ -85,22 +85,26 @@ para surfaceá-los como fonte distinta no live feed e no filtro de eventos.
 | Variable | Default | Description |
 |---|---|---|
 | `ORBIT_API` | `http://127.0.0.1:3000` | orbit-core API base URL |
+| `ORBIT_API_KEY` | — | API Key (`X-Api-Key` header) — **recomendado** |
 | `WAZUH_ALERTS_JSON` | `/var/ossec/logs/alerts/alerts.json` | Path to Wazuh alerts JSONL file |
 | `STATE_PATH` | `/var/lib/orbit-core/wazuh-events.state.json` | File position state |
-| `MAX_BYTES_PER_RUN` | `5242880` (5 MB) | Max bytes to read per cron run |
-| `BATCH_SIZE` | `200` | Events per API request |
-| `ORBIT_BASIC_USER` | — | BasicAuth username |
-| `ORBIT_BASIC_PASS` | — | BasicAuth password (prefer `ORBIT_BASIC_FILE`) |
-| `ORBIT_BASIC` | — | `user:pass` combined |
-| `ORBIT_BASIC_FILE` | — | Path to file containing the password |
+| `MAX_BYTES_PER_RUN` | `5242880` (5 MB) | Max bytes to read per cron run. Use `52428800` (50 MB) em produção com alto volume |
+| `BATCH_SIZE` | `200` | Events per API request. Manter ≤ 100 para eventos grandes (Wazuh) — a API tem limite de 1 MB por request |
+| `ORBIT_BASIC_USER` | — | BasicAuth username (legado, use `ORBIT_API_KEY`) |
+| `ORBIT_BASIC_PASS` | — | BasicAuth password (legado) |
+| `ORBIT_BASIC` | — | `user:pass` combined (legado) |
+| `ORBIT_BASIC_FILE` | — | Path to file containing the password (legado) |
 
 ## Cron example
 
 ```cron
 * * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_BASIC_USER=orbitadmin \
-  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  ORBIT_API_KEY=<sua-chave> \
+  WAZUH_ALERTS_JSON=/var/ossec/logs/alerts/alerts.json \
+  STATE_PATH=/var/lib/orbit-core/wazuh-events.state.json \
+  MAX_BYTES_PER_RUN=52428800 \
+  BATCH_SIZE=100 \
   python3 /opt/orbit-core/connectors/wazuh/ship_events.py \
   >>/var/log/orbit-core/wazuh_shipper.log 2>&1
 ```
@@ -111,7 +115,7 @@ See `cron.example` for the full example.
 
 ```bash
 # Confirmar que alertas estão chegando no orbit-core (namespace=wazuh)
-curl -s -u orbitadmin:PASS \
+curl -s -H "X-Api-Key: <sua-chave>" \
   -X POST https://prod.example.com/orbit-core/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{

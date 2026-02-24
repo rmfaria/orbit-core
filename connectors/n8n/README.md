@@ -61,10 +61,11 @@ Não lê arquivos locais — pode rodar em qualquer servidor com acesso de rede 
 | `LOOKBACK_MINUTES` | `60` | Janela inicial na ausência de state file |
 | `STATE_PATH` | `/var/lib/orbit-core/n8n-events.state.json` | Arquivo de estado |
 | `ORBIT_API` | `http://127.0.0.1:3000` | URL base do orbit-core |
-| `ORBIT_BASIC_USER` | — | Usuário BasicAuth |
-| `ORBIT_BASIC_PASS` | — | Senha BasicAuth (prefira `ORBIT_BASIC_FILE`) |
-| `ORBIT_BASIC` | — | `user:pass` combinado |
-| `ORBIT_BASIC_FILE` | — | Caminho para arquivo contendo a senha |
+| `ORBIT_API_KEY` | — | API Key (`X-Api-Key` header) — **recomendado** |
+| `ORBIT_BASIC_USER` | — | Usuário BasicAuth (legado) |
+| `ORBIT_BASIC_PASS` | — | Senha BasicAuth (legado) |
+| `ORBIT_BASIC` | — | `user:pass` combinado (legado) |
+| `ORBIT_BASIC_FILE` | — | Caminho para arquivo contendo a senha (legado) |
 
 ## Como o state file funciona
 
@@ -92,7 +93,7 @@ orbit-core deduplique — o evento é atualizado em vez de criar duplicatas.
 
 ```bash
 # Confirmar que eventos chegam no orbit-core (namespace=n8n)
-curl -s -u orbitadmin:PASS \
+curl -s -H "X-Api-Key: <sua-chave>" \
   -X POST https://prod.example.com/orbit-core/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
@@ -118,10 +119,9 @@ tail -20 /var/log/orbit-core/n8n_shipper.log
 ```cron
 * * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_BASIC_USER=orbitadmin \
-  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  ORBIT_API_KEY=<sua-chave> \
   N8N_URL=http://localhost:5678 \
-  N8N_API_KEY=sua-api-key-aqui \
+  N8N_API_KEY=<n8n-api-key> \
   STATE_PATH=/var/lib/orbit-core/n8n-events.state.json \
   python3 /opt/orbit-core/connectors/n8n/ship_events.py \
   >>/var/log/orbit-core/n8n_shipper.log 2>&1
@@ -134,7 +134,7 @@ Veja `cron.example` para o exemplo completo.
 1. No n8n, acesse **Workflows → Import from File**
 2. Selecione `orbit_error_reporter.json`
 3. Abra o node **Build Orbit Event** (Code)
-4. Edite as 3 linhas `TODO` no topo: `ORBIT_API_URL`, `ORBIT_BASIC_USER`, `ORBIT_BASIC_PASS`
+4. Edite as linhas `TODO` no topo: `ORBIT_API_URL` e `ORBIT_API_KEY` (ou `ORBIT_BASIC_USER`/`ORBIT_BASIC_PASS` para BasicAuth legado)
 5. Salve e **ative** o workflow
 6. Anote o ID do workflow (aparece na URL: `/workflow/<ID>`)
 

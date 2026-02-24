@@ -2,26 +2,30 @@
 # Choose ONE approach depending on your deployment:
 
 # ── OPTION A: Passive (file-based) ───────────────────────────────────────────
-# Use when orbit-core runs on the SAME host as the Wazuh Manager.
-# Reads /var/ossec/logs/alerts/alerts.json directly (no credentials needed).
+# Use when the connector runs on the SAME host as the Wazuh Manager.
+# Reads /var/ossec/logs/alerts/alerts.json directly.
+# MAX_BYTES_PER_RUN=52428800 (50MB) recommended for high-volume environments.
+# BATCH_SIZE=100 to stay under the 1MB API payload limit for large Wazuh events.
 
 * * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_BASIC_USER=orbitadmin \
-  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  ORBIT_API_KEY=<sua-chave> \
   WAZUH_ALERTS_JSON=/var/ossec/logs/alerts/alerts.json \
   STATE_PATH=/var/lib/orbit-core/wazuh-events.state.json \
+  MAX_BYTES_PER_RUN=52428800 \
+  BATCH_SIZE=100 \
   python3 /opt/orbit-core/connectors/wazuh/ship_events.py \
   >>/var/log/orbit-core/wazuh_shipper.log 2>&1
 
 # ── OPTION B: Active (OpenSearch / Wazuh Indexer) ────────────────────────────
 # Use when Wazuh Manager is on a DIFFERENT host with OpenSearch/Wazuh Indexer.
-# Queries OpenSearch directly using search_after pagination.
+# NOTE: OpenSearch often listens on 127.0.0.1:9200 only — check with:
+#   ss -tlnp | grep 9200
+# If loopback only, use OPTION A (run on the Wazuh Manager host).
 
 */2 * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_BASIC_USER=orbitadmin \
-  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  ORBIT_API_KEY=<sua-chave> \
   OPENSEARCH_URL=https://wazuh-manager:9200 \
   OPENSEARCH_USER=admin \
   OPENSEARCH_PASS=admin \
