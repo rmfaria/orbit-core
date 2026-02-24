@@ -784,6 +784,7 @@ function EventsTab({ assets }: { assets: AssetOpt[] }) {
               <option value="">— Todos —</option>
               <option value="nagios">nagios</option>
               <option value="wazuh">wazuh</option>
+              <option value="n8n">n8n</option>
             </select>
           </label>
           <label style={S.label}>
