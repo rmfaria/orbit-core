@@ -22,6 +22,26 @@ Ships **Wazuh alerts** into orbit-core as normalized events.
 - Read access to the Wazuh `alerts.json` file
 - Network access to orbit-core API
 
+### Onde o conector deve rodar
+
+O conector passivo (`ship_events.py`) lê `/var/ossec/logs/alerts/alerts.json`
+diretamente do disco — **deve rodar no mesmo servidor que o Wazuh Manager**.
+
+### Permissão de leitura no `alerts.json`
+
+O arquivo pertence ao grupo `wazuh` (modo 0640). O usuário que executa o cron
+precisa estar nesse grupo:
+
+```bash
+usermod -aG wazuh <usuario-do-cron>
+# Verificar:
+id <usuario-do-cron>   # deve listar 'wazuh' nos grupos
+ls -la /var/ossec/logs/alerts/alerts.json
+# -rw-r----- 1 wazuh wazuh ...
+```
+
+Se o cron rodar como `root`, basta adicionar `root` ao grupo `wazuh`.
+
 ## Data mapping
 
 | Wazuh field | orbit-core field |
@@ -35,6 +55,20 @@ Ships **Wazuh alerts** into orbit-core as normalized events.
 | `full_log` | `message` |
 | `agent.id:rule.id:alert.id` | `fingerprint` |
 | `rule.*`, `agent.*`, `data.*` | `attributes` |
+
+### Como o campo `kind` é definido
+
+O `kind` do evento orbit-core é mapeado de `rule.groups[0]` do alerta Wazuh:
+
+```
+rule.groups = ["syslog", "sudo"]      →  kind = "syslog"
+rule.groups = ["fortigate", "ids"]    →  kind = "fortigate"
+rule.groups = ["authentication_fail"] →  kind = "authentication_fail"
+```
+
+Isso significa que **eventos de Fortigate** (syslog → Wazuh → orbit-core) chegam
+com `namespace=wazuh` e `kind=fortigate`. A UI do orbit-core usa essa combinação
+para surfaceá-los como fonte distinta no live feed e no filtro de eventos.
 
 **Severity mapping (rule.level):**
 
@@ -73,10 +107,33 @@ Ships **Wazuh alerts** into orbit-core as normalized events.
 
 See `cron.example` for the full example.
 
+## Verificação
+
+```bash
+# Confirmar que alertas estão chegando no orbit-core (namespace=wazuh)
+curl -s -u orbitadmin:PASS \
+  -X POST https://prod.example.com/orbit-core/api/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query":{
+      "kind":"events",
+      "namespace":"wazuh",
+      "from":"'"$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)"'",
+      "to":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+      "limit":5
+    }
+  }'
+
+# Verificar state file e log do cron no servidor Wazuh Manager
+cat /var/lib/orbit-core/wazuh-events.state.json
+tail -20 /var/log/orbit-core/wazuh_shipper.log
+```
+
 ## Notes
 
 - Designed to be **deterministic / no-AI** — safe to run from cron.
-- Tracks byte offset in a state file; detects log rotation automatically.
+- Tracks byte offset in a state file; detects log rotation automatically (offset > file size → reset to 0).
+- O `alerts.json` é rotacionado diariamente pelo Wazuh; o state file persiste entre rotações via reset automático.
 - Do not commit secrets — use `ORBIT_BASIC_FILE`.
 
 ---
