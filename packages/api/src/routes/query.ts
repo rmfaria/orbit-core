@@ -52,7 +52,17 @@ const EventsQuerySchema = z.object({
   limit: z.number().int().positive().max(10000).optional()
 });
 
-const OrbitQlQuerySchema = z.discriminatedUnion('kind', [TimeseriesQuerySchema, TimeseriesMultiQuerySchema, EventsQuerySchema]);
+const EventCountQuerySchema = z.object({
+  kind: z.literal('event_count'),
+  namespace: z.string().min(1).optional(),
+  asset_id: z.string().min(1).optional(),
+  severities: z.array(z.enum(['info', 'low', 'medium', 'high', 'critical'])).optional(),
+  from: z.string().min(1),
+  to: z.string().min(1),
+  bucket_sec: z.number().int().positive().max(86400).optional(),
+});
+
+const OrbitQlQuerySchema = z.discriminatedUnion('kind', [TimeseriesQuerySchema, TimeseriesMultiQuerySchema, EventsQuerySchema, EventCountQuerySchema]);
 
 const QueryRequestSchema = z.object({
   language: z.enum(['sql', 'orbitql']).default('orbitql'),
@@ -503,6 +513,39 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
         mode: useBucket ? 'bucketed' : 'raw',
         source_table: src.table as any
       }
+    });
+  }
+
+  // event_count — bucketed EPS
+  if (q.kind === 'event_count') {
+    const bucketSec = q.bucket_sec ?? chooseBucket(q.from, q.to);
+    const bucket = `${bucketSec} seconds`;
+    const params: any[] = [bucket, bucketSec, q.from, q.to];
+    const where: string[] = ['ts >= $3::timestamptz', 'ts <= $4::timestamptz'];
+
+    if (q.namespace)          { params.push(q.namespace);   where.push(`namespace = $${params.length}`); }
+    if (q.asset_id)           { params.push(q.asset_id);    where.push(`asset_id = $${params.length}`); }
+    if (q.severities?.length) { params.push(q.severities);  where.push(`severity = any($${params.length}::text[])`); }
+
+    params.push(10000);
+    const sql = `
+      select
+        date_bin($1::interval, ts, '1970-01-01'::timestamptz) as ts,
+        count(*)::float / $2 as value
+      from orbit_events
+      where ${where.join(' and ')}
+      group by 1
+      order by 1 asc
+      limit $${params.length}`;
+
+    const r = await pool.query(sql, params);
+    return res.json({
+      ok: true,
+      result: {
+        columns: [{ name: 'ts', type: 'timestamptz' }, { name: 'value', type: 'float8' }],
+        rows: r.rows
+      },
+      meta: { effective_bucket_sec: bucketSec }
     });
   }
 

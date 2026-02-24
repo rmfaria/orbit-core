@@ -930,6 +930,64 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
   );
 }
 
+// ─── EPS CHART ────────────────────────────────────────────────────────────────
+
+function EpsChart({ namespace, from, to }: { namespace: string; from: string; to: string }) {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const [rows, setRows]         = React.useState<Row[]>([]);
+  const [bucketSec, setBucketSec] = React.useState<number>(60);
+  const [loading, setLoading]   = React.useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const q: any = { kind: 'event_count', from, to };
+      if (namespace) q.namespace = namespace;
+      const r = await fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) });
+      const j = await r.json();
+      if (j.ok) {
+        setRows(j.result.rows ?? []);
+        setBucketSec(j.meta?.effective_bucket_sec ?? 60);
+      }
+    } catch { /* silent */ } finally {
+      setLoading(false);
+    }
+  }
+
+  React.useEffect(() => { load(); }, [namespace, from, to]);
+
+  React.useEffect(() => {
+    const c = canvasRef.current;
+    if (!c || !rows.length) return;
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    c.style.width = '100%';
+    const cssW = c.offsetWidth || 900;
+    const cssH = 160;
+    c.style.height = `${cssH}px`;
+    c.width = cssW * dpr;
+    c.height = cssH * dpr;
+    const ctx = c.getContext('2d');
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawChart(c, rows);
+  }, [rows]);
+
+  const bucketLabel = bucketSec >= 3600 ? `${bucketSec / 3600}h` : bucketSec >= 60 ? `${bucketSec / 60}min` : `${bucketSec}s`;
+
+  return (
+    <div style={{ ...S.card, marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontWeight: 700, fontSize: 13 }}>EPS — Eventos por segundo</span>
+        <span style={{ fontSize: 11, color: '#94a3b8' }}>bucket: {bucketLabel}{loading ? ' · carregando…' : ''}</span>
+      </div>
+      {!loading && rows.length === 0 ? (
+        <div style={{ height: 40, display: 'flex', alignItems: 'center', color: '#64748b', fontSize: 12 }}>Sem dados no período</div>
+      ) : (
+        <canvas ref={canvasRef} style={{ display: 'block', width: '100%' }} />
+      )}
+    </div>
+  );
+}
+
 // ─── EVENTS TAB ───────────────────────────────────────────────────────────────
 
 const SEVERITY_OPTS = ['', 'critical', 'high', 'medium', 'low', 'info'];
@@ -967,6 +1025,9 @@ function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs?: stri
 
   return (
     <div>
+      {defaultNs === 'wazuh' && (
+        <EpsChart namespace="wazuh" from={from} to={to} />
+      )}
       <div style={S.card}>
         <div style={{ ...S.grid4, marginBottom: 10 }}>
           <label style={S.label}>

@@ -120,7 +120,17 @@ export type EventsQuery = {
   limit?: number;
 };
 
-export type OrbitQlQuery = TimeseriesQuery | TimeseriesMultiQuery | EventsQuery;
+export type EventCountQuery = {
+  kind: 'event_count';
+  namespace?: string;
+  asset_id?: string;
+  severities?: Severity[];
+  from: string;
+  to: string;
+  bucket_sec?: number;
+};
+
+export type OrbitQlQuery = TimeseriesQuery | TimeseriesMultiQuery | EventsQuery | EventCountQuery;
 
 export interface QueryRequest {
   language: QueryLanguage;
