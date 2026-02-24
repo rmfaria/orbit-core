@@ -192,6 +192,7 @@
   display: grid;
   gap: 14px;
   grid-template-columns: 1.1fr .9fr;
+  align-items: start; /* each column is only as tall as its content */
 }
 @media (max-width: 980px) { .orbit-home-main { grid-template-columns: 1fr; } }
 
@@ -223,7 +224,7 @@
   flex-direction: column;
   gap: 10px;
   padding: 10px 16px 16px;
-  max-height: 560px;
+  max-height: min(560px, calc(100vh - 260px));
   overflow-y: auto;
 }
 .orbit-feed-row {
