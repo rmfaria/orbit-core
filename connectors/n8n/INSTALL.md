@@ -65,12 +65,16 @@ chmod 0755 /var/lib/orbit-core /var/log/orbit-core
 
 ---
 
-## 3) Configurar BasicAuth do orbit-core
+## 3) Configurar autenticação do orbit-core
+
+**Recomendado — API Key:**
 
 ```bash
-# Arquivo com a senha do orbitadmin (uma linha, sem newline)
-printf '%s' 'SUA_SENHA_ORBIT_AQUI' > /etc/orbit-core/orbitadmin.pass
-chmod 0640 /etc/orbit-core/orbitadmin.pass
+# Salvar a Orbit API Key em arquivo seguro
+mkdir -p /etc/orbit-core
+chmod 0750 /etc/orbit-core
+printf '%s' 'SUA_ORBIT_API_KEY_AQUI' > /etc/orbit-core/orbit.key
+chmod 0640 /etc/orbit-core/orbit.key
 ```
 
 ---
@@ -82,8 +86,7 @@ Criar `/etc/cron.d/orbit-n8n`:
 ```cron
 * * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_BASIC_USER=orbitadmin \
-  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
   N8N_URL=https://seu-n8n.example.com \
   N8N_API_KEY=$(cat /etc/orbit-core/n8n.apikey) \
   N8N_VERIFY_TLS=true \
@@ -118,8 +121,7 @@ systemctl reload cron || true
 
 ```bash
 ORBIT_API=https://prod.example.com/orbit-core \
-ORBIT_BASIC_USER=orbitadmin \
-ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
 N8N_URL=https://seu-n8n.example.com \
 N8N_API_KEY=$(cat /etc/orbit-core/n8n.apikey) \
 python3 /opt/orbit-core/connectors/n8n/ship_events.py
@@ -136,7 +138,7 @@ cat /var/lib/orbit-core/n8n-events.state.json
 ### Verificar eventos no orbit-core
 
 ```bash
-curl -s -u orbitadmin:SUA_SENHA \
+curl -s -H "X-Api-Key: $(cat /etc/orbit-core/orbit.key)" \
   -X POST https://prod.example.com/orbit-core/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
@@ -164,9 +166,9 @@ Via API (recomendado — preenche as credenciais automaticamente):
 python3 - << 'EOF'
 import json, requests
 
-N8N_KEY  = open('/etc/orbit-core/n8n.apikey').read().strip()
-N8N_URL  = 'https://seu-n8n.example.com'
-ORBIT_PASS = open('/etc/orbit-core/orbitadmin.pass').read().strip()
+N8N_KEY    = open('/etc/orbit-core/n8n.apikey').read().strip()
+N8N_URL    = 'https://seu-n8n.example.com'
+ORBIT_KEY  = open('/etc/orbit-core/orbit.key').read().strip()
 
 with open('/opt/orbit-core/connectors/n8n/orbit_error_reporter.json') as f:
     wf = json.load(f)
@@ -174,8 +176,8 @@ with open('/opt/orbit-core/connectors/n8n/orbit_error_reporter.json') as f:
 # Preencher credenciais no Code node
 code_node = next(n for n in wf['nodes'] if n['name'] == 'Build Orbit Event')
 code_node['parameters']['jsCode'] = code_node['parameters']['jsCode'] \
-    .replace("const ORBIT_BASIC_PASS = '';   // deixe vazio se usar ORBIT_API_KEY  // TODO",
-             f"const ORBIT_BASIC_PASS = '{ORBIT_PASS}';")
+    .replace("const ORBIT_API_KEY = '';   // TODO",
+             f"const ORBIT_API_KEY = '{ORBIT_KEY}';")
 
 wf.pop('active', None)
 wf.pop('tags', None)
@@ -193,7 +195,7 @@ EOF
 
 Ou via UI:
 1. **Workflows → Import from File** → selecione `orbit_error_reporter.json`
-2. Abra o node **Build Orbit Event** → edite `ORBIT_API_URL`, `ORBIT_BASIC_USER`, `ORBIT_BASIC_PASS`
+2. Abra o node **Build Orbit Event** → edite `ORBIT_API_URL` e `ORBIT_API_KEY`
 3. Salve e **ative** o workflow
 
 ### 6.2) Configurar por workflow monitorado
@@ -216,7 +218,7 @@ Para cada workflow que deseja monitorar:
 |---|---|
 | `N8N_API_KEY is required` | Variável `N8N_API_KEY` não definida no cron |
 | `401` do n8n | API key inválida ou expirada — gerar nova em Settings → n8n API |
-| `401/403` do orbit-core | BasicAuth incorreto; verificar `ORBIT_BASIC_FILE` |
+| `401/403` do orbit-core | API Key incorreta; verificar `ORBIT_API_KEY` |
 | Log vazio, state file não criado | Diretório `/var/log/orbit-core/` não existe; criar com `mkdir -p` |
 | Error Trigger não dispara | Workflow não tem o Orbit Error Reporter como *Error Workflow* (passo 6.2) |
 | `execution_error` com `asset_id: workflow:unknown` | Versão do n8n não expõe `workflow.name` no Error Trigger — o conector ativo usa `workflowData.name` e funciona corretamente |
@@ -227,7 +229,7 @@ Para cada workflow que deseja monitorar:
 
 ## Security notes
 
-- Não commite segredos — use `ORBIT_BASIC_FILE` e `/etc/orbit-core/n8n.apikey`
+- Não commite segredos — use `/etc/orbit-core/orbit.key` e `/etc/orbit-core/n8n.apikey`
 - Proteja o cron file: `chmod 0640 /etc/cron.d/orbit-n8n`
 - O conector só **lê** a API do n8n — nunca escreve nem modifica workflows
 - Mantenha o orbit-core atrás de TLS + auth em produção

@@ -1,21 +1,23 @@
 # orbit-core.org (static site)
 
-This folder contains a framework-free static landing page for **orbit-core**.
+Pasta com a landing page estática do **orbit-core** — sem framework, HTML/CSS puro.
 
-## Run locally
+## Rodar localmente
 
 ```bash
 cd site
 python3 -m http.server 8080
 ```
 
-Open:
-- http://localhost:8080
+Abrir: http://localhost:8080
 
-## Customize
+## Customizar
 
-- Edit `index.html` for content/links.
-- Edit `style.css` for theme.
+- Editar `index.html` para conteúdo e links.
+- Editar `style.css` para tema e cores.
 
-Primary links currently point to:
-- https://github.com/rmfaria/orbit-core
+## Links principais
+
+- Repositório: https://github.com/rmfaria/orbit-core
+- Documentação: [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+- Dashboard Playbook: [docs/dashboard-playbook.md](../docs/dashboard-playbook.md)

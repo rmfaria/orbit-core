@@ -88,26 +88,25 @@ esses eventos, mesmo que estejam misturados com outros alertas Wazuh no banco.
 ## Verificação
 
 ```bash
-# Listar eventos Fortigate no orbit-core
+# Listar eventos Fortigate no orbit-core (filtro por kind=fortigate)
 # Nota: namespace=wazuh é correto — Fortigate chega via pipeline Wazuh.
-#       O campo "kind" do orbit-core distingue os eventos Fortigate dos demais.
-curl -s -u orbitadmin:PASS \
-  -X POST https://prod.nesecurity.com.br/orbit-core/api/v1/query \
+curl -s -H "X-Api-Key: <sua-chave>" \
+  -X POST https://prod.example.com/orbit-core/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
     "query":{
       "kind":"events",
-      "from":"2026-02-24T00:00:00Z",
-      "to":"2026-02-25T00:00:00Z",
       "namespace":"wazuh",
-      "limit":10
+      "kinds":["fortigate"],
+      "from":"'"$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)"'",
+      "to":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+      "limit":20
     }
   }'
 ```
 
-Para filtrar apenas eventos Fortigate, filtre pelo campo `kind` no resultado
-(a API orbit-core não suporta filtro por `kind` na query — use `namespace=wazuh`
-e filtre localmente, ou use o pill **fortigate** no live feed da UI).
+O filtro `"kinds": ["fortigate"]` seleciona apenas eventos com `kind=fortigate`.
+Alternativamente, use o pill **fortigate** no live feed da UI.
 
 ## Notas
 

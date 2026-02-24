@@ -1,63 +1,98 @@
-# Orbit Core – Product Doc (MVP1)
+# Orbit Core – Product Doc
 
-Updated: 2026-02-22
+Atualizado: 2026-02-24
 
-## Problem
+## Problema
 
-Security teams need a fast way to explore endpoint/security telemetry (starting with Wazuh) with a consistent query API and a lightweight UI.
+Equipes de segurança e operações precisam monitorar múltiplas fontes de telemetria
+(Nagios, Wazuh, Fortigate, n8n) num único painel, com dashboards personalizados,
+feed de eventos ao vivo e a capacidade de gerar visualizações a partir de descrições
+em linguagem natural.
 
-## Target Users
+## Usuários-alvo
 
-- SOC analysts
-- Detection engineers
-- Platform engineers operating Wazuh
+- Analistas SOC
+- Engenheiros de detecção
+- Engenheiros de plataforma operando Wazuh / Nagios
+- Times DevOps monitorando automações n8n
 
-## MVP1 Scope
+## Funcionalidades implementadas
 
-### Must Have
+### Ingestão e armazenamento
 
-- API server
-  - `GET /api/v1/health`
-  - `POST /api/v1/query` (placeholder in scaffold)
-- Postgres schema + migrations
-  - `events` table storing raw JSON (`jsonb`)
-- Minimal UI
-  - Shows API health
-  - Placeholder for query UI
-- Documentation
-  - Architecture RFC
-  - Wazuh query examples
+- `POST /api/v1/ingest/metrics` — métricas em batch (série temporal com dimensões JSONB)
+- `POST /api/v1/ingest/events` — eventos em batch (namespace, kind, severity, title, message, fingerprint)
+- Rollups automáticos: RAW → 5m → 1h, com retenção configurável
+- Seleção automática de tabela RAW / rollup baseada no range da query
 
-### Nice to Have
+### Conectores
 
-- Basic ingestion endpoint (`POST /api/v1/events`) with batch insert
-- Saved queries (in DB)
-- Simple auth (API key)
+| Conector | Dados | Namespace | Modo |
+|----------|-------|-----------|------|
+| Nagios | métricas perfdata + eventos HARD state change | `nagios` | cron (arquivo) |
+| Wazuh | alertas de segurança | `wazuh` | cron (arquivo / OpenSearch) |
+| Fortigate | logs de firewall | `wazuh` / `kind=fortigate` | via Wazuh syslog |
+| n8n | falhas e execuções travadas | `n8n` | cron + Error Trigger |
 
-## MVP1 User Journeys
+### Query engine (OrbitQL)
 
-1. Operator starts services (Postgres + API + UI)
-2. Operator loads events into `events` table (manual or script)
-3. Analyst runs a query to find:
-   - top noisy rules
-   - events by agent
-   - high severity alerts last N hours
+- `timeseries` — série temporal com auto-bucket e rollup transparente
+- `timeseries_multi` — múltiplas séries com group_by_dimension opcional
+- `events` — busca filtrada por namespace, kind, severity, asset_id
+- `event_count` — contagem de eventos/segundo (EPS) com bucket automático
 
-## Success Criteria
+### Dashboard Builder
 
-- Local dev setup under 5 minutes (excluding Postgres)
-- Queries return in < 2 seconds for small datasets (10k–100k events)
-- Clear extension points for ClickHouse and for ingestion
+- Dashboards salvos em Postgres como JSONB
+- 5 tipos de widget: `timeseries`, `timeseries_multi`, `events`, `eps`, `kpi`
+- Layout em grid (span 1 = metade, span 2 = inteiro)
+- Preset de tempo: 60m / 6h / 24h / 7d / 30d
+- Modo rotação (slideshow) com intervalo configurável (15s / 30s / 1min / 5min)
 
-## Constraints / Assumptions
+### AI Agent (Dashboard Builder)
 
-- MVP stores raw Wazuh JSON and indexes only a few fields.
-- SQL execution is risky; MVP should gate raw SQL or restrict it.
+- `POST /api/v1/ai/dashboard` — gera DashboardSpec via Claude (Anthropic)
+- Consulta catálogo real: métricas por ativo, namespaces de eventos, kinds, agents, severities
+- System prompt com catálogo estruturado + guia Wazuh + regras de validação
+- Headers: `X-Ai-Key` (chave Anthropic), `X-Ai-Model` (ex: `claude-sonnet-4-6`)
+- Configuração da chave no Admin da UI, armazenada em `localStorage`
 
-## Roadmap (Post-MVP)
+### UI — Abas
 
-- Ingestion service + parsing normalization
-- OrbitQL (safe query language)
-- ClickHouse storage adapter
-- AuthN/AuthZ + multi-tenant
-- UI query builder, timepicker, saved views
+| Aba | Conteúdo |
+|-----|----------|
+| **Home** | KPIs, gráficos, EPS Wazuh, live feed |
+| **Dashboards** | List / Builder / View + rotação |
+| **Métricas** | Query builder livre |
+| **Eventos** | Feed filtrado |
+| **Correlações** | Correlações automáticas |
+| **Nagios / Wazuh / Fortigate / n8n** | Abas dedicadas por fonte |
+| **Admin** | API Key + AI Agent config |
+
+### Catálogo
+
+- `GET /api/v1/catalog/assets` — ativos com filtro por nome
+- `GET /api/v1/catalog/metrics` — métricas por ativo (namespace, metric, points, last_ts)
+- `GET /api/v1/catalog/dimensions` — valores de dimensões
+- `GET /api/v1/catalog/events` — namespaces de eventos com kinds, agents e severities
+
+### Segurança
+
+- `ORBIT_API_KEY` obrigatório em produção (`X-Api-Key` header)
+- BasicAuth como fallback de compatibilidade
+- Nenhum SQL raw exposto; todas as queries via OrbitQL (parâmetros seguros)
+
+## Critérios de qualidade
+
+- Setup local em < 5 minutos (excluindo Postgres)
+- Queries retornam em < 2s para datasets típicos
+- AI gera dashboards válidos com fontes reais em uma chamada
+- Deploy via script único (`deploy.sh`) com health check ao final
+
+## Roadmap (próximas versões)
+
+- Multi-tenant (namespaces isolados por cliente)
+- Alertas automáticos baseados em thresholds
+- Armazenamento ClickHouse para volumes maiores
+- Agendamento de relatórios por e-mail
+- RBAC (roles por fonte / dashboard)

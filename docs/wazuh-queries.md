@@ -108,7 +108,7 @@ Resposta:
 
 `value` = eventos por segundo (count / bucket_sec).
 
-## 6) Autenticação — seleção automática de bucket
+## 6) EPS — seleção automática de bucket
 
 Omitir `bucket_sec` — o backend seleciona automaticamente com base no range:
 
@@ -120,6 +120,45 @@ Omitir `bucket_sec` — o backend seleciona automaticamente com base no range:
     "from": "2026-02-17T00:00:00Z",
     "to":   "2026-02-24T00:00:00Z"
   }
+}
+```
+
+## 7) Dashboard via AI Agent
+
+Gerar um DashboardSpec com widgets Wazuh via Claude:
+
+```bash
+curl -s -X POST https://prod.example.com/orbit-core/api/v1/ai/dashboard \
+  -H "X-Api-Key: <orbit-chave>" \
+  -H "X-Ai-Key: <anthropic-chave>" \
+  -H "X-Ai-Model: claude-sonnet-4-6" \
+  -H "Content-Type: application/json" \
+  -d '{ "prompt": "dashboard de segurança com EPS global, alertas críticos e feed por agente" }'
+```
+
+Retorna `{ ok: true, spec: DashboardSpec }` com widgets gerados a partir do catálogo real.
+
+## 8) Catálogo de eventos (namespaces, kinds, agents, severities)
+
+```bash
+curl -s -H "X-Api-Key: <chave>" \
+  https://prod.example.com/orbit-core/api/v1/catalog/events
+```
+
+Resposta:
+```json
+{
+  "ok": true,
+  "namespaces": [
+    {
+      "namespace": "wazuh",
+      "total": 125000,
+      "last_seen": "2026-02-24T19:00:00Z",
+      "kinds": ["authentication_failed", "syslog", "fortigate"],
+      "agents": ["host:wazuh-gm-sec", "host:wazuh-sec-ne"],
+      "severities": ["critical", "high", "medium", "low", "info"]
+    }
+  ]
 }
 ```
 

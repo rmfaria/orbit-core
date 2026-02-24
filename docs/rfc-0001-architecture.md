@@ -1,46 +1,57 @@
-# RFC-0001: Orbit Core Architecture (MVP)
+# RFC-0001: Orbit Core Architecture
 
-- Status: Draft
+- Status: **Implemented** (superseded por [ARCHITECTURE.md](ARCHITECTURE.md))
 - Owner: Orbit Core OSS
-- Updated: 2026-02-22
+- Criado: 2026-02-22 | Atualizado: 2026-02-24
 
-## Summary
+> **Nota:** Este RFC documenta as decisões de arquitetura tomadas no início do projeto.
+> Para o estado atual da implementação, consulte [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Orbit Core is a modular search/analytics core for security telemetry (starting with Wazuh events). This RFC proposes a monorepo architecture that keeps **contracts + engine + storage** independent from the **API + UI**.
+## Sumário
 
-## Goals (MVP1)
+Orbit Core é um core modular de busca/analytics para telemetria de segurança e operações.
+Este RFC propõe uma arquitetura monorepo que mantém **contracts + engine + storage**
+independentes do **API + UI**, permitindo troca de backend de storage futuramente (ClickHouse).
 
-- Provide a stable HTTP API for:
-  - health (`GET /api/v1/health`)
-  - query execution (`POST /api/v1/query`)
-- Store raw events in Postgres (JSONB) with minimal indexing.
-- Keep query semantics in a dedicated engine package.
-- Enable optional ClickHouse later without rewriting the API.
+## Objetivos (MVP)
 
-## Non-goals (MVP1)
+- HTTP API estável com health, ingestão e query
+- Storage em Postgres (JSONB) com schema canônico para métricas e eventos
+- Query engine dedicado (OrbitQL) — evita SQL raw exposto
+- UI de observabilidade com gráficos, feed de eventos e dashboards
+- Conectores determinísticos (sem IA) para Nagios, Wazuh, Fortigate, n8n
 
-- Multi-tenant authZ/authN (define hooks, not full implementation)
+## Não-objetivos (MVP)
+
+- Multi-tenant AuthZ/AuthN completo
 - Streaming queries
-- Complex ingestion pipeline (shipper/collector)
+- ClickHouse (previsto para versão futura)
 
-## Monorepo Layout
+## Layout do Monorepo
 
 ```
 packages/
-  core-contracts/   # shared types + wire contracts
-  engine/           # query language + compiler -> plan
-  storage-pg/       # postgres adapter + migrations
-  api/              # express server: routes, auth, wiring
-  ui/               # vite+react UI
+  core-contracts/   # tipos compartilhados + contratos HTTP (Zod)
+  engine/           # OrbitQL — tipos e compilador de queries
+  storage-pg/       # schema Postgres + migrations + helpers
+  api/              # Express: rotas, auth, wiring
+  ui/               # Vite + React
+  nagios-shipper/   # Shipper TypeScript alternativo para Nagios
+connectors/
+  nagios/           # Python: ship_metrics.py, ship_events.py
+  wazuh/            # Python: ship_events.py, ship_events_opensearch.py
+  fortigate/        # Integração via Wazuh syslog
+  n8n/              # Python: ship_events.py + orbit_error_reporter.json
 ```
 
-## Key Interfaces
+## Interfaces-chave
 
 ### Contracts (`@orbit/core-contracts`)
 
+- `OrbitQlQuery` = `TimeseriesQuery | TimeseriesMultiQuery | EventsQuery | EventCountQuery`
+- `DashboardSpec` / `WidgetSpec` — specs de dashboards persistidos
 - `QueryRequest` / `QueryResponse`
 - `HealthResponse`
-- Standard error envelope (future)
 
 ### Engine (`@orbit/engine`)
 
@@ -57,40 +68,70 @@ interface QueryPlan {
 
 ### Storage (Postgres) (`@orbit/storage-pg`)
 
-- `runPlan(pool, plan)`
-- Migrations in `migrations/*.sql`
-- MVP schema: `events` table with `raw jsonb`
+- Migrations em `migrations/*.sql`
+- Schema canônico: `assets`, `metric_points`, `orbit_events`, `dashboards`, rollup tables
 
-## Data Model (MVP)
+## Modelo de dados
 
-- `events.raw` holds full Wazuh event JSON
-- promote a few common fields for indexing:
-  - `event_time`, `agent_id`, `rule_id`, `level`
+### Métricas
 
-## API Responsibilities
+```sql
+metric_points (
+  ts         timestamptz,
+  asset_id   text,      -- ex: "host:servidor1"
+  namespace  text,      -- ex: "nagios"
+  metric     text,      -- ex: "load1"
+  value      double precision,
+  dimensions jsonb      -- ex: {"service": "CPU Load"}
+)
+```
 
-- Validate incoming payloads (zod)
-- Call `engine.compileQuery()`
-- Call storage adapter to execute query plan
-- Return results in contract shape
+### Eventos
 
-## ClickHouse Option (Future)
+```sql
+orbit_events (
+  ts          timestamptz,
+  asset_id    text,
+  namespace   text,      -- "wazuh", "nagios", "n8n", etc.
+  kind        text,      -- ex: "authentication_failed", "state_change"
+  severity    text,      -- "info" | "low" | "medium" | "high" | "critical"
+  title       text,
+  message     text,
+  fingerprint text,      -- deduplicação
+  attributes  jsonb      -- campos originais da fonte
+)
+```
 
-- Add `@orbit/storage-ch` package
-- Engine chooses plan target based on dataset, query features, retention, cost.
+### Dashboards
 
-## Security Considerations
+```sql
+dashboards (
+  id         text PRIMARY KEY,
+  spec       jsonb NOT NULL,   -- DashboardSpec completo
+  created_at timestamptz,
+  updated_at timestamptz
+)
+```
 
-- SQL injection: MVP should treat SQL as **unsafe**; only allow in trusted deployments or behind admin flag.
-- Future: implement allowlisted SQL, or OrbitQL compilation that produces safe parameterized SQL.
+## Responsabilidades da API
 
-## Observability
+- Validar payloads (Zod)
+- Selecionar tabela automaticamente (RAW vs rollup) baseado no range da query
+- Proxy para Anthropic API com catálogo do banco como contexto (AI agent)
+- Autenticação por `X-Api-Key` ou BasicAuth
+
+## Opção ClickHouse (Futuro)
+
+- Adicionar `@orbit/storage-ch`
+- Engine escolhe o target baseado no dataset, features da query, retenção e custo
+
+## Considerações de segurança
+
+- SQL injection: OrbitQL compila para SQL parametrizado — sem SQL raw exposto
+- AI agent: chave Anthropic passa nos headers do cliente (nunca armazenada no servidor)
+- `ORBIT_API_KEY` obrigatório em produção
+
+## Observabilidade
 
 - HTTP logging via `pino-http`
-- Later: metrics + tracing.
-
-## Open Questions
-
-1. Do we accept raw SQL in MVP (admin-only), or require OrbitQL from day one?
-2. Multi-tenant: how will tenant filters be expressed (engine injection vs storage views)?
-3. Expected event volume and retention targets (impacts ClickHouse prioritization).
+- Métricas internas em `/api/v1/metrics` (JSON) e `/api/v1/metrics/prom` (Prometheus)

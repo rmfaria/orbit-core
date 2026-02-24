@@ -2596,12 +2596,12 @@ function DashWidgetMulti({ widget, from, to, assets }: { widget: WidgetSpec; fro
   }, []);
 
   React.useEffect(() => {
-    if (assets.length === 0) { setIsEmpty(true); return; }
     setLoading(true);
 
     // Build proper timeseries_multi query.
     // The AI may generate simplified format {namespace, metric, group_by} — convert to {series:[...]}.
     const wq = widget.query as Record<string, unknown>;
+    if (!wq.series && assets.length === 0) { setIsEmpty(true); setLoading(false); return; }
     let q: Record<string, unknown>;
     if (wq.series) {
       // Already proper format
@@ -2661,7 +2661,7 @@ function DashWidgetMulti({ widget, from, to, assets }: { widget: WidgetSpec; fro
       })
       .catch(() => setIsEmpty(true))
       .finally(() => setLoading(false));
-  }, [widget.id, from, to]);
+  }, [widget.id, from, to, assets]);
 
   return (
     <div className="orbit-chart-box" style={{ gridColumn: `span ${widget.layout.w}` }}>
@@ -2722,7 +2722,7 @@ function DashWidgetKpi({ widget, from, to, assets }: { widget: WidgetSpec; from:
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [widget.id, from, to]);
+  }, [widget.id, from, to, assets]);
 
   const display = loading ? '…' : value === null ? '—' : value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(2);
 

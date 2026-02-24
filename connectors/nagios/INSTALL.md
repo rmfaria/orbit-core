@@ -157,23 +157,21 @@ tail -n 5 /var/log/nagios4/neb-hard-events.jsonl
 
 ## 4) Configure cron jobs
 
-Create a secret file for BasicAuth password (recommended):
+Salvar a API Key em arquivo seguro:
 
 ```bash
 mkdir -p /etc/orbit-core
 chmod 0750 /etc/orbit-core
-# one-line file containing ONLY the password
-printf '%s' 'YOUR_PASSWORD_HERE' > /etc/orbit-core/orbitadmin.pass
-chmod 0640 /etc/orbit-core/orbitadmin.pass
+printf '%s' 'SUA_ORBIT_API_KEY_AQUI' > /etc/orbit-core/orbit.key
+chmod 0640 /etc/orbit-core/orbit.key
 ```
 
-Create cron entries (example):
+Create cron entries (`/etc/cron.d/orbit-nagios`):
 
 ```cron
 * * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_BASIC_USER=orbitadmin \
-  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
   NAGIOS_SERVICE_PERFDATA_FILE=/var/lib/nagios4/service-perfdata.out \
   NAGIOS_HOST_PERFDATA_FILE=/var/lib/nagios4/host-perfdata.out \
   STATE_PATH=/var/lib/orbit-core/nagios-metrics.state.json \
@@ -182,8 +180,7 @@ Create cron entries (example):
 
 * * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_BASIC_USER=orbitadmin \
-  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
   NAGIOS_HARD_EVENTS_JSONL=/var/log/nagios4/neb-hard-events.jsonl \
   STATE_PATH=/var/lib/orbit-core/nagios-events.state.json \
   python3 /opt/orbit-core/connectors/nagios/ship_events.py \
@@ -200,10 +197,10 @@ systemctl reload cron || true
 
 ## 5) Verify ingestion
 
-### Check orbit-core ingest endpoints
+### Check orbit-core
 
 ```bash
-curl -u 'orbitadmin:YOUR_PASSWORD' \
+curl -s -H "X-Api-Key: $(cat /etc/orbit-core/orbit.key)" \
   https://prod.example.com/orbit-core/api/v1/health
 ```
 
@@ -211,13 +208,11 @@ curl -u 'orbitadmin:YOUR_PASSWORD' \
 
 ```bash
 ORBIT_API=https://prod.example.com/orbit-core \
-ORBIT_BASIC_USER=orbitadmin \
-ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
 python3 /opt/orbit-core/connectors/nagios/ship_metrics.py
 
 ORBIT_API=https://prod.example.com/orbit-core \
-ORBIT_BASIC_USER=orbitadmin \
-ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
 python3 /opt/orbit-core/connectors/nagios/ship_events.py
 ```
 
@@ -225,7 +220,7 @@ python3 /opt/orbit-core/connectors/nagios/ship_events.py
 
 ## Troubleshooting
 
-- **401/403 from orbit-core**: BasicAuth not set / wrong credentials / wrong URL.
+- **401/403 from orbit-core**: API Key incorreta ou não definida; verificar `ORBIT_API_KEY`.
 - **No metrics**: perfdata files not enabled or empty; check `nagios.cfg` and file paths.
 - **No events**: JSONL spool not being written; confirm `write_hard_event.py` is configured as global event handler and Nagios restarted. Check Nagios logs for command errors.
 - **File rotation**: both shippers detect file truncation by comparing last known position with current file length and will restart from 0.

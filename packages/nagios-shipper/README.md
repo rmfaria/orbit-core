@@ -1,19 +1,18 @@
 # @orbit/nagios-shipper
 
-A deterministic, **no-AI** shipper that reads data from **Nagios** and sends it to **orbit-core**.
+Shipper TypeScript determinístico (**sem IA**) que lê dados do **Nagios** e envia
+para o **orbit-core**. Alternativa ao conector Python em `connectors/nagios/`.
 
-- **Metrics**: reads Nagios perfdata spool files (`service_perfdata_file` / `host_perfdata_file`)
-- **Events**: reads `nagios.log` and ships **HARD** alerts only (SOFT alerts are ignored)
+- **Métricas**: lê arquivos spool de perfdata (`service_perfdata_file` / `host_perfdata_file`)
+- **Eventos**: lê `nagios.log` e envia apenas alertas **HARD** (SOFT são ignorados)
 
-> Note: This shipper is designed for *batch/cron* usage (recommended) or a simple watch/daemon mode.
+> Projetado para uso via **cron** (recomendado) ou modo watch/daemon.
 
 ---
 
-## Nagios configuration
+## Configuração do Nagios
 
-### 1) Enable perfdata writing (`nagios.cfg`)
-
-Example templates (tab-separated `FIELD::VALUE` pairs):
+### 1) Habilitar escrita de perfdata (`nagios.cfg`)
 
 ```ini
 process_performance_data=1
@@ -24,54 +23,58 @@ service_perfdata_file_mode=a
 service_perfdata_file_processing_interval=0
 service_perfdata_file_template=DATATYPE::SERVICEPERFDATA\tTIMET::$LASTSERVICECHECK$\tHOSTNAME::$HOSTNAME$\tSERVICEDESC::$SERVICEDESC$\tSERVICEPERFDATA::$SERVICEPERFDATA$\tSERVICESTATE::$SERVICESTATE$\tSERVICESTATETYPE::$SERVICESTATETYPE$
 
-# Host perfdata (optional)
+# Host perfdata (opcional)
 host_perfdata_file=/var/log/nagios/host-perfdata.dat
 host_perfdata_file_mode=a
 host_perfdata_file_processing_interval=0
 host_perfdata_file_template=DATATYPE::HOSTPERFDATA\tTIMET::$LASTHOSTCHECK$\tHOSTNAME::$HOSTNAME$\tHOSTPERFDATA::$HOSTPERFDATA$\tHOSTSTATE::$HOSTSTATE$\tHOSTSTATETYPE::$HOSTSTATETYPE$
 ```
 
-### 2) Locate `nagios.log`
+### 2) Localizar `nagios.log`
 
-Common paths:
+Caminhos comuns:
 - `/var/log/nagios/nagios.log`
 - `/usr/local/nagios/var/nagios.log`
 
 ---
 
-## Environment variables
+## Variáveis de ambiente
 
-| Variable | Default | Description |
-|---|---:|---|
-| `ORBIT_API_URL` | `http://localhost:3000` | orbit-core API base URL |
-| `NAGIOS_PERFDATA_FILE` | — | Path to the perfdata file |
-| `NAGIOS_LOG_FILE` | — | Path to `nagios.log` |
-| `NAGIOS_DEFAULT_NAMESPACE` | `nagios` | Namespace used for metrics/events |
-| `SHIPPER_BATCH_SIZE` | `500` | Records per request (max 5000) |
-| `SHIPPER_STATE_DIR` | `/tmp/orbit-nagios-shipper` | Directory to store file positions |
-| `SHIPPER_MODE` | `once` | `once` (cron) or `watch` (daemon) |
-| `SHIPPER_INTERVAL_SEC` | `60` | Interval used in `watch` mode |
-| `LOG_LEVEL` | `info` | pino log level |
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `ORBIT_API_URL` | `http://localhost:3000` | URL base da API orbit-core |
+| `ORBIT_API_KEY` | — | Chave de autenticação (`X-Api-Key`) |
+| `NAGIOS_PERFDATA_FILE` | — | Caminho do arquivo perfdata |
+| `NAGIOS_LOG_FILE` | — | Caminho do `nagios.log` |
+| `NAGIOS_DEFAULT_NAMESPACE` | `nagios` | Namespace para métricas/eventos |
+| `SHIPPER_BATCH_SIZE` | `500` | Registros por request (máx 5000) |
+| `SHIPPER_STATE_DIR` | `/tmp/orbit-nagios-shipper` | Diretório de estado (byte-offset) |
+| `SHIPPER_MODE` | `once` | `once` (cron) ou `watch` (daemon) |
+| `SHIPPER_INTERVAL_SEC` | `60` | Intervalo no modo `watch` |
+| `LOG_LEVEL` | `info` | Nível de log (pino) |
 
 ---
 
-## Usage
+## Uso
 
-### Cron mode (recommended)
+### Modo cron (recomendado)
 
 ```bash
 pnpm --filter @orbit/nagios-shipper build
 
-* * * * * ORBIT_API_URL=http://orbit-core:3000 \
+# crontab -e
+* * * * * ORBIT_API_URL=https://prod.example.com/orbit-core \
+  ORBIT_API_KEY=<sua-chave> \
   NAGIOS_PERFDATA_FILE=/var/log/nagios/service-perfdata.dat \
   NAGIOS_LOG_FILE=/var/log/nagios/nagios.log \
   node /opt/orbit/packages/nagios-shipper/dist/index.js
 ```
 
-### Watch mode (daemon)
+### Modo watch (daemon)
 
 ```bash
-ORBIT_API_URL=http://orbit-core:3000 \
+ORBIT_API_URL=https://prod.example.com/orbit-core \
+ORBIT_API_KEY=<sua-chave> \
 NAGIOS_PERFDATA_FILE=/var/log/nagios/service-perfdata.dat \
 NAGIOS_LOG_FILE=/var/log/nagios/nagios.log \
 SHIPPER_MODE=watch \
@@ -81,39 +84,50 @@ node dist/index.js
 
 ---
 
-## Data mapping
+## Mapeamento de dados
 
 ### Perfdata → MetricPoint
 
-- `asset_id`: `host:<hostname>`
-- `metric`: perfdata label (e.g. `load1`)
-- `dimensions.service`: service description (e.g. `CPU Load`)
-- `dimensions.kind`: `service` or `host`
+| Campo Nagios | orbit-core |
+|---|---|
+| `$HOSTNAME$` | `asset_id = host:<hostname>` |
+| perfdata label | `metric` (ex: `load1`) |
+| `$SERVICEDESC$` | `dimensions.service` (ex: `CPU Load`) |
+| — | `namespace = nagios` |
 
-### HARD alert → Event
+### Alerta HARD → Event
 
-- `asset_id`: `host:<hostname>`
-- `kind`: `state_change`
-- `severity` mapping:
-  - `CRITICAL` / `DOWN` → `critical`
-  - `WARNING` → `medium`
-  - `UNKNOWN` → `low`
-  - everything else → `info`
+| Campo Nagios | orbit-core |
+|---|---|
+| `$HOSTNAME$` | `asset_id = host:<hostname>` |
+| — | `kind = state_change` |
+| — | `namespace = nagios` |
+| `CRITICAL` / `DOWN` | `severity = critical` |
+| `WARNING` | `severity = medium` |
+| `UNKNOWN` | `severity = low` |
+| outros | `severity = info` |
 
 ---
 
-## Examples
+## Exemplos
 
-### Perfdata line
+### Linha de perfdata
 
-```text
-DATATYPE::SERVICEPERFDATA\tTIMET::1708700000\tHOSTNAME::web01\tSERVICEDESC::HTTP\tSERVICEPERFDATA::time=0.123s;5;10;0 size=1234B\tSERVICESTATE::OK\tSERVICESTATETYPE::HARD
-DATATYPE::HOSTPERFDATA\tTIMET::1708700010\tHOSTNAME::web01\tHOSTPERFDATA::rta=1.2ms;;;0 pl=0%;;;0\tHOSTSTATE::UP\tHOSTSTATETYPE::HARD
+```
+DATATYPE::SERVICEPERFDATA	TIMET::1708700000	HOSTNAME::web01	SERVICEDESC::CPU Load	SERVICEPERFDATA::load1=0.5;5;10;0 load5=0.3;5;10;0	SERVICESTATE::OK	SERVICESTATETYPE::HARD
 ```
 
-### `nagios.log` lines
+### Linha do `nagios.log`
 
-```text
+```
 [1708700100] SERVICE ALERT: web01;HTTP;CRITICAL;HARD;3;Connection refused
 [1708700200] HOST ALERT: db01;DOWN;HARD;3;PING CRITICAL - Packet loss = 100%
 ```
+
+---
+
+## Alternativa Python
+
+Para a maioria dos deployments o conector Python em `connectors/nagios/` é mais
+simples de instalar (não precisa de Node no servidor Nagios).
+Ver [connectors/nagios/INSTALL.md](../../connectors/nagios/INSTALL.md).

@@ -84,13 +84,21 @@ usermod -aG wazuh <cron-user>
 
 ---
 
-## 3) Configure BasicAuth (recommended)
+## 3) Configure autenticação
+
+**Recomendado — API Key** (configure `ORBIT_API_KEY` no servidor orbit-core):
 
 ```bash
+# Salvar a chave em arquivo seguro para uso no cron
 mkdir -p /etc/orbit-core
 chmod 0750 /etc/orbit-core
-# one-line file containing ONLY the password
-printf '%s' 'YOUR_PASSWORD_HERE' > /etc/orbit-core/orbitadmin.pass
+printf '%s' 'SUA_ORBIT_API_KEY_AQUI' > /etc/orbit-core/orbit.key
+chmod 0640 /etc/orbit-core/orbit.key
+```
+
+**Legado — BasicAuth** (suportado como fallback):
+```bash
+printf '%s' 'SUA_SENHA_AQUI' > /etc/orbit-core/orbitadmin.pass
 chmod 0640 /etc/orbit-core/orbitadmin.pass
 ```
 
@@ -103,10 +111,11 @@ Create `/etc/cron.d/orbit-wazuh`:
 ```cron
 * * * * * root \
   ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_BASIC_USER=orbitadmin \
-  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
   WAZUH_ALERTS_JSON=/var/ossec/logs/alerts/alerts.json \
   STATE_PATH=/var/lib/orbit-core/wazuh-events.state.json \
+  MAX_BYTES_PER_RUN=52428800 \
+  BATCH_SIZE=100 \
   python3 /opt/orbit-core/connectors/wazuh/ship_events.py \
   >>/var/log/orbit-core/wazuh_shipper.log 2>&1
 ```
@@ -125,8 +134,7 @@ systemctl reload cron || true
 
 ```bash
 ORBIT_API=https://prod.example.com/orbit-core \
-ORBIT_BASIC_USER=orbitadmin \
-ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
 python3 /opt/orbit-core/connectors/wazuh/ship_events.py
 ```
 
@@ -134,23 +142,22 @@ python3 /opt/orbit-core/connectors/wazuh/ship_events.py
 
 ```bash
 # Health
-curl -u 'orbitadmin:YOUR_PASSWORD' \
+curl -s -H "X-Api-Key: $(cat /etc/orbit-core/orbit.key)" \
   https://prod.example.com/orbit-core/api/v1/health
 
 # List assets (should show Wazuh agents as host:<name>)
-curl -u 'orbitadmin:YOUR_PASSWORD' \
+curl -s -H "X-Api-Key: $(cat /etc/orbit-core/orbit.key)" \
   'https://prod.example.com/orbit-core/api/v1/catalog/assets?q=host:'
 
 # Query events (last hour)
-curl -u 'orbitadmin:YOUR_PASSWORD' \
+curl -s -H "X-Api-Key: $(cat /etc/orbit-core/orbit.key)" \
   -X POST https://prod.example.com/orbit-core/api/v1/query \
   -H 'content-type: application/json' \
   -d '{
-    "language": "orbitql",
     "query": {
       "kind": "events",
       "namespace": "wazuh",
-      "from": "'$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)'",
+      "from": "'$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)'",
       "to": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
       "limit": 20
     }
@@ -163,7 +170,7 @@ curl -u 'orbitadmin:YOUR_PASSWORD' \
 
 | Symptom | Cause / Fix |
 |---|---|
-| `401/403` from orbit-core | BasicAuth wrong / URL missing auth; verify `ORBIT_BASIC_USER` + `ORBIT_BASIC_FILE` |
+| `401/403` from orbit-core | API Key incorreta; verificar `ORBIT_API_KEY` ou `ORBIT_BASIC_USER`/`ORBIT_BASIC_FILE` |
 | No events ingested | Check log: `/var/log/orbit-core/wazuh_shipper.log`; verify `alerts.json` path and read permissions |
 | Events not updating | State file may have a stale offset; delete `/var/lib/orbit-core/wazuh-events.state.json` to re-process from the beginning |
 | Duplicate events after log rotation | Normal on first run after rotation — the shipper detects truncation and resets offset to 0 |
@@ -197,7 +204,7 @@ ls -lh /var/ossec/logs/alerts/alerts.json
 
 ## Security notes
 
-- Do not commit secrets. Use `ORBIT_BASIC_FILE`.
+- Do not commit secrets. Use `ORBIT_API_KEY` via arquivo (`/etc/orbit-core/orbit.key`) ou variável de ambiente.
 - The connector only reads from Wazuh — it never writes to it.
 - Keep orbit-core behind TLS + auth in production.
 - Restrict `/etc/orbit-core/` to root-only (`chmod 0750`).
