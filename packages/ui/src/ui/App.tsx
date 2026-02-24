@@ -302,8 +302,6 @@ const S = {
       'linear-gradient(180deg, #040713, #0b1220)',
   } as React.CSSProperties,
   sidebar: {
-    width: 220,
-    minWidth: 220,
     height: '100vh',
     position: 'sticky' as const,
     top: 0,
@@ -314,6 +312,9 @@ const S = {
     flexDirection: 'column' as const,
     zIndex: 10,
     overflowY: 'auto' as const,
+    overflowX: 'hidden' as const,
+    transition: 'width 0.25s ease',
+    flexShrink: 0,
   } as React.CSSProperties,
   main: {
     flex: 1,
@@ -388,41 +389,100 @@ const S = {
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
 
-function Sidebar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+function Sidebar({ tab, setTab, collapsed, onToggle }: {
+  tab: Tab;
+  setTab: (t: Tab) => void;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
   const [sourcesOpen, setSourcesOpen] = React.useState(true);
 
   React.useEffect(() => {
     if (tab.startsWith('src-')) setSourcesOpen(true);
   }, [tab]);
 
-  function navBtn(t: Tab, label: string) {
+  function navBtn(t: Tab, label: string, icon: string) {
     const active = tab === t;
+    if (collapsed) {
+      return (
+        <button
+          key={t}
+          onClick={() => setTab(t)}
+          title={label}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            background: active ? 'rgba(85,243,255,0.10)' : 'transparent',
+            border: 'none',
+            borderLeft: `2px solid ${active ? '#55f3ff' : 'transparent'}`,
+            color: active ? '#55f3ff' : 'rgba(233,238,255,0.55)',
+            padding: '10px 0',
+            cursor: 'pointer',
+            fontSize: 15,
+            transition: 'all 0.15s',
+          }}
+        >
+          {icon}
+        </button>
+      );
+    }
     return (
       <button
         key={t}
         onClick={() => setTab(t)}
         style={{
-          display: 'block',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
           width: '100%',
           textAlign: 'left',
           background: active ? 'rgba(85,243,255,0.10)' : 'transparent',
           border: 'none',
           borderLeft: `2px solid ${active ? '#55f3ff' : 'transparent'}`,
           color: active ? '#e9eeff' : 'rgba(233,238,255,0.60)',
-          padding: '9px 20px',
+          padding: '9px 16px',
           cursor: 'pointer',
           fontSize: 13,
           fontWeight: active ? 700 : 500,
           transition: 'all 0.15s',
         }}
       >
+        <span style={{ fontSize: 13, opacity: 0.7, flexShrink: 0 }}>{icon}</span>
         {label}
       </button>
     );
   }
 
-  function subNavBtn(t: Tab, label: string, dotColor: string) {
+  function subNavBtn(t: Tab, label: string, dotColor: string, icon: string) {
     const active = tab === t;
+    if (collapsed) {
+      return (
+        <button
+          key={t}
+          onClick={() => setTab(t)}
+          title={label}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            background: active ? 'rgba(85,243,255,0.07)' : 'transparent',
+            border: 'none',
+            borderLeft: `2px solid ${active ? dotColor : 'transparent'}`,
+            color: active ? dotColor : 'rgba(233,238,255,0.45)',
+            padding: '8px 0',
+            cursor: 'pointer',
+            fontSize: 11,
+            fontWeight: 700,
+            transition: 'all 0.15s',
+          }}
+        >
+          {icon}
+        </button>
+      );
+    }
     return (
       <button
         key={t}
@@ -437,7 +497,7 @@ function Sidebar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
           border: 'none',
           borderLeft: `2px solid ${active ? dotColor : 'transparent'}`,
           color: active ? '#e9eeff' : 'rgba(233,238,255,0.52)',
-          padding: '7px 20px 7px 28px',
+          padding: '7px 16px 7px 24px',
           cursor: 'pointer',
           fontSize: 12,
           fontWeight: active ? 700 : 400,
@@ -453,71 +513,104 @@ function Sidebar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const sectionLabel = (text: string) => (
     <div style={{
       color: 'rgba(233,238,255,0.38)',
-      padding: '10px 20px 4px',
-      fontSize: 10,
+      padding: '10px 16px 4px',
+      fontSize: 11,
       fontWeight: 700,
       letterSpacing: '0.10em',
       textTransform: 'uppercase',
+      whiteSpace: 'nowrap',
     }}>{text}</div>
   );
 
   return (
-    <div style={S.sidebar}>
-      {/* Logo */}
-      <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid rgba(140,160,255,0.12)', flexShrink: 0 }}>
-        <span style={{ fontSize: 17, fontWeight: 800, color: '#55f3ff', letterSpacing: '0.2px' }}>◎ Orbit</span>
+    <div style={{ ...S.sidebar, width: collapsed ? 48 : 192 }}>
+      {/* Header: Logo + Toggle */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'space-between',
+        padding: collapsed ? '14px 0' : '14px 12px 14px 16px',
+        borderBottom: '1px solid rgba(140,160,255,0.12)',
+        flexShrink: 0,
+        minHeight: 48,
+      }}>
+        {!collapsed && (
+          <span style={{ fontSize: 15, fontWeight: 800, color: '#55f3ff', letterSpacing: '0.2px', whiteSpace: 'nowrap' }}>◎ Orbit</span>
+        )}
+        <button
+          onClick={onToggle}
+          title={collapsed ? 'Expandir sidebar' : 'Ocultar sidebar'}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'rgba(233,238,255,0.45)',
+            cursor: 'pointer',
+            fontSize: 16,
+            lineHeight: 1,
+            padding: '2px 4px',
+            borderRadius: 6,
+            flexShrink: 0,
+            transition: 'color 0.15s',
+          }}
+        >
+          {collapsed ? '›' : '‹'}
+        </button>
       </div>
 
       {/* Nav */}
       <nav style={{ flex: 1, paddingTop: 6 }}>
-        {navBtn('home', 'Home')}
+        {navBtn('home', 'Home', '⌂')}
 
         {/* Fontes — collapsible */}
         <div>
-          <button
-            onClick={() => setSourcesOpen(x => !x)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              width: '100%',
-              background: 'transparent',
-              border: 'none',
-              color: 'rgba(233,238,255,0.38)',
-              padding: '10px 20px 4px',
-              cursor: 'pointer',
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.10em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Fontes
-            <span style={{ fontSize: 9 }}>{sourcesOpen ? '▲' : '▼'}</span>
-          </button>
-          {sourcesOpen && (
+          {!collapsed && (
+            <button
+              onClick={() => setSourcesOpen(x => !x)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                color: 'rgba(233,238,255,0.38)',
+                padding: '10px 16px 4px',
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.10em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Fontes
+              <span style={{ fontSize: 11 }}>{sourcesOpen ? '▲' : '▼'}</span>
+            </button>
+          )}
+          {(sourcesOpen || collapsed) && (
             <>
-              {subNavBtn('src-nagios',    'Nagios',     NS_COLOR.nagios)}
-              {subNavBtn('src-wazuh',     'Wazuh',      NS_COLOR.wazuh)}
-              {subNavBtn('src-fortigate', 'Fortigate',  NS_COLOR.fortigate)}
-              {subNavBtn('src-n8n',       'n8n',        NS_COLOR.n8n)}
+              {subNavBtn('src-nagios',    'Nagios',     NS_COLOR.nagios,    'N')}
+              {subNavBtn('src-wazuh',     'Wazuh',      NS_COLOR.wazuh,     'W')}
+              {subNavBtn('src-fortigate', 'Fortigate',  NS_COLOR.fortigate, 'F')}
+              {subNavBtn('src-n8n',       'n8n',        NS_COLOR.n8n,       '∞')}
             </>
           )}
         </div>
 
         {/* Análise */}
-        {sectionLabel('Análise')}
-        {navBtn('events',       'Eventos')}
-        {navBtn('metrics',      'Métricas')}
-        {navBtn('correlations', 'Correlações')}
+        {!collapsed && sectionLabel('Análise')}
+        {navBtn('events',       'Eventos',     'E')}
+        {navBtn('metrics',      'Métricas',    'M')}
+        {navBtn('correlations', 'Correlações', 'C')}
       </nav>
 
       {/* Bottom */}
       <div style={{ borderTop: '1px solid rgba(140,160,255,0.12)', paddingTop: 4, flexShrink: 0 }}>
-        {navBtn('admin', 'Admin')}
-        <div style={{ padding: '8px 20px 12px' }}>
-          <HealthBadge />
-        </div>
+        {navBtn('admin', 'Admin', '⚙')}
+        {!collapsed && (
+          <div style={{ padding: '8px 16px 12px' }}>
+            <HealthBadge />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2179,8 +2272,9 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export function App() {
-  const [tab, setTab]       = React.useState<Tab>('home');
-  const [assets, setAssets] = React.useState<AssetOpt[]>([]);
+  const [tab, setTab]                     = React.useState<Tab>('home');
+  const [assets, setAssets]               = React.useState<AssetOpt[]>([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
 
   React.useEffect(() => {
     fetch('api/v1/catalog/assets?limit=500', { headers: apiGetHeaders() })
@@ -2191,7 +2285,7 @@ export function App() {
 
   return (
     <div style={S.root}>
-      <Sidebar tab={tab} setTab={setTab} />
+      <Sidebar tab={tab} setTab={setTab} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(x => !x)} />
       <div style={S.main}>
         {tab === 'home'          && <HomeTab        assets={assets} setTab={setTab} />}
         {tab === 'src-nagios'    && <NagiosTab      assets={assets} />}
