@@ -140,8 +140,69 @@ tail -20 /var/log/orbit-core/wazuh_shipper.log
 
 ## Active connector (`ship_events_opensearch.py`)
 
-Queries Wazuh Indexer (OpenSearch) via REST API using `search_after` pagination.
-Ships individual alert events — not aggregated metrics.
+### Fluxo de dados
+
+```
+Wazuh Indexer (OpenSearch) /_search → ship_events_opensearch.py → orbit-core /api/v1/ingest/events
+```
+
+Consulta os índices `wazuh-alerts-4.x-*` via REST API usando paginação `search_after`.
+Não lê arquivos locais — **pode rodar em qualquer servidor** com acesso de rede ao
+OpenSearch e ao orbit-core.
+
+### Requisito crítico: OpenSearch acessível remotamente
+
+> **Atenção:** em muitos deployments Wazuh, o OpenSearch Indexer escuta apenas em
+> `127.0.0.1:9200` (loopback). Nesse caso o conector ativo **não consegue conectar**
+> a partir de outro servidor.
+>
+> Para verificar o bind address no servidor Wazuh Manager:
+> ```bash
+> ss -tlnp | grep 9200
+> # Se mostrar [::ffff:127.0.0.1]:9200 → loopback apenas
+> # Se mostrar 0.0.0.0:9200 → acessível remotamente
+> ```
+>
+> Se o OpenSearch estiver em loopback, use o **conector passivo** (`ship_events.py`)
+> rodando diretamente no Wazuh Manager.
+
+### Onde deve rodar
+
+Qualquer servidor com acesso de rede ao OpenSearch (`OPENSEARCH_URL`) e ao orbit-core.
+Não é necessário estar no mesmo host que o Wazuh Manager.
+
+### Como o state file funciona
+
+O state file armazena um **cursor de timestamp ISO 8601** do último alerta visto:
+
+```json
+{"since": "2026-02-24T11:57:52.676976+00:00"}
+```
+
+A cada execução:
+1. Consulta `@timestamp > since` em ordem crescente com `search_after` para paginar
+2. Avança `since` para o `@timestamp` do último alerta processado
+3. Se nenhum alerta novo, avança `since` por +1s para evitar re-consultar a mesma janela
+
+Na primeira execução (sem state file), usa `LOOKBACK_MINUTES` como janela inicial.
+
+### `fingerprint` e deduplicação
+
+Usa o `_id` do documento OpenSearch como fingerprint — garante deduplicação exata
+mesmo que o mesmo alerta seja processado em duas rodadas consecutivas.
+
+### Filtrando ruído com `MIN_LEVEL`
+
+Por padrão, todos os níveis são enviados (`MIN_LEVEL=0`). Em instâncias com alto
+volume de alertas de baixa severidade, use `MIN_LEVEL` para reduzir o tráfego:
+
+| `MIN_LEVEL` | O que chega no orbit-core |
+|---|---|
+| `0` | Tudo (info, low, medium, high, critical) |
+| `4` | low+ (exclui info) |
+| `7` | medium+ |
+| `11` | high+ |
+| `14` | critical apenas |
 
 ### Additional environment variables
 
@@ -158,4 +219,16 @@ Ships individual alert events — not aggregated metrics.
 | `LOOKBACK_MINUTES` | `60` | How far back on first run |
 | `STATE_PATH` | `/var/lib/orbit-core/wazuh-opensearch-events.state.json` | Timestamp state |
 
-State file stores the ISO timestamp of the last seen alert; next run queries `@timestamp > last_seen`.
+### Verificação
+
+```bash
+# Testar conectividade com o OpenSearch
+curl -s -u admin:PASS https://<OPENSEARCH_HOST>:9200/_cluster/health?pretty
+
+# Verificar índices Wazuh disponíveis
+curl -s -u admin:PASS "https://<OPENSEARCH_HOST>:9200/_cat/indices/wazuh-alerts-4.x-*?v"
+
+# Verificar state file e log
+cat /var/lib/orbit-core/wazuh-opensearch-events.state.json
+tail -20 /var/log/orbit-core/wazuh_opensearch_shipper.log
+```
