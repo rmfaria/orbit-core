@@ -1950,6 +1950,10 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
                   <div className="orbit-chart-canvas-wrap"><canvas ref={extra2Ref} /></div>
                 </div>
               )}
+              {/* EPS chart spanning full width */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <EpsChart namespace="wazuh" from={from} to={to} />
+              </div>
             </div>
           </div>
 
