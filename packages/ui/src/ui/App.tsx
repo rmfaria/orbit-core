@@ -437,6 +437,40 @@ function NsBadge({ ns }: { ns: string }) {
   );
 }
 
+function FeedRow({ e }: { e: EventRow }) {
+  const [open, setOpen] = React.useState(false);
+  const expandable = e.namespace === 'wazuh' && !!e.message;
+  return (
+    <div
+      className="orbit-feed-row"
+      onClick={() => expandable && setOpen(x => !x)}
+      style={{ cursor: expandable ? 'pointer' : 'default' }}
+    >
+      <SevBadge sev={e.severity} />
+      <NsBadge ns={e.namespace} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <strong style={{ display: 'block' }}>{e.title}</strong>
+        {(!expandable || open) && e.message && (
+          <div style={{
+            fontSize: 12,
+            color: 'rgba(233,238,255,.65)',
+            marginTop: 4,
+            lineHeight: 1.4,
+            wordBreak: 'break-word',
+            whiteSpace: expandable ? 'pre-wrap' : undefined,
+          }}>{e.message}</div>
+        )}
+        <div style={{ fontSize: 11, color: 'rgba(233,238,255,.38)', marginTop: 5, display: 'flex', gap: 10 }}>
+          <span>{fmtTs(e.ts)}</span>
+          {expandable && (
+            <span style={{ color: 'rgba(140,160,255,.5)' }}>{open ? '▲ fechar' : '▶ ver log'}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StateBadge({ state }: { state: string }) {
   const color = NAGIOS_STATE_COLOR[state] ?? '#94a3b8';
   return (
@@ -1661,15 +1695,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
                   </div>
                 );
                 return visible.slice(0, 30).map((e, idx) => (
-                  <div key={idx} className="orbit-feed-row">
-                    <SevBadge sev={e.severity} />
-                    <NsBadge ns={e.namespace} />
-                    <div style={{ flex: 1 }}>
-                      <strong style={{ display: 'block' }}>{e.title}</strong>
-                      <div style={{ fontSize: 12, color: 'rgba(233,238,255,.65)', marginTop: 4, lineHeight: 1.3 }}>{e.message || ''}</div>
-                      <div style={{ fontSize: 12, color: 'rgba(233,238,255,.45)', marginTop: 6 }}>{fmtTs(e.ts)}</div>
-                    </div>
-                  </div>
+                  <FeedRow key={idx} e={e} />
                 ));
               })()}
             </div>
