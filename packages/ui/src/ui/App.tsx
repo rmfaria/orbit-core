@@ -2502,7 +2502,7 @@ type WidgetSpec = {
   note?: string;
 };
 
-function DashboardWidgetRenderer({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+function DashboardWidgetRenderer({ widget, from, to, assets }: { widget: WidgetSpec; from: string; to: string; assets: AssetOpt[] }) {
   const kind = widget.kind;
 
   if (kind === 'eps') {
@@ -2519,18 +2519,18 @@ function DashboardWidgetRenderer({ widget, from, to }: { widget: WidgetSpec; fro
   }
 
   if (kind === 'timeseries_multi') {
-    return <DashWidgetMulti widget={widget} from={from} to={to} />;
+    return <DashWidgetMulti widget={widget} from={from} to={to} assets={assets} />;
   }
 
   if (kind === 'kpi') {
-    return <DashWidgetKpi widget={widget} from={from} to={to} />;
+    return <DashWidgetKpi widget={widget} from={from} to={to} assets={assets} />;
   }
 
   // default: timeseries
-  return <DashWidgetTimeseries widget={widget} from={from} to={to} />;
+  return <DashWidgetTimeseries widget={widget} from={from} to={to} assets={assets} />;
 }
 
-function DashWidgetTimeseries({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+function DashWidgetTimeseries({ widget, from, to, assets }: { widget: WidgetSpec; from: string; to: string; assets: AssetOpt[] }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const chartRef  = React.useRef<ReturnType<typeof makeNeLineChart>>(null);
   const [loading, setLoading] = React.useState(false);
@@ -2544,7 +2544,11 @@ function DashWidgetTimeseries({ widget, from, to }: { widget: WidgetSpec; from: 
 
   React.useEffect(() => {
     setLoading(true);
-    const q = { ...widget.query, from, to };
+    // timeseries requires asset_id — if missing, use first available asset
+    let q: Record<string, unknown> = { ...widget.query, from, to };
+    if (!q.asset_id && assets.length > 0) q.asset_id = assets[0].asset_id;
+    if (!q.asset_id) { setIsEmpty(true); setLoading(false); return; }
+
     fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
       .then(r => r.json())
       .then(j => {
@@ -2562,7 +2566,7 @@ function DashWidgetTimeseries({ widget, from, to }: { widget: WidgetSpec; from: 
       })
       .catch(() => setIsEmpty(true))
       .finally(() => setLoading(false));
-  }, [widget.id, from, to]);
+  }, [widget.id, from, to, assets]);
 
   return (
     <div className="orbit-chart-box" style={{ gridColumn: `span ${widget.layout.w}` }}>
@@ -2579,7 +2583,7 @@ function DashWidgetTimeseries({ widget, from, to }: { widget: WidgetSpec; from: 
   );
 }
 
-function DashWidgetMulti({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+function DashWidgetMulti({ widget, from, to, assets }: { widget: WidgetSpec; from: string; to: string; assets: AssetOpt[] }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const chartRef  = React.useRef<ReturnType<typeof makeNeLineChart>>(null);
   const [loading, setLoading] = React.useState(false);
@@ -2592,8 +2596,32 @@ function DashWidgetMulti({ widget, from, to }: { widget: WidgetSpec; from: strin
   }, []);
 
   React.useEffect(() => {
+    if (assets.length === 0) { setIsEmpty(true); return; }
     setLoading(true);
-    const q = { ...widget.query, from, to };
+
+    // Build proper timeseries_multi query.
+    // The AI may generate simplified format {namespace, metric, group_by} — convert to {series:[...]}.
+    const wq = widget.query as Record<string, unknown>;
+    let q: Record<string, unknown>;
+    if (wq.series) {
+      // Already proper format
+      q = { ...wq, from, to };
+    } else {
+      // Simplified format: build series from available assets
+      const ns     = (wq.namespace as string) ?? '';
+      const metric = (wq.metric    as string) ?? '';
+      q = {
+        kind: 'timeseries_multi',
+        from, to,
+        series: assets.slice(0, 20).map(a => ({
+          asset_id:  a.asset_id,
+          namespace: ns,
+          metric,
+          label:     a.name ?? a.asset_id,
+        })),
+      };
+    }
+
     fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
       .then(r => r.json())
       .then(j => {
@@ -2677,13 +2705,15 @@ function DashWidgetEvents({ widget, from, to }: { widget: WidgetSpec; from: stri
   );
 }
 
-function DashWidgetKpi({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+function DashWidgetKpi({ widget, from, to, assets }: { widget: WidgetSpec; from: string; to: string; assets: AssetOpt[] }) {
   const [value, setValue] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(false);
 
   React.useEffect(() => {
     setLoading(true);
-    const q = { ...widget.query, from, to };
+    let q: Record<string, unknown> = { ...widget.query, from, to };
+    if (!q.asset_id && assets.length > 0) q.asset_id = assets[0].asset_id;
+    if (!q.asset_id) { setLoading(false); return; }
     fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
       .then(r => r.json())
       .then(j => {
@@ -2871,6 +2901,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
         onBack={() => { stopRotation(); setMode('list'); }}
         onEdit={() => { setEditSpec(viewSpec); setMode('build'); }}
         onStopRotation={stopRotation}
+        assets={assets}
       />
     );
   }
@@ -2967,7 +2998,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
   );
 }
 
-function DashboardView({ spec, rotating, rotProgress, rotIdx, rotTotal, onBack, onEdit, onStopRotation }: {
+function DashboardView({ spec, rotating, rotProgress, rotIdx, rotTotal, onBack, onEdit, onStopRotation, assets }: {
   spec: any;
   rotating: boolean;
   rotProgress: number;
@@ -2976,6 +3007,7 @@ function DashboardView({ spec, rotating, rotProgress, rotIdx, rotTotal, onBack, 
   onBack: () => void;
   onEdit: () => void;
   onStopRotation: () => void;
+  assets: AssetOpt[];
 }) {
   const { from, to } = presetToRange(spec?.time?.preset ?? '24h');
   const widgets: WidgetSpec[] = spec?.widgets ?? [];
@@ -3017,7 +3049,7 @@ function DashboardView({ spec, rotating, rotProgress, rotIdx, rotTotal, onBack, 
         style={{ '--cols': maxW } as React.CSSProperties}
       >
         {widgets.map(widget => (
-          <DashboardWidgetRenderer key={widget.id} widget={widget} from={from} to={to} />
+          <DashboardWidgetRenderer key={widget.id} widget={widget} from={from} to={to} assets={assets} />
         ))}
       </div>
     </div>

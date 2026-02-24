@@ -133,6 +133,21 @@ function buildSystemPrompt(
     ? eventNs.map(n => `  - ${n}`).join('\n')
     : '  (no events registered)';
 
+  // Build concrete examples using real asset_ids from catalog
+  const firstAsset  = assets[0]?.asset_id ?? 'host:server1';
+  const secondAsset = assets[1]?.asset_id ?? 'host:server2';
+  const firstMetric = metrics[0] ?? { namespace: 'nagios', metric: 'load1' };
+  const multiMetric = metrics.find(m => m.namespace === firstMetric.namespace) ?? firstMetric;
+
+  // Build a realistic timeseries_multi example using real assets
+  const multiSeriesExample = assets.slice(0, 3).map((a, i) => ({
+    asset_id:  a.asset_id,
+    namespace: multiMetric.namespace,
+    metric:    multiMetric.metric,
+    label:     a.name ?? a.asset_id,
+  }));
+  const multiSeriesJson = JSON.stringify(multiSeriesExample, null, 4).replace(/^/gm, '  ');
+
   return `You are an orbit-core Dashboard Builder AI. Your only job is to output a single valid JSON object conforming to the DashboardSpec schema below.
 
 ## Available data sources
@@ -151,58 +166,64 @@ ${nsList}
 \`\`\`
 {
   id:           string,          // slug, e.g. "dash-cpu-memory"
-  name:         string,          // human label
+  name:         string,
   description?: string,
   version:      "v1",
-  time:         { preset: "60m" | "6h" | "24h" | "7d" | "30d" },   // default "24h"
+  time:         { preset: "60m" | "6h" | "24h" | "7d" | "30d" },
   tags:         string[],
   widgets:      WidgetSpec[]     // 1–20 widgets
 }
 
 WidgetSpec = {
-  id:      string,               // unique within dashboard
+  id:      string,
   title:   string,
   kind:    "timeseries" | "timeseries_multi" | "events" | "eps" | "kpi",
-  layout:  { x: 0, y: 0, w: 1 | 2, h: 1 },   // w=1 half-width, w=2 full-width
-  query:   OrbitQlQuery          // NO "from" or "to" — added at runtime
+  layout:  { x: 0, y: 0, w: 1 | 2, h: 1 },
+  query:   OrbitQlQuery          // NO "from" or "to"
 }
 \`\`\`
 
-## Widget kinds and example queries
+## CRITICAL: Exact query format per widget kind
 
-**timeseries** — single metric line chart  (w=1)
+### timeseries — single asset, single metric (w=1)
+REQUIRED field: asset_id
 \`\`\`json
-{ "kind": "timeseries", "namespace": "nagios", "metric": "load_1" }
+{ "kind": "timeseries", "asset_id": "${firstAsset}", "namespace": "${firstMetric.namespace}", "metric": "${firstMetric.metric}" }
 \`\`\`
 
-**timeseries_multi** — multiple series (w=2)
+### timeseries_multi — same metric across multiple assets (w=2)
+REQUIRED field: series array with asset_id per entry
 \`\`\`json
-{ "kind": "timeseries_multi", "namespace": "nagios", "metric": "cpu_usage", "group_by": ["asset_id"] }
+{
+  "kind": "timeseries_multi",
+  "series": ${multiSeriesJson}
+}
 \`\`\`
 
-**events** — event feed table (w=1 or w=2)
+### events — event feed (w=1 or w=2)
 \`\`\`json
 { "kind": "events", "namespace": "wazuh", "limit": 20 }
 \`\`\`
 
-**eps** — events-per-second chart (w=2)
+### eps — events-per-second chart (w=2)
 \`\`\`json
 { "kind": "event_count", "namespace": "wazuh" }
 \`\`\`
 
-**kpi** — big number, latest metric value (w=1)
+### kpi — latest value of a metric (w=1)
+REQUIRED field: asset_id
 \`\`\`json
-{ "kind": "timeseries", "namespace": "nagios", "metric": "load_1" }
+{ "kind": "timeseries", "asset_id": "${firstAsset}", "namespace": "${firstMetric.namespace}", "metric": "${firstMetric.metric}" }
 \`\`\`
 
 ## Rules
 - Return ONLY the JSON object — no markdown, no explanation, no fences
-- Use real namespaces and metrics from the catalog above when available
+- Use real asset_ids and metrics from the catalog above
 - Do NOT include "from" or "to" in any query
+- timeseries and kpi queries MUST have "asset_id" — use a real asset_id from the list above
+- timeseries_multi queries MUST have "series" array — each entry MUST have asset_id, namespace, metric, label
 - For kind=eps the query.kind must be "event_count"
 - For kind=events the query.kind must be "events"
-- For kind=timeseries, timeseries_multi, or kpi the query.kind must be "timeseries" or "timeseries_multi"
 - Use w=2 for wide charts (eps, multi-series, event feeds)
-- id field: use a short lowercase slug
 `;
 }
