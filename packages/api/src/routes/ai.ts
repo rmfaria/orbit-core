@@ -2,6 +2,41 @@ import { Router } from 'express';
 import type { Pool } from 'pg';
 import { DashboardSpecSchema } from '@orbit/core-contracts';
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface AssetMetric {
+  asset_id:  string;
+  namespace: string;
+  metric:    string;
+  pts:       number;
+}
+
+interface EventNsStat {
+  namespace: string;
+  total:     number;
+  last_seen: string | null;
+}
+
+interface EventKindStat {
+  namespace: string;
+  kind:      string;
+  cnt:       number;
+}
+
+interface EventAgentStat {
+  namespace: string;
+  asset_id:  string;
+  cnt:       number;
+}
+
+interface EventSevStat {
+  namespace: string;
+  severity:  string;
+  cnt:       number;
+}
+
+// ─── Router ───────────────────────────────────────────────────────────────────
+
 export function aiRouter(pool: Pool | null): Router {
   const r = Router();
 
@@ -17,33 +52,76 @@ export function aiRouter(pool: Pool | null): Router {
       return res.status(400).json({ ok: false, error: 'Missing prompt in body' });
     }
 
-    // Fetch catalog context from DB
-    let assets:   Array<{ asset_id: string; name: string }> = [];
-    let metrics:  Array<{ namespace: string; metric: string }> = [];
-    let eventNs:  string[] = [];
+    // ── Fetch rich catalog from DB ─────────────────────────────────────────
+    let assetMetrics:  AssetMetric[]   = [];
+    let eventNsStats:  EventNsStat[]   = [];
+    let eventKinds:    EventKindStat[] = [];
+    let eventAgents:   EventAgentStat[]= [];
+    let eventSevs:     EventSevStat[]  = [];
+    let assetNames:    Map<string, string> = new Map();
 
     if (pool) {
       try {
-        const [ar, mr, er] = await Promise.all([
+        const [amr, anr, ensr, ekr, ear, esr] = await Promise.all([
+          // Metrics: asset + namespace + metric with point counts (top by volume)
+          pool.query<AssetMetric>(
+            `SELECT asset_id, namespace, metric, count(*)::int AS pts
+             FROM metric_points
+             GROUP BY asset_id, namespace, metric
+             ORDER BY pts DESC
+             LIMIT 400`
+          ),
+          // Asset names
           pool.query<{ asset_id: string; name: string }>(
             'SELECT asset_id, name FROM assets ORDER BY last_seen DESC LIMIT 100'
           ),
-          pool.query<{ namespace: string; metric: string }>(
-            'SELECT DISTINCT namespace, metric FROM metric_points LIMIT 200'
+          // Event namespace stats
+          pool.query<EventNsStat>(
+            `SELECT namespace,
+                    count(*)::int          AS total,
+                    max(ts)::text          AS last_seen
+             FROM orbit_events
+             GROUP BY namespace
+             ORDER BY total DESC
+             LIMIT 20`
           ),
-          pool.query<{ namespace: string }>(
-            'SELECT DISTINCT namespace FROM orbit_events LIMIT 20'
+          // Event kinds per namespace (top 30 by volume)
+          pool.query<EventKindStat>(
+            `SELECT namespace, kind, count(*)::int AS cnt
+             FROM orbit_events
+             GROUP BY namespace, kind
+             ORDER BY cnt DESC
+             LIMIT 50`
+          ),
+          // Event agents per namespace (top 20 by volume)
+          pool.query<EventAgentStat>(
+            `SELECT namespace, asset_id, count(*)::int AS cnt
+             FROM orbit_events
+             GROUP BY namespace, asset_id
+             ORDER BY cnt DESC
+             LIMIT 50`
+          ),
+          // Severity distribution per namespace
+          pool.query<EventSevStat>(
+            `SELECT namespace, severity, count(*)::int AS cnt
+             FROM orbit_events
+             GROUP BY namespace, severity
+             ORDER BY namespace, cnt DESC`
           ),
         ]);
-        assets  = ar.rows;
-        metrics = mr.rows;
-        eventNs = er.rows.map(r => r.namespace);
+
+        assetMetrics = amr.rows;
+        assetNames   = new Map(anr.rows.map(a => [a.asset_id, a.name]));
+        eventNsStats = ensr.rows;
+        eventKinds   = ekr.rows;
+        eventAgents  = ear.rows;
+        eventSevs    = esr.rows;
       } catch { /* catalog may be empty — continue */ }
     }
 
-    const systemPrompt = buildSystemPrompt(assets, metrics, eventNs);
+    const systemPrompt = buildSystemPrompt(assetMetrics, assetNames, eventNsStats, eventKinds, eventAgents, eventSevs);
 
-    // Call Anthropic API via native fetch (Node 22 — no SDK needed)
+    // ── Call Anthropic API ─────────────────────────────────────────────────
     let anthropicRes: Response;
     try {
       anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -116,114 +194,181 @@ export function aiRouter(pool: Pool | null): Router {
   return r;
 }
 
+// ─── System prompt builder ────────────────────────────────────────────────────
+
 function buildSystemPrompt(
-  assets:  Array<{ asset_id: string; name: string }>,
-  metrics: Array<{ namespace: string; metric: string }>,
-  eventNs: string[],
+  assetMetrics: AssetMetric[],
+  assetNames:   Map<string, string>,
+  eventNsStats: EventNsStat[],
+  eventKinds:   EventKindStat[],
+  eventAgents:  EventAgentStat[],
+  eventSevs:    EventSevStat[],
 ): string {
-  const assetList  = assets.length
-    ? assets.map(a => `  - ${a.asset_id}${a.name ? ` (${a.name})` : ''}`).join('\n')
-    : '  (no assets registered)';
 
-  const metricList = metrics.length
-    ? metrics.map(m => `  - namespace=${m.namespace}  metric=${m.metric}`).join('\n')
-    : '  (no metrics registered)';
+  // ── Group metrics by asset ───────────────────────────────────────────────
+  const byAsset = new Map<string, { namespace: string; metric: string; pts: number }[]>();
+  for (const am of assetMetrics) {
+    const arr = byAsset.get(am.asset_id) ?? [];
+    arr.push({ namespace: am.namespace, metric: am.metric, pts: am.pts });
+    byAsset.set(am.asset_id, arr);
+  }
 
-  const nsList = eventNs.length
-    ? eventNs.map(n => `  - ${n}`).join('\n')
-    : '  (no events registered)';
+  let metricCatalog = '';
+  if (byAsset.size === 0) {
+    metricCatalog = '  (no metrics registered yet)';
+  } else {
+    const lines: string[] = [];
+    for (const [assetId, mets] of byAsset) {
+      const label = assetNames.get(assetId) ?? assetId;
+      lines.push(`  Asset: ${assetId}  (${label})`);
+      for (const m of mets.slice(0, 20)) {
+        lines.push(`    - namespace=${m.namespace}  metric=${m.metric}  (${m.pts} points)`);
+      }
+    }
+    metricCatalog = lines.join('\n');
+  }
 
-  // Build concrete examples using real asset_ids from catalog
-  const firstAsset  = assets[0]?.asset_id ?? 'host:server1';
-  const secondAsset = assets[1]?.asset_id ?? 'host:server2';
-  const firstMetric = metrics[0] ?? { namespace: 'nagios', metric: 'load1' };
-  const multiMetric = metrics.find(m => m.namespace === firstMetric.namespace) ?? firstMetric;
+  // ── Build event namespace sections ──────────────────────────────────────
+  let eventCatalog = '';
+  if (eventNsStats.length === 0) {
+    eventCatalog = '  (no events registered yet — use wazuh/n8n connectors to ingest)';
+  } else {
+    const lines: string[] = [];
+    for (const ns of eventNsStats) {
+      lines.push(`  Namespace: ${ns.namespace}  (${ns.total.toLocaleString()} events, last: ${ns.last_seen ?? 'never'})`);
 
-  // Build a realistic timeseries_multi example using real assets
-  const multiSeriesExample = assets.slice(0, 3).map((a, i) => ({
-    asset_id:  a.asset_id,
-    namespace: multiMetric.namespace,
-    metric:    multiMetric.metric,
-    label:     a.name ?? a.asset_id,
+      const kinds = eventKinds.filter(k => k.namespace === ns.namespace);
+      if (kinds.length) {
+        lines.push(`    Event kinds: ${kinds.map(k => `${k.kind}(${k.cnt})`).join(', ')}`);
+      }
+
+      const agents = eventAgents.filter(a => a.namespace === ns.namespace);
+      if (agents.length) {
+        lines.push(`    Agents (asset_id): ${agents.map(a => `${a.asset_id}(${a.cnt})`).join(', ')}`);
+      }
+
+      const sevs = eventSevs.filter(s => s.namespace === ns.namespace);
+      if (sevs.length) {
+        lines.push(`    Severities: ${sevs.map(s => `${s.severity}(${s.cnt})`).join(', ')}`);
+      }
+    }
+    eventCatalog = lines.join('\n');
+  }
+
+  // ── Pick real examples for query templates ───────────────────────────────
+  const firstAssetEntry = assetMetrics[0];
+  const exAssetId  = firstAssetEntry?.asset_id ?? 'host:server1';
+  const exNs       = firstAssetEntry?.namespace ?? 'nagios';
+  const exMetric   = firstAssetEntry?.metric    ?? 'load1';
+
+  // Pick up to 3 distinct assets for timeseries_multi example
+  const distinctAssets = [...new Set(assetMetrics.map(m => m.asset_id))].slice(0, 3);
+  const multiNs     = firstAssetEntry?.namespace ?? 'nagios';
+  const multiMetric = assetMetrics.find(m => m.namespace === multiNs && distinctAssets.includes(m.asset_id))?.metric ?? exMetric;
+  const multiSeries = distinctAssets.map(aid => ({
+    asset_id:  aid,
+    namespace: multiNs,
+    metric:    multiMetric,
+    label:     assetNames.get(aid) ?? aid,
   }));
-  const multiSeriesJson = JSON.stringify(multiSeriesExample, null, 4).replace(/^/gm, '  ');
 
-  return `You are an orbit-core Dashboard Builder AI. Your only job is to output a single valid JSON object conforming to the DashboardSpec schema below.
+  // Pick first event namespace for examples
+  const firstEvNs     = eventNsStats[0]?.namespace ?? 'wazuh';
+  const firstEvKind   = eventKinds.find(k => k.namespace === firstEvNs)?.kind;
+  const firstEvAgent  = eventAgents.find(a => a.namespace === firstEvNs)?.asset_id;
+  const highSevExists = eventSevs.some(s => s.namespace === firstEvNs && (s.severity === 'high' || s.severity === 'critical'));
 
-## Available data sources
+  // Build Wazuh/event-specific widget examples
+  const evNsLabel = firstEvNs;
+  const evKindFilter = firstEvKind ? `, "kinds": ["${firstEvKind}"]` : '';
+  const evAgentFilter = firstEvAgent ? `, "asset_id": "${firstEvAgent}"` : '';
+  const evSevFilter = highSevExists ? `, "severities": ["high", "critical"]` : '';
 
-### Assets (asset_id):
-${assetList}
+  return `You are an orbit-core Dashboard Builder AI. Output ONLY a single valid JSON object (no markdown, no explanation).
 
-### Metrics (namespace + metric):
-${metricList}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## METRIC CATALOG (asset → namespace → metric)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${metricCatalog}
 
-### Event namespaces:
-${nsList}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## EVENT CATALOG (namespace → kinds / agents / severities)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${eventCatalog}
 
-## DashboardSpec schema
-
-\`\`\`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## DASHBOARD SPEC SCHEMA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {
-  id:           string,          // slug, e.g. "dash-cpu-memory"
-  name:         string,
-  description?: string,
-  version:      "v1",
-  time:         { preset: "60m" | "6h" | "24h" | "7d" | "30d" },
-  tags:         string[],
-  widgets:      WidgetSpec[]     // 1–20 widgets
+  id, name, description?, version: "v1",
+  time: { preset: "60m"|"6h"|"24h"|"7d"|"30d" },
+  tags: string[],
+  widgets: WidgetSpec[]   // 1–20
 }
+WidgetSpec = { id, title, kind, layout: {x:0,y:0,w:1|2,h:1}, query }
+  kind: "timeseries" | "timeseries_multi" | "events" | "eps" | "kpi"
+  w=1 → half width,  w=2 → full width
+  query must NOT contain "from" or "to"
 
-WidgetSpec = {
-  id:      string,
-  title:   string,
-  kind:    "timeseries" | "timeseries_multi" | "events" | "eps" | "kpi",
-  layout:  { x: 0, y: 0, w: 1 | 2, h: 1 },
-  query:   OrbitQlQuery          // NO "from" or "to"
-}
-\`\`\`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## QUERY FORMAT — EXACT REQUIRED STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-## CRITICAL: Exact query format per widget kind
+### timeseries (w=1) — REQUIRES asset_id
+{ "kind": "timeseries", "asset_id": "${exAssetId}", "namespace": "${exNs}", "metric": "${exMetric}" }
 
-### timeseries — single asset, single metric (w=1)
-REQUIRED field: asset_id
-\`\`\`json
-{ "kind": "timeseries", "asset_id": "${firstAsset}", "namespace": "${firstMetric.namespace}", "metric": "${firstMetric.metric}" }
-\`\`\`
-
-### timeseries_multi — same metric across multiple assets (w=2)
-REQUIRED field: series array with asset_id per entry
-\`\`\`json
+### timeseries_multi (w=2) — REQUIRES series array with asset_id per entry
 {
   "kind": "timeseries_multi",
-  "series": ${multiSeriesJson}
+  "series": ${JSON.stringify(multiSeries, null, 2).replace(/\n/g, '\n  ')}
 }
-\`\`\`
 
-### events — event feed (w=1 or w=2)
-\`\`\`json
-{ "kind": "events", "namespace": "wazuh", "limit": 20 }
-\`\`\`
+### kpi (w=1) — latest value, REQUIRES asset_id (same query as timeseries)
+{ "kind": "timeseries", "asset_id": "${exAssetId}", "namespace": "${exNs}", "metric": "${exMetric}" }
 
-### eps — events-per-second chart (w=2)
-\`\`\`json
-{ "kind": "event_count", "namespace": "wazuh" }
-\`\`\`
+### events (w=1 or w=2) — event feed table
+{ "kind": "events", "namespace": "${evNsLabel}", "limit": 20 }
 
-### kpi — latest value of a metric (w=1)
-REQUIRED field: asset_id
-\`\`\`json
-{ "kind": "timeseries", "asset_id": "${firstAsset}", "namespace": "${firstMetric.namespace}", "metric": "${firstMetric.metric}" }
-\`\`\`
+  # With kind filter (when event kinds are available):
+  { "kind": "events", "namespace": "${evNsLabel}"${evKindFilter}, "limit": 20 }
 
-## Rules
-- Return ONLY the JSON object — no markdown, no explanation, no fences
-- Use real asset_ids and metrics from the catalog above
-- Do NOT include "from" or "to" in any query
-- timeseries and kpi queries MUST have "asset_id" — use a real asset_id from the list above
-- timeseries_multi queries MUST have "series" array — each entry MUST have asset_id, namespace, metric, label
-- For kind=eps the query.kind must be "event_count"
-- For kind=events the query.kind must be "events"
-- Use w=2 for wide charts (eps, multi-series, event feeds)
+  # With severity filter (for security dashboards):
+  { "kind": "events", "namespace": "${evNsLabel}"${evSevFilter}, "limit": 50 }
+
+  # Per specific agent:
+  { "kind": "events", "namespace": "${evNsLabel}"${evAgentFilter}, "limit": 20 }
+
+### eps (w=2) — events-per-second line chart
+{ "kind": "event_count", "namespace": "${evNsLabel}" }
+
+  # Per specific agent (if agents are available):
+  { "kind": "event_count", "namespace": "${evNsLabel}"${evAgentFilter} }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## WAZUH DASHBOARD GUIDE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For Wazuh security monitoring use these widget combinations:
+- eps (w=2): global EPS + per-agent EPS for each known agent
+- events (w=2): all events, or filtered by severity=["high","critical"]
+- events (w=1): per-agent feed using asset_id from the agent list above
+- events (w=2): specific event kinds (e.g. fortigate firewall logs)
+- kpi (w=1): total event count is NOT available as a KPI — use eps instead
+
+Wazuh severities: critical > high > medium > low > info
+Use severities=["high","critical"] for security-critical feeds.
+Use severities=["medium","high","critical"] for broader monitoring.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## RULES (NEVER VIOLATE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Return ONLY the JSON object — no markdown fences, no text outside JSON
+2. NEVER include "from" or "to" in any query
+3. timeseries and kpi MUST have "asset_id" — use real asset_ids from the catalog
+4. timeseries_multi MUST have "series" array — each entry MUST have asset_id+namespace+metric+label
+5. eps query.kind MUST be "event_count"
+6. events query.kind MUST be "events"
+7. Use only asset_ids that appear in the catalog above
+8. Use only metric names that appear in the catalog above
+9. Use only namespace values that appear in the catalog above
 `;
 }

@@ -9,7 +9,7 @@ import { makeAuthMiddleware } from './auth.js';
 import { healthHandler } from './routes/health.js';
 import { queryHandler } from './routes/query.js';
 import { ingestEventsHandler, ingestMetricsHandler } from './routes/ingest.js';
-import { catalogAssetsHandler, catalogMetricsHandler, catalogDimensionsHandler } from './routes/catalog.js';
+import { catalogAssetsHandler, catalogMetricsHandler, catalogDimensionsHandler, catalogEventsHandler } from './routes/catalog.js';
 import { metricsHandler, metricsMiddleware } from './metrics.js';
 import { metricsPromHandler } from './metrics_prom.js';
 import { dashboardsRouter } from './routes/dashboards.js';
@@ -46,6 +46,7 @@ app.get('/api/v1/metrics/prom', metricsPromHandler);
 app.get('/api/v1/catalog/assets', a(catalogAssetsHandler));
 app.get('/api/v1/catalog/metrics', a(catalogMetricsHandler));
 app.get('/api/v1/catalog/dimensions', a(catalogDimensionsHandler));
+app.get('/api/v1/catalog/events', a(catalogEventsHandler));
 
 app.post('/api/v1/query', a(queryHandler));
 

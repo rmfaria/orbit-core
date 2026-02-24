@@ -2756,7 +2756,17 @@ type BuildWidget = {
   metric: string;
   assetId: string;
   severities: string;
+  kindFilter: string;
   span: 1 | 2;
+};
+
+type EventNsCatalog = {
+  namespace:  string;
+  total:      number;
+  last_seen:  string | null;
+  kinds:      string[];
+  agents:     string[];
+  severities: string[];
 };
 
 const WIDGET_KINDS = ['timeseries', 'timeseries_multi', 'events', 'eps', 'kpi'];
@@ -2771,6 +2781,7 @@ function buildWidgetToSpec(w: BuildWidget): WidgetSpec {
     query = { kind: 'events', namespace: w.namespace, limit: 20 };
     if (w.assetId)    query.asset_id   = w.assetId;
     if (w.severities) query.severities = w.severities.split(',').map(s => s.trim()).filter(Boolean);
+    if (w.kindFilter) query.kinds      = [w.kindFilter];
   } else if (w.kind === 'timeseries_multi') {
     query = { kind: 'timeseries_multi', namespace: w.namespace, metric: w.metric, group_by: ['asset_id'] };
   } else {
@@ -3075,35 +3086,43 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
       metric:     (w.query.metric as string) ?? '',
       assetId:    (w.query.asset_id as string) ?? '',
       severities: Array.isArray(w.query.severities) ? (w.query.severities as string[]).join(', ') : '',
+      kindFilter: Array.isArray(w.query.kinds) ? (w.query.kinds as string[])[0] ?? '' : '',
       span:       (w.layout.w as 1 | 2) ?? 1,
     }));
   });
 
   // Add widget form
-  const [newKind,  setNewKind]  = React.useState('timeseries');
-  const [newTitle, setNewTitle] = React.useState('');
-  const [newNs,    setNewNs]    = React.useState('');
-  const [newMetric,setNewMetric] = React.useState('');
-  const [newAsset, setNewAsset] = React.useState('');
-  const [newSev,   setNewSev]   = React.useState('');
-  const [newSpan,  setNewSpan]  = React.useState<1 | 2>(1);
+  const [newKind,       setNewKind]       = React.useState('timeseries');
+  const [newTitle,      setNewTitle]      = React.useState('');
+  const [newNs,         setNewNs]         = React.useState('');
+  const [newMetric,     setNewMetric]     = React.useState('');
+  const [newAsset,      setNewAsset]      = React.useState('');
+  const [newSev,        setNewSev]        = React.useState('');
+  const [newKindFilter, setNewKindFilter] = React.useState('');
+  const [newSpan,       setNewSpan]       = React.useState<1 | 2>(1);
 
   // Catalog
-  const [nsOpts,     setNsOpts]     = React.useState<string[]>([]);
-  const [metricOpts, setMetricOpts] = React.useState<MetricOpt[]>([]);
+  const [nsOpts,      setNsOpts]      = React.useState<string[]>([]);
+  const [metricOpts,  setMetricOpts]  = React.useState<MetricOpt[]>([]);
+  const [eventCatalog,setEventCatalog]= React.useState<EventNsCatalog[]>([]);
+
   React.useEffect(() => {
-    // Distinct event namespaces
-    fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: { kind: 'events', from: relativeFrom(720), to: new Date().toISOString(), limit: 1 } }) })
+    // Event namespaces catalog
+    fetch('api/v1/catalog/events', { headers: apiGetHeaders() })
+      .then(r => r.json())
+      .then(j => setEventCatalog((j?.namespaces ?? []) as EventNsCatalog[]))
       .catch(() => {});
-    // Metrics catalog (all assets)
+
+    // Metrics catalog — ALL assets (batched in parallel)
     if (assets.length) {
-      const promises = assets.slice(0, 5).map(a =>
-        fetch(`api/v1/catalog/metrics?asset_id=${encodeURIComponent(a.asset_id)}&limit=200`, { headers: apiGetHeaders() })
-          .then(r => r.json())
-          .then(j => (j?.metrics ?? []) as MetricOpt[])
-          .catch(() => [] as MetricOpt[])
-      );
-      Promise.all(promises).then(results => {
+      Promise.all(
+        assets.map(a =>
+          fetch(`api/v1/catalog/metrics?asset_id=${encodeURIComponent(a.asset_id)}&limit=200`, { headers: apiGetHeaders() })
+            .then(r => r.json())
+            .then(j => (j?.metrics ?? []) as MetricOpt[])
+            .catch(() => [] as MetricOpt[])
+        )
+      ).then(results => {
         const merged = results.flat();
         const seen = new Set<string>();
         const deduped = merged.filter(m => {
@@ -3112,11 +3131,22 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
           seen.add(k); return true;
         });
         setMetricOpts(deduped);
-        const namespaces = Array.from(new Set(deduped.map(m => m.namespace)));
-        setNsOpts(namespaces);
+        // Merge metric namespaces + event namespaces into combined list
+        const metricNs = Array.from(new Set(deduped.map(m => m.namespace)));
+        setNsOpts(prev => {
+          const combined = Array.from(new Set([...metricNs, ...prev]));
+          return combined;
+        });
       });
     }
   }, [assets.length]);
+
+  // Keep nsOpts in sync when eventCatalog loads
+  React.useEffect(() => {
+    if (eventCatalog.length === 0) return;
+    const evNs = eventCatalog.map(e => e.namespace);
+    setNsOpts(prev => Array.from(new Set([...prev, ...evNs])));
+  }, [eventCatalog.length]);
 
   // AI state
   const [aiPrompt, setAiPrompt]     = React.useState('');
@@ -3156,6 +3186,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
         metric:     (w.query.metric as string) ?? '',
         assetId:    (w.query.asset_id as string) ?? '',
         severities: Array.isArray(w.query.severities) ? (w.query.severities as string[]).join(', ') : '',
+        kindFilter: Array.isArray(w.query.kinds) ? (w.query.kinds as string[])[0] ?? '' : '',
         span:       (w.layout.w as 1 | 2),
       })));
     } catch (e: any) {
@@ -3175,10 +3206,12 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
       metric:     newMetric,
       assetId:    newAsset,
       severities: newSev,
+      kindFilter: newKindFilter,
       span:       newSpan,
     };
     setWidgets(prev => [...prev, w]);
     setNewTitle('');
+    setNewKindFilter('');
   }
 
   function removeWidget(id: string) {
@@ -3280,12 +3313,9 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
           </label>
           <label style={S.label}>
             Namespace
-            <select value={newNs} onChange={e => setNewNs(e.target.value)} style={S.select}>
+            <select value={newNs} onChange={e => { setNewNs(e.target.value); setNewKindFilter(''); setNewSev(''); }} style={S.select}>
               <option value="">— qualquer —</option>
               {nsOpts.map(n => <option key={n} value={n}>{n}</option>)}
-              <option value="nagios">nagios</option>
-              <option value="wazuh">wazuh</option>
-              <option value="n8n">n8n</option>
             </select>
           </label>
           {(newKind === 'timeseries' || newKind === 'timeseries_multi' || newKind === 'kpi') && (
@@ -3304,10 +3334,40 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
               Asset
               <select value={newAsset} onChange={e => setNewAsset(e.target.value)} style={S.select}>
                 <option value="">— todos —</option>
-                {assets.map(a => <option key={a.asset_id} value={a.asset_id}>{a.name ?? a.asset_id}</option>)}
+                {(newKind === 'events' && newNs
+                  ? (eventCatalog.find(e => e.namespace === newNs)?.agents ?? assets.map(a => ({ asset_id: a.asset_id, name: a.name })))
+                  : assets
+                ).map((a: any) => <option key={a.asset_id ?? a} value={a.asset_id ?? a}>{a.name ?? a.asset_id ?? a}</option>)}
               </select>
             </label>
           )}
+          {(newKind === 'events' || newKind === 'eps') && (() => {
+            const evNs = eventCatalog.find(e => e.namespace === newNs);
+            return (
+              <>
+                {evNs && evNs.kinds.length > 0 && (
+                  <label style={S.label}>
+                    Tipo evento
+                    <select value={newKindFilter} onChange={e => setNewKindFilter(e.target.value)} style={S.select}>
+                      <option value="">— todos —</option>
+                      {evNs.kinds.map(k => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  </label>
+                )}
+                {newKind === 'events' && evNs && evNs.severities.length > 0 && (
+                  <label style={S.label}>
+                    Severidade
+                    <select value={newSev} onChange={e => setNewSev(e.target.value)} style={S.select}>
+                      <option value="">— todas —</option>
+                      <option value="critical,high">critical + high</option>
+                      <option value="medium,high,critical">medium + high + critical</option>
+                      {evNs.severities.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                )}
+              </>
+            );
+          })()}
           <label style={S.label}>
             Span
             <select value={newSpan} onChange={e => setNewSpan(Number(e.target.value) as 1 | 2)} style={S.select}>
@@ -3332,7 +3392,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
             <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.10)', color: '#55f3ff', fontWeight: 700 }}>{w.kind}</span>
             <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{w.title}</span>
             <span style={{ fontSize: 11, color: '#64748b' }}>
-              {[w.namespace, w.metric, w.assetId].filter(Boolean).join(' · ')}
+              {[w.namespace, w.metric, w.assetId, w.kindFilter ? `kind:${w.kindFilter}` : '', w.severities ? `sev:${w.severities}` : ''].filter(Boolean).join(' · ')}
             </span>
             <span style={{ fontSize: 11, color: '#64748b' }}>span:{w.span}</span>
             <button onClick={() => removeWidget(w.id)} style={{ ...S.btnSm, borderColor: 'rgba(248,113,113,.35)', color: '#f87171', padding: '4px 8px' }}>×</button>

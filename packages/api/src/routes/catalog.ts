@@ -71,6 +71,62 @@ export async function catalogMetricsHandler(req: Request, res: Response) {
   return res.json({ ok: true, metrics: r.rows });
 }
 
+// ── Events catalog ────────────────────────────────────────────────────────────
+
+interface EventNsCatalog {
+  namespace:  string;
+  total:      number;
+  last_seen:  string | null;
+  kinds:      string[];
+  agents:     string[];
+  severities: string[];
+}
+
+export async function catalogEventsHandler(req: Request, res: Response) {
+  if (!pool) return res.status(500).json({ error: 'DATABASE_URL not configured' });
+
+  try {
+    const [nsRes, kindRes, agentRes, sevRes] = await Promise.all([
+      pool.query<{ namespace: string; total: number; last_seen: string | null }>(
+        `SELECT namespace, count(*)::int AS total, max(ts)::text AS last_seen
+         FROM orbit_events GROUP BY namespace ORDER BY total DESC LIMIT 30`
+      ),
+      pool.query<{ namespace: string; kind: string }>(
+        `SELECT namespace, kind FROM (
+           SELECT namespace, kind, count(*) AS cnt
+           FROM orbit_events GROUP BY namespace, kind ORDER BY cnt DESC LIMIT 200
+         ) t`
+      ),
+      pool.query<{ namespace: string; asset_id: string }>(
+        `SELECT namespace, asset_id FROM (
+           SELECT namespace, asset_id, count(*) AS cnt
+           FROM orbit_events GROUP BY namespace, asset_id ORDER BY cnt DESC LIMIT 100
+         ) t`
+      ),
+      pool.query<{ namespace: string; severity: string }>(
+        `SELECT namespace, severity
+         FROM orbit_events
+         GROUP BY namespace, severity
+         ORDER BY namespace, count(*) DESC`
+      ),
+    ]);
+
+    const nsMap = new Map<string, EventNsCatalog>();
+    for (const row of nsRes.rows) {
+      nsMap.set(row.namespace, { namespace: row.namespace, total: row.total, last_seen: row.last_seen, kinds: [], agents: [], severities: [] });
+    }
+    for (const row of kindRes.rows)  { nsMap.get(row.namespace)?.kinds.push(row.kind); }
+    for (const row of agentRes.rows) { nsMap.get(row.namespace)?.agents.push(row.asset_id); }
+    for (const row of sevRes.rows)   { nsMap.get(row.namespace)?.severities.push(row.severity); }
+
+    return res.json({ ok: true, namespaces: Array.from(nsMap.values()) });
+  } catch {
+    return res.json({ ok: true, namespaces: [] });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const DimensionsQuerySchema = z.object({
   asset_id: z.string().min(1),
   namespace: z.string().min(1),
