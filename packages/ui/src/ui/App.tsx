@@ -2133,7 +2133,7 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
 
 // ─── ADMIN TAB ────────────────────────────────────────────────────────────────
 
-function AdminTab() {
+function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
   const [apiKey, setApiKey]         = React.useState(() => sessionStorage.getItem('orbit_api_key') ?? '');
   const [saved, setSaved]           = React.useState(false);
   const [apiProtected, setApiProtected] = React.useState<boolean | null>(null);
@@ -2207,6 +2207,8 @@ function AdminTab() {
           <button onClick={saveKey} style={S.btnSm}>{saved ? 'Salvo ✓' : 'Salvar'}</button>
         </div>
       </div>
+
+      <SourcesTab setTab={setTab} />
     </div>
   );
 }
@@ -2346,7 +2348,7 @@ export function App() {
         {tab === 'events'        && <EventsTab      key="events"        assets={assets} />}
         {tab === 'metrics'       && <MetricsTab     assets={assets} />}
         {tab === 'correlations'  && <CorrelationsTab assets={assets} />}
-        {tab === 'admin'         && <AdminTab />}
+        {tab === 'admin'         && <AdminTab setTab={setTab} />}
       </div>
     </div>
   );
