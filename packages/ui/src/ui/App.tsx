@@ -938,7 +938,7 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
 
 // ─── EPS CHART ────────────────────────────────────────────────────────────────
 
-function EpsChart({ namespace, from, to }: { namespace: string; from: string; to: string }) {
+function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string; from: string; to: string; variant?: 'card' | 'chart-box' }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const [rows, setRows]         = React.useState<Row[]>([]);
   const [bucketSec, setBucketSec] = React.useState<number>(60);
@@ -978,6 +978,22 @@ function EpsChart({ namespace, from, to }: { namespace: string; from: string; to
   }, [rows]);
 
   const bucketLabel = bucketSec >= 3600 ? `${bucketSec / 3600}h` : bucketSec >= 60 ? `${bucketSec / 60}min` : `${bucketSec}s`;
+
+  if (variant === 'chart-box') {
+    return (
+      <div className="orbit-chart-box">
+        <div className="orbit-chart-tag">
+          EPS — Wazuh{loading ? ' · …' : ''} · bucket: {bucketLabel}
+        </div>
+        <div className="orbit-chart-canvas-wrap">
+          {!loading && rows.length === 0
+            ? <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>Sem dados no período</div>
+            : <canvas ref={canvasRef} style={{ display: 'block' }} />
+          }
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ ...S.card, marginBottom: 12 }}>
@@ -1952,7 +1968,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               )}
               {/* EPS chart spanning full width */}
               <div style={{ gridColumn: '1 / -1' }}>
-                <EpsChart namespace="wazuh" from={from} to={to} />
+                <EpsChart namespace="wazuh" from={from} to={to} variant="chart-box" />
               </div>
             </div>
           </div>
