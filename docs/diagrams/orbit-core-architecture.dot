@@ -1,49 +1,88 @@
 digraph orbitcore {
   rankdir=LR;
-  graph [fontname="Inter,Helvetica,Arial", fontsize=10, labelloc=t, label="orbit-core — Architecture (current)", bgcolor="white"];
+  graph [fontname="Inter,Helvetica,Arial", fontsize=10, labelloc=t, label="orbit-core — Architecture (educational)", bgcolor="white"];
   node  [shape=box, style="rounded,filled", fontname="Inter,Helvetica,Arial", fontsize=10, fillcolor="#F8FAFC", color="#CBD5E1"];
   edge  [color="#94A3B8"];
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Sources (systems that produce signals)
+  // ───────────────────────────────────────────────────────────────────────────
   subgraph cluster_sources {
-    label="Sources";
+    label="Sources (signals)";
     color="#E2E8F0";
-    NAGIOS [label="Nagios Core\nperfdata + HARD events"];
-    WAZUH [label="Wazuh\n(API + OpenSearch)\n(connector: pending)"];
+    NAGIOS     [label="Nagios Core\nperfdata + HARD state changes"];
+    WAZUH      [label="Wazuh Manager\nalerts.json + OpenSearch"];
+    FORTIGATE  [label="Fortigate\n(syslog → Wazuh)"];
+    N8N        [label="n8n\n(executions + errors)"];
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Connectors (deterministic, cron-friendly)
+  // ───────────────────────────────────────────────────────────────────────────
   subgraph cluster_connectors {
     label="Connectors / Shippers (no-AI)";
     color="#E2E8F0";
-    MS [label="nagios_orbitcore_metrics_shipper.py\n(cron, batch)"];
-    ES [label="nagios_orbitcore_events_shipper.py\n(cron, batch)"];
-    WC [label="wazuh_orbitcore_connector.py\n(cron, aggregates)\n(network: pending)"];
+
+    MS [label="Nagios metrics shipper (Python)\nship_metrics.py\nreads perfdata files\n→ ingest/metrics"];
+    ES [label="Nagios events shipper (Python)\nship_events.py\nreads JSONL spool\n→ ingest/events"];
+    NH [label="Nagios HARD event writer (Python)\nwrite_hard_event.py\nglobal event handler\n→ neb-hard-events.jsonl"];
+
+    WZ [label="Wazuh events shipper (Python)\nship_events.py\nreads alerts.json\n→ ingest/events"];
+    WZO [label="Wazuh OpenSearch shipper (optional)\nship_events_opensearch.py\nwindowed queries\n→ ingest/events"];
+
+    N8S [label="n8n shipper (Python)\nship_events.py\npoll REST API\n→ ingest/events"];
+    N8T [label="n8n Error Trigger workflow\norbit_error_reporter.json\nrealtime errors\n→ ingest/events"];
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Edge (deployment boundary)
+  // ───────────────────────────────────────────────────────────────────────────
   subgraph cluster_edge {
     label="Edge";
     color="#E2E8F0";
-    RP [label="Reverse proxy\nTLS + Auth\nStripPrefix (optional)\nRedirect /orbit-core → /orbit-core/ (optional)"];
+    RP [label="Reverse proxy (Traefik/nginx)\nTLS + BasicAuth\n(optional) subpath routing"];
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // orbit-core
+  // ───────────────────────────────────────────────────────────────────────────
   subgraph cluster_core {
     label="orbit-core";
     color="#E2E8F0";
-    UI [label="UI (Vite/React + nginx)\n\n- Query runner MVP\n- Dropdowns via Catalog"];
-    API [label="API (Node/Express)\n\n- ingest/metrics\n- ingest/events\n- query (orbitql)\n- catalog/*\n- metrics/prom"];
-    PG [shape=cylinder, label="Postgres 16\nCanonical schema\nassets / metric_points / orbit_events\nrollups: 5m + 1h" , fillcolor="#EEF2FF", color="#A5B4FC"];
+
+    UI [label="UI (Vite/React)\nHome + Sources\n+ Explore (events/metrics)"]; 
+    STUDIO [label="orbit-studio (static UI)\npropose DashboardSpec\nvalidate via API"];
+
+    API [label="API (Node/Express)\n\n- ingest/metrics + ingest/events\n- query (orbitql, safe limits)\n- catalog/*\n- dashboards/validate\n- metrics/prom\n- correlations (optional)"]; 
+
+    PG [shape=cylinder, label="Postgres 16\nCanonical schema\nassets / metric_points / orbit_events\nrollups: 5m + 1h\nretention: 14d/90d/180d" , fillcolor="#EEF2FF", color="#A5B4FC"];
   }
 
+  // Flows
+  NAGIOS -> NH;
+  NH -> ES;
   NAGIOS -> MS;
-  NAGIOS -> ES;
-  WAZUH -> WC;
+
+  WAZUH -> WZ;
+  WAZUH -> WZO [style=dashed];
+  FORTIGATE -> WAZUH;
+
+  N8N -> N8S;
+  N8N -> N8T;
 
   MS -> RP [label="POST /api/v1/ingest/metrics"];
   ES -> RP [label="POST /api/v1/ingest/events"];
-  WC -> RP [style=dashed, label="POST /api/v1/ingest/*"];
+  WZ -> RP [label="POST /api/v1/ingest/events"];
+  WZO -> RP [style=dashed, label="POST /api/v1/ingest/events"];
+  N8S -> RP [label="POST /api/v1/ingest/events"];
+  N8T -> RP [label="POST /api/v1/ingest/events"];
 
   RP -> API;
   RP -> UI;
+  RP -> STUDIO;
 
-  UI -> RP [label="fetch /api/v1/catalog/*\nfetch /api/v1/query"];
+  UI -> RP [label="fetch catalog + query"];
+  STUDIO -> RP [label="POST dashboards/validate"];
+
   API -> PG;
 }

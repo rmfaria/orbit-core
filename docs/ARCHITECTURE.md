@@ -18,6 +18,11 @@ Connectors (Nagios, Wazuh/OpenSearch, etc.) send data via ingest endpoints and O
 
 Diagram source: `docs/diagrams/orbit-core-architecture.dot`.
 
+This diagram is intentionally **educational**:
+- it separates **sources** from **connectors**
+- it highlights the **edge boundary** (TLS/auth/subpath)
+- it shows how everything converges on the same ingest API and Postgres schema
+
 ## 3) Components
 
 ### 3.1 Edge (reverse proxy)
