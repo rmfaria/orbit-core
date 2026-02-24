@@ -1878,10 +1878,23 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
             </div>
           </div>
           <div style={S.card}>
-            <div style={{ fontWeight: 900 }}>Wazuh</div>
-            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Planned connector</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ fontWeight: 900 }}>Wazuh</div>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>ATIVO</span>
+            </div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Alertas de segurança, regras e logs de auditoria via conector passivo</div>
+            <div style={{ marginTop: 10, display: 'flex', gap: 14 }}>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/README.md" target="_blank" rel="noreferrer"
+                style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                📄 Manual
+              </a>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/ship_events.py" target="_blank" rel="noreferrer"
+                style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                ⚙ Conector
+              </a>
+            </div>
             <div style={{ marginTop: 10 }}>
-              <button style={{ ...S.btn, opacity: 0.55, cursor: 'not-allowed' }} disabled>Coming soon</button>
+              <button style={S.btn} onClick={() => setTab('events')}>Ver Eventos</button>
             </div>
           </div>
           <div style={S.card}>
