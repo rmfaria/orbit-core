@@ -139,12 +139,16 @@
   pointer-events: none;
   z-index: 0;
 }
-.orbit-chart-box canvas {
-  width: 100% !important;
-  height: 180px !important;
-  display: block;
+/* Chart.js responsive: the canvas wrapper (not canvas itself) must carry the height.
+   Chart.js reads clientWidth/clientHeight of the container and resizes the canvas
+   via ResizeObserver — forcing width/height on the canvas element breaks that. */
+.orbit-chart-canvas-wrap {
   position: relative;
-  z-index: 1;
+  height: 180px;
+  width: 100%;
+}
+.orbit-chart-box canvas {
+  display: block;
 }
 .orbit-chart-tag {
   position: absolute;

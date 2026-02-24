@@ -1385,19 +1385,19 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
           <div className="orbit-charts-grid">
             <div className="orbit-chart-box">
               <div className="orbit-chart-tag">CPU Load</div>
-              <canvas ref={cpuRef} />
+              <div className="orbit-chart-canvas-wrap"><canvas ref={cpuRef} /></div>
             </div>
             <div className="orbit-chart-box">
               <div className="orbit-chart-tag">Disk Queue</div>
-              <canvas ref={diskRef} />
+              <div className="orbit-chart-canvas-wrap"><canvas ref={diskRef} /></div>
             </div>
             <div className="orbit-chart-box">
               <div className="orbit-chart-tag">Net Traffic</div>
-              <canvas ref={netRef} />
+              <div className="orbit-chart-canvas-wrap"><canvas ref={netRef} /></div>
             </div>
             <div className="orbit-chart-box">
               <div className="orbit-chart-tag">Suricata Alerts</div>
-              <canvas ref={suriRef} />
+              <div className="orbit-chart-canvas-wrap"><canvas ref={suriRef} /></div>
             </div>
           </div>
 
