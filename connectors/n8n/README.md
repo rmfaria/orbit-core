@@ -78,7 +78,23 @@ Veja `cron.example` para o exemplo completo.
 3. Abra o node **Build Orbit Event** (Code)
 4. Edite as 3 linhas `TODO` no topo: `ORBIT_API_URL`, `ORBIT_BASIC_USER`, `ORBIT_BASIC_PASS`
 5. Salve e **ative** o workflow
-6. Toda falha de workflow na instância n8n dispara este workflow e envia um evento para o orbit-core
+6. Anote o ID do workflow (aparece na URL: `/workflow/<ID>`)
+
+### Configurando o Error Trigger por workflow
+
+O Error Trigger **não dispara automaticamente** para todos os workflows da instância.
+Cada workflow que você quiser monitorar precisa apontar explicitamente para o Orbit Error Reporter:
+
+1. Abra o workflow que deseja monitorar
+2. Clique em **⚙ Settings** (canto superior direito do editor)
+3. No campo **Error Workflow**, selecione **Orbit Error Reporter**
+4. Salve
+
+A partir daí, toda falha daquele workflow dispara o Orbit Error Reporter em tempo real.
+
+> **Dica:** Repita o passo acima para cada workflow crítico da instância.
+> O conector ativo (`ship_events.py`) captura falhas de **todos** os workflows via polling,
+> independentemente dessa configuração — use os dois modos para cobertura completa.
 
 ## Obtendo a API key do n8n
 
@@ -92,4 +108,4 @@ Veja `cron.example` para o exemplo completo.
 - O state file rastreia o timestamp da última execução processada (ISO 8601).
 - Execuções travadas disparam a cada rodada enquanto permanecerem rodando — o campo `fingerprint` permite deduplicação no orbit-core.
 - Não commite segredos — use `ORBIT_BASIC_FILE` ou o campo de credenciais do n8n.
-- O Error Trigger dispara para **todas** as falhas da instância; uma cópia por erro, em tempo real.
+- O Error Trigger dispara **apenas** para workflows que tenham o Orbit Error Reporter definido como seu *Error Workflow* (ver seção acima). O conector ativo (`ship_events.py`) captura falhas de todos os workflows via polling.
