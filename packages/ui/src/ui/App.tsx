@@ -87,9 +87,9 @@ function relativeFrom(hours: number) {
   return new Date(Date.now() - hours * 3600 * 1000).toISOString();
 }
 
-// Build fetch headers — reads API key from sessionStorage if present.
+// Build fetch headers — reads API key from localStorage if present.
 function apiHeaders(): HeadersInit {
-  const key = sessionStorage.getItem('orbit_api_key') ?? '';
+  const key = localStorage.getItem('orbit_api_key') ?? '';
   const h: HeadersInit = { 'content-type': 'application/json' };
   if (key) (h as Record<string, string>)['x-api-key'] = key;
   return h;
@@ -97,7 +97,7 @@ function apiHeaders(): HeadersInit {
 
 // GET helper (no body, still needs key header via ?).
 function apiGetHeaders(): HeadersInit {
-  const key = sessionStorage.getItem('orbit_api_key') ?? '';
+  const key = localStorage.getItem('orbit_api_key') ?? '';
   if (!key) return {};
   return { 'x-api-key': key };
 }
@@ -387,7 +387,7 @@ const S = {
 function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const [fontesDdOpen, setFontesDdOpen] = React.useState(false);
   const [gearDdOpen,   setGearDdOpen]   = React.useState(false);
-  const [apiKey, setApiKey] = React.useState(() => sessionStorage.getItem('orbit_api_key') ?? '');
+  const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('orbit_api_key') ?? '');
 
   // Close dropdowns on outside click
   React.useEffect(() => {
@@ -428,7 +428,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
   const isFontesActive = tab.startsWith('src-');
 
   function logoff() {
-    sessionStorage.removeItem('orbit_api_key');
+    localStorage.removeItem('orbit_api_key');
     setApiKey('');
     setTab('home');
   }
@@ -711,11 +711,11 @@ function StateBadge({ state }: { state: string }) {
 // ─── API Key Banner ───────────────────────────────────────────────────────────
 
 function ApiKeyBanner() {
-  const [key, setKey] = React.useState(() => sessionStorage.getItem('orbit_api_key') ?? '');
+  const [key, setKey] = React.useState(() => localStorage.getItem('orbit_api_key') ?? '');
   const [saved, setSaved] = React.useState(false);
 
   function save() {
-    sessionStorage.setItem('orbit_api_key', key);
+    localStorage.setItem('orbit_api_key', key);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -2133,15 +2133,36 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
 
 // ─── ADMIN TAB ────────────────────────────────────────────────────────────────
 
+const codeStyle: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.08)',
+  padding: '1px 5px',
+  borderRadius: 4,
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  fontSize: 11,
+};
+
+const preStyle: React.CSSProperties = {
+  background: 'rgba(0,0,0,0.35)',
+  border: '1px solid rgba(140,160,255,0.15)',
+  borderRadius: 10,
+  padding: '12px 14px',
+  fontSize: 12,
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  color: '#a5f3fc',
+  overflowX: 'auto',
+  margin: 0,
+  lineHeight: 1.6,
+};
+
 function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
-  const [apiKey, setApiKey]         = React.useState(() => sessionStorage.getItem('orbit_api_key') ?? '');
+  const [apiKey, setApiKey]         = React.useState(() => localStorage.getItem('orbit_api_key') ?? '');
   const [saved, setSaved]           = React.useState(false);
   const [apiProtected, setApiProtected] = React.useState<boolean | null>(null);
   const [checking, setChecking]     = React.useState(true);
 
   React.useEffect(() => {
     setChecking(true);
-    // Unauthenticated fetch — no sessionStorage key used
+    // Unauthenticated fetch — no localStorage key used
     fetch('api/v1/catalog/assets?limit=1')
       .then(r => { setApiProtected(r.status === 401); })
       .catch(() => setApiProtected(null))
@@ -2149,7 +2170,7 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
   }, []);
 
   function saveKey() {
-    sessionStorage.setItem('orbit_api_key', apiKey);
+    localStorage.setItem('orbit_api_key', apiKey);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -2193,7 +2214,8 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
       <div style={S.card}>
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>API Key (client)</div>
         <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 10 }}>
-          Chave enviada nas requisições desta UI. Armazenada apenas na sessão do browser (sessionStorage).
+          Chave enviada nas requisições desta UI via header <code style={codeStyle}>X-Api-Key</code>.
+          Persistida no <code style={codeStyle}>localStorage</code> do browser.
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <input
@@ -2205,6 +2227,48 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
             style={{ ...S.input, flex: 1 }}
           />
           <button onClick={saveKey} style={S.btnSm}>{saved ? 'Salvo ✓' : 'Salvar'}</button>
+        </div>
+      </div>
+
+      <div style={S.card}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Configurar autenticação no servidor</div>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
+          A autenticação é controlada pela variável de ambiente <code style={codeStyle}>ORBIT_API_KEY</code> no processo da API.
+          Se não definida, a API aceita qualquer requisição sem autenticação.
+        </div>
+
+        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', marginBottom: 6 }}>systemd</div>
+        <pre style={preStyle}>{`# /etc/systemd/system/orbit-api.service
+[Service]
+Environment=ORBIT_API_KEY=sua-chave-aqui
+
+# Recarregar e reiniciar:
+systemctl daemon-reload
+systemctl restart orbit-api`}</pre>
+
+        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', margin: '12px 0 6px' }}>Docker / docker-compose</div>
+        <pre style={preStyle}>{`environment:
+  - ORBIT_API_KEY=sua-chave-aqui`}</pre>
+
+        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', margin: '12px 0 6px' }}>Manual</div>
+        <pre style={preStyle}>{`ORBIT_API_KEY=sua-chave-aqui node dist/index.js`}</pre>
+      </div>
+
+      <div style={S.card}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Configurar connectors</div>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
+          Todos os connectors suportam <code style={codeStyle}>ORBIT_API_KEY</code> via variável de ambiente.
+          Quando definida, o header <code style={codeStyle}>X-Api-Key</code> é enviado automaticamente em cada requisição.
+        </div>
+
+        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', marginBottom: 6 }}>Nagios / Wazuh / n8n</div>
+        <pre style={preStyle}>{`export ORBIT_API=http://seu-servidor:3000
+export ORBIT_API_KEY=sua-chave-aqui
+python3 ship_events.py`}</pre>
+
+        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', margin: '12px 0 6px' }}>Fortigate</div>
+        <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.7 }}>
+          Usa o conector Wazuh (<code style={codeStyle}>ship_events.py</code>) — mesma configuração acima.
         </div>
       </div>
 
