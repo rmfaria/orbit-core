@@ -12,7 +12,21 @@ type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'home' | 'sources' | 'nagios' | 'events' | 'metrics';
+type Tab        = 'home' | 'sources' | 'nagios' | 'events' | 'metrics' | 'correlations';
+
+type CorrelationRow = {
+  event_key:    string;
+  event_ts:     string;
+  asset_id:     string;
+  metric_ns:    string;
+  metric:       string;
+  baseline_avg: number | null;
+  baseline_std: number | null;
+  peak_value:   number | null;
+  z_score:      number | null;
+  rel_change:   number | null;
+  detected_at:  string;
+};
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -1453,6 +1467,134 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   );
 }
 
+// ─── CORRELATIONS TAB ─────────────────────────────────────────────────────────
+//
+// Shows metric anomalies that were detected around significant events.
+// z_score ≥ 2 → metric spiked by 2+ standard deviations at event time.
+// rel_change  → percentage change vs 24 h baseline.
+
+function ZScore({ z }: { z: number | null }) {
+  if (z == null) return <span style={{ color: '#64748b' }}>—</span>;
+  const abs = Math.abs(z);
+  const color = abs >= 4 ? '#f87171' : abs >= 2 ? '#fb923c' : '#fbbf24';
+  return <span style={{ color, fontWeight: 700, fontFamily: 'monospace' }}>{z.toFixed(2)}σ</span>;
+}
+
+function RelChange({ r }: { r: number | null }) {
+  if (r == null) return <span style={{ color: '#64748b' }}>—</span>;
+  const pct = (r * 100).toFixed(1);
+  const color = Math.abs(r) >= 1 ? '#f87171' : Math.abs(r) >= 0.5 ? '#fb923c' : '#fbbf24';
+  return <span style={{ color, fontFamily: 'monospace' }}>{r >= 0 ? '+' : ''}{pct}%</span>;
+}
+
+function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
+  const [assetId, setAssetId] = React.useState('');
+  const [from, setFrom]       = React.useState(() => relativeFrom(24));
+  const [to, setTo]           = React.useState(() => new Date().toISOString());
+  const [rows, setRows]       = React.useState<CorrelationRow[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [err, setErr]         = React.useState<string | null>(null);
+
+  async function run() {
+    setLoading(true); setErr(null);
+    try {
+      const params = new URLSearchParams({ from, to, limit: '500' });
+      if (assetId) params.set('asset_id', assetId);
+      const r = await fetch(`api/v1/correlations?${params}`, { headers: apiGetHeaders() });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+      setRows(j.correlations ?? []);
+    } catch (e: any) {
+      setErr(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  React.useEffect(() => { run(); }, []);
+
+  const fmtNum = (n: number | null) =>
+    n == null ? '—' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(3);
+
+  return (
+    <div>
+      <div style={S.card}>
+        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4 }}>Correlações Evento × Métrica</div>
+        <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>
+          Anomalias métricas detectadas automaticamente em torno de eventos medium/high/critical.
+          z-score ≥ 2σ ou variação relativa ≥ 50%.
+        </div>
+        <div style={{ ...S.grid4, marginBottom: 10 }}>
+          <label style={S.label}>
+            Asset
+            <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+              <option value="">— Todos —</option>
+              {assets.map((a) => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
+            </select>
+          </label>
+          <label style={S.label}>
+            From (ISO)
+            <input style={S.input} value={from} onChange={(e) => setFrom(e.target.value)} />
+          </label>
+          <label style={S.label}>
+            To (ISO)
+            <input style={S.input} value={to} onChange={(e) => setTo(e.target.value)} />
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>Ações</span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingTop: 2 }}>
+              <button style={S.btn} onClick={run} disabled={loading}>{loading ? '…' : 'Buscar'}</button>
+              <span style={{ color: '#64748b', fontSize: 12 }}>{rows.length} correlações</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ ...S.row }}>
+          <RangeShortcuts setFrom={setFrom} setTo={setTo} />
+        </div>
+        {err && <div style={S.err}>{err}</div>}
+      </div>
+
+      {rows.length === 0 && !loading && !err && (
+        <div style={{ ...S.card, color: '#64748b', textAlign: 'center', padding: 32 }}>
+          Nenhuma correlação encontrada. O worker executa a cada 5 min e requer métricas no
+          namespace do mesmo asset_id dos eventos.
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
+          <table style={S.table}>
+            <thead>
+              <tr>
+                {['Evento (ts)', 'Asset', 'Métrica', 'Baseline avg', 'Peak', 'z-score', 'Δ rel', 'Detectado em'].map((h) => (
+                  <th key={h} style={S.th}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} style={{ background: i % 2 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtTs(r.event_ts)}</td>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{r.asset_id}</td>
+                  <td style={{ ...S.td }}>
+                    <span style={{ color: '#94a3b8', fontSize: 11 }}>{r.metric_ns}/</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.metric}</span>
+                  </td>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{fmtNum(r.baseline_avg)}</td>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, color: '#f0abfc' }}>{fmtNum(r.peak_value)}</td>
+                  <td style={S.td}><ZScore z={r.z_score} /></td>
+                  <td style={S.td}><RelChange r={r.rel_change} /></td>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{fmtTs(r.detected_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
   return (
     <div>
@@ -1512,11 +1654,12 @@ export function App() {
       <div style={S.header}>
         <span style={S.logo}>◎ Orbit</span>
         <div style={S.tabBar}>
-          <TabBtn active={tab === 'home'}    onClick={() => setTab('home')}>Home</TabBtn>
-          <TabBtn active={tab === 'sources'} onClick={() => setTab('sources')}>Fontes</TabBtn>
-          <TabBtn active={tab === 'nagios'}  onClick={() => setTab('nagios')}>Nagios</TabBtn>
-          <TabBtn active={tab === 'events'}  onClick={() => setTab('events')}>Eventos</TabBtn>
-          <TabBtn active={tab === 'metrics'} onClick={() => setTab('metrics')}>Métricas</TabBtn>
+          <TabBtn active={tab === 'home'}         onClick={() => setTab('home')}>Home</TabBtn>
+          <TabBtn active={tab === 'sources'}      onClick={() => setTab('sources')}>Fontes</TabBtn>
+          <TabBtn active={tab === 'nagios'}       onClick={() => setTab('nagios')}>Nagios</TabBtn>
+          <TabBtn active={tab === 'events'}       onClick={() => setTab('events')}>Eventos</TabBtn>
+          <TabBtn active={tab === 'metrics'}      onClick={() => setTab('metrics')}>Métricas</TabBtn>
+          <TabBtn active={tab === 'correlations'} onClick={() => setTab('correlations')}>Correlações</TabBtn>
         </div>
         <HealthBadge />
       </div>
@@ -1524,11 +1667,12 @@ export function App() {
       {/* Body */}
       <div style={S.body}>
         <ApiKeyBanner />
-        {tab === 'home'    && <HomeTab assets={assets} setTab={setTab} />}
-        {tab === 'sources' && <SourcesTab setTab={setTab} />}
-        {tab === 'nagios'  && <NagiosTab  assets={assets} />}
-        {tab === 'events'  && <EventsTab  assets={assets} />}
-        {tab === 'metrics' && <MetricsTab assets={assets} />}
+        {tab === 'home'         && <HomeTab         assets={assets} setTab={setTab} />}
+        {tab === 'sources'      && <SourcesTab      setTab={setTab} />}
+        {tab === 'nagios'       && <NagiosTab        assets={assets} />}
+        {tab === 'events'       && <EventsTab        assets={assets} />}
+        {tab === 'metrics'      && <MetricsTab       assets={assets} />}
+        {tab === 'correlations' && <CorrelationsTab  assets={assets} />}
       </div>
     </div>
   );

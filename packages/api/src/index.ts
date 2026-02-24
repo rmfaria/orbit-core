@@ -13,7 +13,9 @@ import { catalogAssetsHandler, catalogMetricsHandler, catalogDimensionsHandler }
 import { metricsHandler, metricsMiddleware } from './metrics.js';
 import { metricsPromHandler } from './metrics_prom.js';
 import { dashboardsRouter } from './routes/dashboards.js';
+import { correlationsHandler } from './routes/correlations.js';
 import { startRollupWorker } from './rollup.js';
+import { startCorrelateWorker } from './correlate.js';
 import { pool } from './db.js';
 
 // Wrap async Express handlers so their rejected promises reach the error handler.
@@ -53,6 +55,9 @@ app.post('/api/v1/ingest/events', a(ingestEventsHandler));
 // dashboards (AI builders should call validate/apply routes; the AI itself should live outside)
 app.use('/api/v1', dashboardsRouter());
 
+// correlations
+app.get('/api/v1/correlations', a(correlationsHandler));
+
 // Global error handler — catches ZodErrors (→ 400) and all other thrown errors (→ 500).
 // Must have 4 parameters for Express to recognise it as an error handler.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -68,16 +73,19 @@ const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, auth: !!env.ORBIT_API_KEY }, 'orbit-api listening');
 });
 
-// Start rollup background worker if DB is available.
-let stopRollups: (() => void) | undefined;
+// Start background workers if DB is available.
+let stopRollups:   (() => void) | undefined;
+let stopCorrelate: (() => void) | undefined;
 if (pool) {
-  stopRollups = startRollupWorker(pool);
+  stopRollups   = startRollupWorker(pool);
+  stopCorrelate = startCorrelateWorker(pool);
 }
 
 // Graceful shutdown.
 function shutdown(signal: string) {
   logger.info({ signal }, 'shutting down');
   stopRollups?.();
+  stopCorrelate?.();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }
