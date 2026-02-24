@@ -2238,13 +2238,13 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
         </div>
 
         <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', marginBottom: 6 }}>systemd</div>
-        <pre style={preStyle}>{`# /etc/systemd/system/orbit-api.service
+        <pre style={preStyle}>{`# /etc/systemd/system/orbit-core-api.service
 [Service]
 Environment=ORBIT_API_KEY=sua-chave-aqui
 
 # Recarregar e reiniciar:
 systemctl daemon-reload
-systemctl restart orbit-api`}</pre>
+systemctl restart orbit-core-api`}</pre>
 
         <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', margin: '12px 0 6px' }}>Docker / docker-compose</div>
         <pre style={preStyle}>{`environment:
