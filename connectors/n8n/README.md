@@ -30,11 +30,22 @@ Ambos enviam para `POST /api/v1/ingest/events`.
 | `id` da execução | `fingerprint` = `n8n:error:<id>` |
 | `id`, `workflowId`, `startedAt`, etc. | `attributes` |
 
+## Fluxo de dados (`ship_events.py`)
+
+```
+n8n REST API (/api/v1/executions?status=error)   → ship_events.py → orbit-core /api/v1/ingest/events
+n8n REST API (/api/v1/executions?status=running) → ship_events.py → orbit-core /api/v1/ingest/events
+```
+
+O conector faz polling da API REST do n8n a cada minuto (via cron).
+Não lê arquivos locais — pode rodar em qualquer servidor com acesso de rede ao n8n e ao orbit-core.
+
 ## Requisitos
 
 - Python 3.10+
 - `pip3 install requests`
-- n8n API key (Settings → n8n API → Create an API key)
+- n8n API key (Settings → n8n API → Create an API key) — **obrigatório**
+- Acesso de rede à API REST do n8n (`/api/v1/executions`)
 - Acesso de rede ao orbit-core API
 
 ## Variáveis de ambiente (`ship_events.py`)
@@ -54,6 +65,53 @@ Ambos enviam para `POST /api/v1/ingest/events`.
 | `ORBIT_BASIC_PASS` | — | Senha BasicAuth (prefira `ORBIT_BASIC_FILE`) |
 | `ORBIT_BASIC` | — | `user:pass` combinado |
 | `ORBIT_BASIC_FILE` | — | Caminho para arquivo contendo a senha |
+
+## Como o state file funciona
+
+O state file (`n8n-events.state.json`) armazena um **cursor de timestamp ISO 8601**
+(não byte-offset como os conectores Nagios/Wazuh):
+
+```json
+{"since": "2026-02-24T11:57:52.676976+00:00"}
+```
+
+A cada execução:
+1. Busca execuções com `status=error` e `stoppedAt > since` — paginando do mais novo ao mais antigo; para quando uma página inteira é mais antiga que `since`
+2. Busca execuções com `status=running` e idade > `STUCK_AFTER_MINUTES`
+3. Avança `since` para o `stoppedAt` mais recente encontrado (ou nudge de +1s se nenhum evento novo)
+
+Na primeira execução (sem state file), usa `LOOKBACK_MINUTES` como janela inicial.
+
+## Como execuções travadas (stuck) funcionam
+
+A cada rodada do cron, **toda execução ainda em running** há mais de `STUCK_AFTER_MINUTES`
+gera um evento `execution_stuck`. O campo `fingerprint` (`n8n:stuck:<id>`) permite que o
+orbit-core deduplique — o evento é atualizado em vez de criar duplicatas.
+
+## Verificação
+
+```bash
+# Confirmar que eventos chegam no orbit-core (namespace=n8n)
+curl -s -u orbitadmin:PASS \
+  -X POST https://prod.example.com/orbit-core/api/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query":{
+      "kind":"events",
+      "namespace":"n8n",
+      "from":"'"$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)"'",
+      "to":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+      "limit":5
+    }
+  }'
+
+# Verificar state file e log do cron
+cat /var/lib/orbit-core/n8n-events.state.json
+tail -20 /var/log/orbit-core/n8n_shipper.log
+```
+
+> **Sem eventos no orbit-core e log vazio** = cron rodou com sucesso mas não há
+> execuções com erro ou travadas no n8n — comportamento esperado.
 
 ## Cron example
 
