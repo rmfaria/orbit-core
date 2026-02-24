@@ -1012,6 +1012,9 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const [addLabel, setAddLabel] = React.useState('');
   const [metricOpts, setMetricOpts] = React.useState<MetricOpt[]>([]);
 
+  // hidden fixed charts ('cpu' | 'disk' | 'net' | 'suri')
+  const [hiddenFixed, setHiddenFixed] = React.useState<string[]>([]);
+
   const cpuRef = React.useRef<HTMLCanvasElement | null>(null);
   const diskRef = React.useRef<HTMLCanvasElement | null>(null);
   const netRef = React.useRef<HTMLCanvasElement | null>(null);
@@ -1198,6 +1201,14 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     runPulse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extraCharts]);
+
+  // destroy chart instances when fixed charts are hidden
+  React.useEffect(() => {
+    if (hiddenFixed.includes('cpu'))  { cpuChart.current?.destroy();  cpuChart.current  = null; }
+    if (hiddenFixed.includes('disk')) { diskChart.current?.destroy(); diskChart.current = null; }
+    if (hiddenFixed.includes('net'))  { netChart.current?.destroy();  netChart.current  = null; }
+    if (hiddenFixed.includes('suri')) { suriChart.current?.destroy(); suriChart.current = null; }
+  }, [hiddenFixed]);
 
   function glowGradient(ctx: CanvasRenderingContext2D, colorA: string, colorB: string) {
     const g = ctx.createLinearGradient(0, 0, 0, 320);
@@ -1464,25 +1475,25 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
           {/* Charts section */}
           <div>
             {/* Add-chart bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 6px' }}>
-              <span style={{ fontSize: 11, color: 'rgba(233,238,255,.45)', letterSpacing: '.2px' }}>
-                {4 + extraCharts.length}/6 gráficos
-              </span>
-              {extraCharts.length < 2 && !showAddChart && (
-                <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(85,243,255,.10)', borderColor: 'rgba(85,243,255,.3)', color: '#55f3ff' }}
-                  onClick={() => setShowAddChart(true)}>+ gráfico</button>
-              )}
-              {extraCharts.length > 0 && (
-                <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(255,93,214,.08)', borderColor: 'rgba(255,93,214,.3)', color: '#ff5dd6' }}
-                  onClick={() => {
-                    const removed = extraCharts[extraCharts.length - 1];
-                    setExtraCharts(prev => prev.slice(0, -1));
-                    setExtraRows(prev => { const n = { ...prev }; delete n[removed.id]; return n; });
-                    if (extraCharts.length === 2) { extra2Chart.current?.destroy(); extra2Chart.current = null; }
-                    else { extra1Chart.current?.destroy(); extra1Chart.current = null; }
-                  }}>− remover</button>
-              )}
-            </div>
+            {(() => {
+              const visibleFixed = 4 - hiddenFixed.length;
+              const total = visibleFixed + extraCharts.length;
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 6px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, color: 'rgba(233,238,255,.45)', letterSpacing: '.2px' }}>
+                    {total}/6 gráficos
+                  </span>
+                  {total < 6 && !showAddChart && (
+                    <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(85,243,255,.10)', borderColor: 'rgba(85,243,255,.3)', color: '#55f3ff' }}
+                      onClick={() => setShowAddChart(true)}>+ gráfico</button>
+                  )}
+                  {hiddenFixed.length > 0 && (
+                    <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(155,124,255,.10)', borderColor: 'rgba(155,124,255,.3)', color: '#9b7cff' }}
+                      onClick={() => setHiddenFixed([])}>↺ restaurar ({hiddenFixed.length})</button>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Add-chart picker */}
             {showAddChart && (
@@ -1520,31 +1531,56 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
 
             {/* Charts grid */}
             <div className={`orbit-charts-grid${chartLayout === 'below' ? ' orbit-charts-grid--wide' : ''}`}>
-              <div className="orbit-chart-box">
-                <div className="orbit-chart-tag">CPU Load</div>
-                <div className="orbit-chart-canvas-wrap"><canvas ref={cpuRef} /></div>
-              </div>
-              <div className="orbit-chart-box">
-                <div className="orbit-chart-tag">Disk Queue</div>
-                <div className="orbit-chart-canvas-wrap"><canvas ref={diskRef} /></div>
-              </div>
-              <div className="orbit-chart-box">
-                <div className="orbit-chart-tag">Net Traffic</div>
-                <div className="orbit-chart-canvas-wrap"><canvas ref={netRef} /></div>
-              </div>
-              <div className="orbit-chart-box">
-                <div className="orbit-chart-tag">Suricata Alerts</div>
-                <div className="orbit-chart-canvas-wrap"><canvas ref={suriRef} /></div>
-              </div>
+              {!hiddenFixed.includes('cpu') && (
+                <div className="orbit-chart-box">
+                  <div className="orbit-chart-tag">CPU Load</div>
+                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'cpu'])} title="Remover gráfico">×</button>
+                  <div className="orbit-chart-canvas-wrap"><canvas ref={cpuRef} /></div>
+                </div>
+              )}
+              {!hiddenFixed.includes('disk') && (
+                <div className="orbit-chart-box">
+                  <div className="orbit-chart-tag">Disk Queue</div>
+                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'disk'])} title="Remover gráfico">×</button>
+                  <div className="orbit-chart-canvas-wrap"><canvas ref={diskRef} /></div>
+                </div>
+              )}
+              {!hiddenFixed.includes('net') && (
+                <div className="orbit-chart-box">
+                  <div className="orbit-chart-tag">Net Traffic</div>
+                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'net'])} title="Remover gráfico">×</button>
+                  <div className="orbit-chart-canvas-wrap"><canvas ref={netRef} /></div>
+                </div>
+              )}
+              {!hiddenFixed.includes('suri') && (
+                <div className="orbit-chart-box">
+                  <div className="orbit-chart-tag">Suricata Alerts</div>
+                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'suri'])} title="Remover gráfico">×</button>
+                  <div className="orbit-chart-canvas-wrap"><canvas ref={suriRef} /></div>
+                </div>
+              )}
               {extraCharts[0] && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">{extraCharts[0].label}</div>
+                  <button className="orbit-chart-close" title="Remover gráfico"
+                    onClick={() => {
+                      setExtraCharts(prev => prev.filter((_, i) => i !== 0));
+                      setExtraRows(prev => { const n = { ...prev }; delete n[extraCharts[0].id]; return n; });
+                      extra1Chart.current?.destroy(); extra1Chart.current = null;
+                      if (extraCharts[1]) { extra1Chart.current = extra2Chart.current; extra2Chart.current = null; }
+                    }}>×</button>
                   <div className="orbit-chart-canvas-wrap"><canvas ref={extra1Ref} /></div>
                 </div>
               )}
               {extraCharts[1] && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">{extraCharts[1].label}</div>
+                  <button className="orbit-chart-close" title="Remover gráfico"
+                    onClick={() => {
+                      setExtraCharts(prev => prev.filter((_, i) => i !== 1));
+                      setExtraRows(prev => { const n = { ...prev }; delete n[extraCharts[1].id]; return n; });
+                      extra2Chart.current?.destroy(); extra2Chart.current = null;
+                    }}>×</button>
                   <div className="orbit-chart-canvas-wrap"><canvas ref={extra2Ref} /></div>
                 </div>
               )}
