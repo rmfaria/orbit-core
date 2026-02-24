@@ -13,7 +13,7 @@ type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'home' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'admin';
+type Tab        = 'home' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'admin';
 
 type CorrelationRow = {
   event_key:    string;
@@ -535,6 +535,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {navTabBtn('events',       'Eventos')}
         {navTabBtn('metrics',      'Métricas')}
         {navTabBtn('correlations', 'Correlações')}
+        {navTabBtn('dashboards',   '⊞ Dashboards')}
       </nav>
 
       {/* Right side */}
@@ -2321,7 +2322,53 @@ python3 ship_events.py`}</pre>
         </div>
       </div>
 
+      <AiConfigCard />
+
       <SourcesTab setTab={setTab} />
+    </div>
+  );
+}
+
+function AiConfigCard() {
+  const [aiKey,   setAiKey]   = React.useState(() => localStorage.getItem('ai_api_key') ?? '');
+  const [aiModel, setAiModel] = React.useState(() => localStorage.getItem('ai_model') ?? 'claude-sonnet-4-6');
+  const [saved,   setSaved]   = React.useState(false);
+
+  function save() {
+    localStorage.setItem('ai_api_key', aiKey);
+    localStorage.setItem('ai_model',   aiModel);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  return (
+    <div style={S.card}>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>AI Agent — Dashboard Builder</div>
+      <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
+        Chave e modelo usados pelo AI agent ao gerar dashboards automaticamente.
+        Persistidos no <code style={codeStyle}>localStorage</code> — enviados via headers <code style={codeStyle}>X-Ai-Key</code> / <code style={codeStyle}>X-Ai-Model</code>.
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <label style={S.label}>
+          Anthropic API Key
+          <input
+            type="password"
+            value={aiKey}
+            onChange={e => setAiKey(e.target.value)}
+            placeholder="sk-ant-..."
+            style={{ ...S.input, width: 280 }}
+          />
+        </label>
+        <label style={S.label}>
+          Modelo
+          <select value={aiModel} onChange={e => setAiModel(e.target.value)} style={S.select}>
+            <option value="claude-opus-4-6">claude-opus-4-6</option>
+            <option value="claude-sonnet-4-6">claude-sonnet-4-6 (recomendado)</option>
+            <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
+          </select>
+        </label>
+        <button onClick={save} style={S.btnSm}>{saved ? 'Salvo ✓' : 'Salvar'}</button>
+      </div>
     </div>
   );
 }
@@ -2436,6 +2483,834 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
   );
 }
 
+// ─── DASHBOARD HELPERS ────────────────────────────────────────────────────────
+
+function presetToRange(preset: string): { from: string; to: string } {
+  const hours: Record<string, number> = { '60m': 1, '6h': 6, '24h': 24, '7d': 168, '30d': 720 };
+  const h = hours[preset] ?? 24;
+  return { from: relativeFrom(h), to: new Date().toISOString() };
+}
+
+// ─── DASHBOARD WIDGET RENDERER ────────────────────────────────────────────────
+
+type WidgetSpec = {
+  id: string;
+  title: string;
+  kind: string;
+  layout: { x: number; y: number; w: number; h: number };
+  query: Record<string, unknown>;
+  note?: string;
+};
+
+function DashboardWidgetRenderer({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+  const kind = widget.kind;
+
+  if (kind === 'eps') {
+    const ns = (widget.query.namespace as string) ?? '';
+    return (
+      <div style={{ gridColumn: `span ${widget.layout.w}` }}>
+        <EpsChart namespace={ns} from={from} to={to} variant="chart-box" />
+      </div>
+    );
+  }
+
+  if (kind === 'events') {
+    return <DashWidgetEvents widget={widget} from={from} to={to} />;
+  }
+
+  if (kind === 'timeseries_multi') {
+    return <DashWidgetMulti widget={widget} from={from} to={to} />;
+  }
+
+  if (kind === 'kpi') {
+    return <DashWidgetKpi widget={widget} from={from} to={to} />;
+  }
+
+  // default: timeseries
+  return <DashWidgetTimeseries widget={widget} from={from} to={to} />;
+}
+
+function DashWidgetTimeseries({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const chartRef  = React.useRef<ReturnType<typeof makeNeLineChart>>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [isEmpty, setIsEmpty] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!canvasRef.current) return;
+    chartRef.current = makeNeLineChart(canvasRef.current, 1);
+    return () => { chartRef.current?.destroy(); chartRef.current = null; };
+  }, []);
+
+  React.useEffect(() => {
+    setLoading(true);
+    const q = { ...widget.query, from, to };
+    fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
+      .then(r => r.json())
+      .then(j => {
+        const rows: Row[] = j?.result?.rows ?? [];
+        setIsEmpty(rows.length === 0);
+        const chart = chartRef.current;
+        if (!chart) return;
+        chart.data.labels = rows.map(r => {
+          const d = new Date(r.ts);
+          return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        });
+        chart.data.datasets[0].label = widget.title;
+        chart.data.datasets[0].data  = rows.map(r => r.value);
+        chart.update('none');
+      })
+      .catch(() => setIsEmpty(true))
+      .finally(() => setLoading(false));
+  }, [widget.id, from, to]);
+
+  return (
+    <div className="orbit-chart-box" style={{ gridColumn: `span ${widget.layout.w}` }}>
+      <div className="orbit-chart-tag">{widget.title}{loading ? ' · …' : ''}</div>
+      <div className="orbit-chart-canvas-wrap">
+        <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block' }} />
+        {isEmpty && !loading && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>
+            Sem dados no período
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DashWidgetMulti({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const chartRef  = React.useRef<ReturnType<typeof makeNeLineChart>>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [isEmpty, setIsEmpty] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!canvasRef.current) return;
+    chartRef.current = makeNeLineChart(canvasRef.current, 6);
+    return () => { chartRef.current?.destroy(); chartRef.current = null; };
+  }, []);
+
+  React.useEffect(() => {
+    setLoading(true);
+    const q = { ...widget.query, from, to };
+    fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
+      .then(r => r.json())
+      .then(j => {
+        const rows: MultiRow[] = j?.result?.rows ?? [];
+        setIsEmpty(rows.length === 0);
+        const chart = chartRef.current;
+        if (!chart) return;
+
+        // Group by series
+        const bySeries = new Map<string, Array<{ ts: string; value: number }>>();
+        for (const row of rows) {
+          const arr = bySeries.get(row.series) ?? [];
+          arr.push({ ts: row.ts, value: row.value });
+          bySeries.set(row.series, arr);
+        }
+        const seriesKeys = Array.from(bySeries.keys());
+        const allTs = Array.from(new Set(rows.map(r => r.ts))).sort();
+
+        chart.data.labels = allTs.map(ts => {
+          const d = new Date(ts);
+          return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        });
+        chart.data.datasets = seriesKeys.map((key, i) => {
+          const pts = new Map((bySeries.get(key) ?? []).map(p => [p.ts, p.value]));
+          const colors = ['#55f3ff', '#9b7cff', '#60a5fa', '#fbbf24', '#a3e635', '#fb7185'];
+          return {
+            label: key,
+            data: allTs.map(ts => pts.get(ts) ?? null),
+            borderColor: colors[i % colors.length],
+            backgroundColor: 'rgba(0,0,0,0)',
+            tension: 0.38,
+            fill: false,
+            pointRadius: 0,
+          } as any;
+        });
+        chart.update('none');
+      })
+      .catch(() => setIsEmpty(true))
+      .finally(() => setLoading(false));
+  }, [widget.id, from, to]);
+
+  return (
+    <div className="orbit-chart-box" style={{ gridColumn: `span ${widget.layout.w}` }}>
+      <div className="orbit-chart-tag">{widget.title}{loading ? ' · …' : ''}</div>
+      <div className="orbit-chart-canvas-wrap">
+        <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block' }} />
+        {isEmpty && !loading && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>
+            Sem dados no período
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DashWidgetEvents({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+  const [events, setEvents] = React.useState<EventRow[]>([]);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    setLoading(true);
+    const q = { ...widget.query, from, to, limit: widget.query.limit ?? 20 };
+    fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
+      .then(r => r.json())
+      .then(j => setEvents(j?.result?.rows ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [widget.id, from, to]);
+
+  return (
+    <div className="orbit-chart-box" style={{ gridColumn: `span ${widget.layout.w}`, height: 'auto', minHeight: 180 }}>
+      <div className="orbit-chart-tag">{widget.title}{loading ? ' · …' : ''}</div>
+      <div style={{ overflowY: 'auto', maxHeight: 280, paddingTop: 8 }}>
+        {events.length === 0 && !loading && (
+          <div style={{ color: '#64748b', fontSize: 12, padding: '12px 0' }}>Sem eventos no período</div>
+        )}
+        {events.map(e => <FeedRow key={e.ts + e.title} e={e} />)}
+      </div>
+    </div>
+  );
+}
+
+function DashWidgetKpi({ widget, from, to }: { widget: WidgetSpec; from: string; to: string }) {
+  const [value, setValue] = React.useState<number | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    setLoading(true);
+    const q = { ...widget.query, from, to };
+    fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
+      .then(r => r.json())
+      .then(j => {
+        const rows: Row[] = j?.result?.rows ?? [];
+        setValue(rows.length ? rows[rows.length - 1].value : null);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [widget.id, from, to]);
+
+  const display = loading ? '…' : value === null ? '—' : value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(2);
+
+  return (
+    <div className="orbit-chart-box" style={{ gridColumn: `span ${widget.layout.w}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 120 }}>
+      <div className="orbit-chart-tag">{widget.title}</div>
+      <div style={{ fontSize: 42, fontWeight: 900, color: '#55f3ff', letterSpacing: '-0.02em', marginTop: 16 }}>{display}</div>
+      <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{(widget.query.metric as string) ?? ''}</div>
+    </div>
+  );
+}
+
+// ─── DASHBOARDS TAB ───────────────────────────────────────────────────────────
+
+type DashMode = 'list' | 'build' | 'view';
+
+type SavedDashboard = {
+  id: string;
+  name: string;
+  description?: string;
+  time?: { preset: string };
+  widget_count: number;
+  updated_at: string;
+};
+
+type BuildWidget = {
+  id: string;
+  title: string;
+  kind: string;
+  namespace: string;
+  metric: string;
+  assetId: string;
+  severities: string;
+  span: 1 | 2;
+};
+
+const WIDGET_KINDS = ['timeseries', 'timeseries_multi', 'events', 'eps', 'kpi'];
+const TIME_PRESETS = ['60m', '6h', '24h', '7d', '30d'];
+
+function buildWidgetToSpec(w: BuildWidget): WidgetSpec {
+  let query: Record<string, unknown> = {};
+
+  if (w.kind === 'eps') {
+    query = { kind: 'event_count', namespace: w.namespace };
+  } else if (w.kind === 'events') {
+    query = { kind: 'events', namespace: w.namespace, limit: 20 };
+    if (w.assetId)    query.asset_id   = w.assetId;
+    if (w.severities) query.severities = w.severities.split(',').map(s => s.trim()).filter(Boolean);
+  } else if (w.kind === 'timeseries_multi') {
+    query = { kind: 'timeseries_multi', namespace: w.namespace, metric: w.metric, group_by: ['asset_id'] };
+  } else {
+    // timeseries or kpi
+    query = { kind: 'timeseries', namespace: w.namespace, metric: w.metric };
+    if (w.assetId) query.asset_id = w.assetId;
+  }
+
+  return {
+    id:     w.id,
+    title:  w.title,
+    kind:   w.kind,
+    layout: { x: 0, y: 0, w: w.span, h: 1 },
+    query,
+  };
+}
+
+function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
+  const [mode, setMode]           = React.useState<DashMode>('list');
+  const [dashboards, setDashboards] = React.useState<SavedDashboard[]>([]);
+  const [viewSpec, setViewSpec]   = React.useState<any | null>(null);
+  const [editSpec, setEditSpec]   = React.useState<any | null>(null);
+  const [loading, setLoading]     = React.useState(false);
+
+  // Rotation state
+  const [rotating, setRotating]   = React.useState(false);
+  const [rotIdx, setRotIdx]       = React.useState(0);
+  const [rotInterval, setRotInterval] = React.useState(30);
+  const [rotProgress, setRotProgress] = React.useState(0);
+  const rotTimer  = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const rotTick   = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function loadList() {
+    setLoading(true);
+    fetch('api/v1/dashboards', { headers: apiGetHeaders() })
+      .then(r => r.json())
+      .then(j => setDashboards(j?.dashboards ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
+
+  React.useEffect(() => {
+    if (mode === 'list') loadList();
+  }, [mode]);
+
+  // Rotation ticker
+  React.useEffect(() => {
+    if (!rotating || dashboards.length < 2) return;
+
+    const totalMs = rotInterval * 1000;
+    const tickMs  = 200;
+    let elapsed   = 0;
+    setRotProgress(0);
+
+    rotTick.current = setInterval(() => {
+      elapsed += tickMs;
+      setRotProgress(Math.min(100, (elapsed / totalMs) * 100));
+    }, tickMs);
+
+    rotTimer.current = setInterval(() => {
+      setRotIdx(i => (i + 1) % dashboards.length);
+      elapsed = 0;
+      setRotProgress(0);
+    }, totalMs);
+
+    return () => {
+      if (rotTimer.current) clearInterval(rotTimer.current);
+      if (rotTick.current)  clearInterval(rotTick.current);
+    };
+  }, [rotating, rotInterval, dashboards.length]);
+
+  function startRotation() {
+    if (dashboards.length === 0) return;
+    setRotIdx(0);
+    setRotating(true);
+    // open the first dashboard
+    const first = dashboards[0];
+    fetch(`api/v1/dashboards/${first.id}`, { headers: apiGetHeaders() })
+      .then(r => r.json())
+      .then(j => { setViewSpec(j.spec); setMode('view'); })
+      .catch(() => {});
+  }
+
+  function stopRotation() {
+    setRotating(false);
+    setRotProgress(0);
+    if (rotTimer.current) clearInterval(rotTimer.current);
+    if (rotTick.current)  clearInterval(rotTick.current);
+  }
+
+  // When rotation advances, load the new dashboard
+  React.useEffect(() => {
+    if (!rotating || dashboards.length === 0) return;
+    const d = dashboards[rotIdx % dashboards.length];
+    if (!d) return;
+    fetch(`api/v1/dashboards/${d.id}`, { headers: apiGetHeaders() })
+      .then(r => r.json())
+      .then(j => setViewSpec(j.spec))
+      .catch(() => {});
+  }, [rotIdx, rotating]);
+
+  async function openView(id: string) {
+    const j = await fetch(`api/v1/dashboards/${id}`, { headers: apiGetHeaders() }).then(r => r.json());
+    setViewSpec(j.spec);
+    setMode('view');
+  }
+
+  async function openEdit(id: string) {
+    const j = await fetch(`api/v1/dashboards/${id}`, { headers: apiGetHeaders() }).then(r => r.json());
+    setEditSpec(j.spec);
+    setMode('build');
+  }
+
+  async function deleteDash(id: string) {
+    if (!confirm('Deletar este dashboard?')) return;
+    await fetch(`api/v1/dashboards/${id}`, { method: 'DELETE', headers: apiGetHeaders() });
+    loadList();
+  }
+
+  if (mode === 'view' && viewSpec) {
+    return (
+      <DashboardView
+        spec={viewSpec}
+        rotating={rotating}
+        rotProgress={rotProgress}
+        rotIdx={rotIdx}
+        rotTotal={dashboards.length}
+        onBack={() => { stopRotation(); setMode('list'); }}
+        onEdit={() => { setEditSpec(viewSpec); setMode('build'); }}
+        onStopRotation={stopRotation}
+      />
+    );
+  }
+
+  if (mode === 'build') {
+    return (
+      <DashboardBuilder
+        assets={assets}
+        initialSpec={editSpec}
+        onCancel={() => { setEditSpec(null); setMode('list'); }}
+        onSaved={() => { setEditSpec(null); setMode('list'); }}
+      />
+    );
+  }
+
+  // LIST mode
+  return (
+    <div>
+      <div style={S.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>⊞ Dashboards</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 4 }}>
+              Painéis personalizados com qualquer fonte de dados.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Rotation controls */}
+            <label style={{ ...S.label, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, color: 'rgba(233,238,255,.65)' }}>Intervalo</span>
+              <select
+                value={rotInterval}
+                onChange={e => setRotInterval(Number(e.target.value))}
+                style={{ ...S.select, padding: '5px 8px', fontSize: 12 }}
+              >
+                <option value={15}>15s</option>
+                <option value={30}>30s</option>
+                <option value={60}>1min</option>
+                <option value={300}>5min</option>
+              </select>
+            </label>
+            <button
+              onClick={startRotation}
+              disabled={dashboards.length < 2}
+              style={{ ...S.btnSm, opacity: dashboards.length < 2 ? 0.4 : 1 }}
+            >
+              ▶ Rotação
+            </button>
+            <button
+              onClick={() => { setEditSpec(null); setMode('build'); }}
+              style={S.btn}
+            >
+              + Criar Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {loading && <div style={{ color: '#64748b', fontSize: 13, padding: '8px 0' }}>Carregando…</div>}
+
+      {!loading && dashboards.length === 0 && (
+        <div style={{ ...S.card, textAlign: 'center', color: '#64748b', padding: 40 }}>
+          Nenhum dashboard salvo ainda.<br />
+          <button onClick={() => { setEditSpec(null); setMode('build'); }} style={{ ...S.btn, marginTop: 16 }}>
+            Criar o primeiro dashboard
+          </button>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+        {dashboards.map(d => (
+          <div key={d.id} style={S.card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>{d.name}</div>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                {d.time?.preset ?? '24h'}
+              </span>
+            </div>
+            {d.description && (
+              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8, lineHeight: 1.5 }}>{d.description}</div>
+            )}
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>
+              {d.widget_count} widget{d.widget_count !== 1 ? 's' : ''} · {new Date(d.updated_at).toLocaleDateString()}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={() => openView(d.id)} style={S.btn}>Abrir</button>
+              <button onClick={() => openEdit(d.id)} style={S.btnSm}>✎ Editar</button>
+              <button onClick={() => deleteDash(d.id)} style={{ ...S.btnSm, borderColor: 'rgba(248,113,113,.35)', color: '#f87171' }}>× Deletar</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashboardView({ spec, rotating, rotProgress, rotIdx, rotTotal, onBack, onEdit, onStopRotation }: {
+  spec: any;
+  rotating: boolean;
+  rotProgress: number;
+  rotIdx: number;
+  rotTotal: number;
+  onBack: () => void;
+  onEdit: () => void;
+  onStopRotation: () => void;
+}) {
+  const { from, to } = presetToRange(spec?.time?.preset ?? '24h');
+  const widgets: WidgetSpec[] = spec?.widgets ?? [];
+  const maxW = Math.max(...widgets.map((w: WidgetSpec) => w.layout?.w ?? 1), 2);
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+        <button onClick={onBack} style={S.btnSm}>← Voltar</button>
+        <div style={{ fontWeight: 900, fontSize: 18, flex: 1 }}>{spec?.name ?? 'Dashboard'}</div>
+        <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700 }}>
+          {spec?.time?.preset ?? '24h'}
+        </span>
+        <button onClick={onEdit} style={S.btnSm}>✎ Editar</button>
+        {rotating && (
+          <button onClick={onStopRotation} style={{ ...S.btnSm, borderColor: 'rgba(248,113,113,.35)', color: '#f87171' }}>
+            ⏹ Parar rotação
+          </button>
+        )}
+      </div>
+
+      {/* Rotation indicator */}
+      {rotating && (
+        <div style={{ marginBottom: 14, background: 'rgba(85,243,255,0.06)', border: '1px solid rgba(85,243,255,.18)', borderRadius: 10, padding: '8px 14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#55f3ff', marginBottom: 6 }}>
+            <span>▶ Rotação ativa</span>
+            <span>{rotIdx + 1} / {rotTotal}</span>
+          </div>
+          <div style={{ height: 4, background: 'rgba(255,255,255,.08)', borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${rotProgress}%`, background: '#55f3ff', borderRadius: 99, transition: 'width 0.2s linear' }} />
+          </div>
+        </div>
+      )}
+
+      {/* Grid */}
+      <div
+        className="orbit-charts-grid"
+        style={{ '--cols': maxW } as React.CSSProperties}
+      >
+        {widgets.map(widget => (
+          <DashboardWidgetRenderer key={widget.id} widget={widget} from={from} to={to} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
+  assets: AssetOpt[];
+  initialSpec: any | null;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName]             = React.useState(initialSpec?.name ?? '');
+  const [desc, setDesc]             = React.useState(initialSpec?.description ?? '');
+  const [preset, setPreset]         = React.useState<string>(initialSpec?.time?.preset ?? '24h');
+  const [widgets, setWidgets]       = React.useState<BuildWidget[]>(() => {
+    if (!initialSpec?.widgets) return [];
+    return (initialSpec.widgets as WidgetSpec[]).map(w => ({
+      id:         w.id,
+      title:      w.title,
+      kind:       w.kind,
+      namespace:  (w.query.namespace as string) ?? '',
+      metric:     (w.query.metric as string) ?? '',
+      assetId:    (w.query.asset_id as string) ?? '',
+      severities: Array.isArray(w.query.severities) ? (w.query.severities as string[]).join(', ') : '',
+      span:       (w.layout.w as 1 | 2) ?? 1,
+    }));
+  });
+
+  // Add widget form
+  const [newKind,  setNewKind]  = React.useState('timeseries');
+  const [newTitle, setNewTitle] = React.useState('');
+  const [newNs,    setNewNs]    = React.useState('');
+  const [newMetric,setNewMetric] = React.useState('');
+  const [newAsset, setNewAsset] = React.useState('');
+  const [newSev,   setNewSev]   = React.useState('');
+  const [newSpan,  setNewSpan]  = React.useState<1 | 2>(1);
+
+  // Catalog
+  const [nsOpts,     setNsOpts]     = React.useState<string[]>([]);
+  const [metricOpts, setMetricOpts] = React.useState<MetricOpt[]>([]);
+  React.useEffect(() => {
+    // Distinct event namespaces
+    fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: { kind: 'events', from: relativeFrom(720), to: new Date().toISOString(), limit: 1 } }) })
+      .catch(() => {});
+    // Metrics catalog (all assets)
+    if (assets.length) {
+      const promises = assets.slice(0, 5).map(a =>
+        fetch(`api/v1/catalog/metrics?asset_id=${encodeURIComponent(a.asset_id)}&limit=200`, { headers: apiGetHeaders() })
+          .then(r => r.json())
+          .then(j => (j?.metrics ?? []) as MetricOpt[])
+          .catch(() => [] as MetricOpt[])
+      );
+      Promise.all(promises).then(results => {
+        const merged = results.flat();
+        const seen = new Set<string>();
+        const deduped = merged.filter(m => {
+          const k = `${m.namespace}:${m.metric}`;
+          if (seen.has(k)) return false;
+          seen.add(k); return true;
+        });
+        setMetricOpts(deduped);
+        const namespaces = Array.from(new Set(deduped.map(m => m.namespace)));
+        setNsOpts(namespaces);
+      });
+    }
+  }, [assets.length]);
+
+  // AI state
+  const [aiPrompt, setAiPrompt]     = React.useState('');
+  const [aiLoading, setAiLoading]   = React.useState(false);
+  const [aiError, setAiError]       = React.useState<string | null>(null);
+
+  // Save state
+  const [saving, setSaving]         = React.useState(false);
+  const [saveErr, setSaveErr]       = React.useState<string | null>(null);
+
+  async function generateWithAI() {
+    const aiKey   = localStorage.getItem('ai_api_key') ?? '';
+    const aiModel = localStorage.getItem('ai_model') ?? 'claude-sonnet-4-6';
+    if (!aiKey) {
+      setAiError('Configure a Anthropic API Key em Admin → AI Agent antes de usar.');
+      return;
+    }
+    setAiLoading(true); setAiError(null);
+    try {
+      const r = await fetch('api/v1/ai/dashboard', {
+        method: 'POST',
+        headers: { ...apiHeaders(), 'x-ai-key': aiKey, 'x-ai-model': aiModel },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+      const spec = j.spec;
+      // Populate form from AI spec
+      setName(spec.name ?? '');
+      setDesc(spec.description ?? '');
+      setPreset(spec.time?.preset ?? '24h');
+      setWidgets((spec.widgets as WidgetSpec[]).map(w => ({
+        id:         w.id,
+        title:      w.title,
+        kind:       w.kind,
+        namespace:  (w.query.namespace as string) ?? '',
+        metric:     (w.query.metric as string) ?? '',
+        assetId:    (w.query.asset_id as string) ?? '',
+        severities: Array.isArray(w.query.severities) ? (w.query.severities as string[]).join(', ') : '',
+        span:       (w.layout.w as 1 | 2),
+      })));
+    } catch (e: any) {
+      setAiError(String(e));
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function addWidget() {
+    if (!newTitle.trim()) return;
+    const w: BuildWidget = {
+      id:         `w-${Date.now()}`,
+      title:      newTitle.trim(),
+      kind:       newKind,
+      namespace:  newNs,
+      metric:     newMetric,
+      assetId:    newAsset,
+      severities: newSev,
+      span:       newSpan,
+    };
+    setWidgets(prev => [...prev, w]);
+    setNewTitle('');
+  }
+
+  function removeWidget(id: string) {
+    setWidgets(prev => prev.filter(w => w.id !== id));
+  }
+
+  async function save() {
+    if (!name.trim()) { setSaveErr('Nome do dashboard é obrigatório.'); return; }
+    if (widgets.length === 0) { setSaveErr('Adicione pelo menos 1 widget.'); return; }
+
+    const specId = initialSpec?.id ?? `dash-${Date.now()}`;
+    const spec = {
+      id:          specId,
+      name:        name.trim(),
+      description: desc.trim() || undefined,
+      version:     'v1',
+      time:        { preset },
+      tags:        [] as string[],
+      widgets:     widgets.map(buildWidgetToSpec),
+    };
+
+    setSaving(true); setSaveErr(null);
+    try {
+      const method = initialSpec ? 'PUT' : 'POST';
+      const url    = initialSpec ? `api/v1/dashboards/${specId}` : 'api/v1/dashboards';
+      const r = await fetch(url, { method, headers: apiHeaders(), body: JSON.stringify(spec) });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+      onSaved();
+    } catch (e: any) {
+      setSaveErr(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filteredMetrics = metricOpts.filter(m => !newNs || m.namespace === newNs);
+
+  return (
+    <div>
+      {/* Header bar */}
+      <div style={{ ...S.card, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <label style={S.label}>
+          Nome
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Meu Dashboard" style={{ ...S.input, minWidth: 180 }} />
+        </label>
+        <label style={S.label}>
+          Descrição
+          <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Opcional" style={{ ...S.input, minWidth: 220 }} />
+        </label>
+        <label style={S.label}>
+          Time preset
+          <select value={preset} onChange={e => setPreset(e.target.value)} style={S.select}>
+            {TIME_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </label>
+        <button onClick={save} disabled={saving} style={S.btn}>{saving ? 'Salvando…' : 'Salvar'}</button>
+        <button onClick={onCancel} style={S.btnSm}>Cancelar</button>
+      </div>
+      {saveErr && <div style={S.err}>{saveErr}</div>}
+
+      {/* AI section */}
+      <div style={S.card}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>✦ AI Assistant</div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <textarea
+            value={aiPrompt}
+            onChange={e => setAiPrompt(e.target.value)}
+            placeholder="Descreva o dashboard que deseja criar… ex: quero monitorar CPU e memória dos servidores nagios e ver o EPS do wazuh"
+            style={{ ...S.input, flex: 1, minHeight: 64, resize: 'vertical' as const }}
+          />
+          <button
+            onClick={generateWithAI}
+            disabled={aiLoading || !aiPrompt.trim()}
+            style={{ ...S.btn, whiteSpace: 'nowrap' }}
+          >
+            {aiLoading ? '…gerando' : '⚡ Gerar com IA'}
+          </button>
+        </div>
+        {aiError && <div style={S.err}>{aiError}</div>}
+        {aiLoading && (
+          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>Consultando Claude…</div>
+        )}
+      </div>
+
+      {/* Add widget manually */}
+      <div style={S.card}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>+ Adicionar Widget</div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <label style={S.label}>
+            Kind
+            <select value={newKind} onChange={e => setNewKind(e.target.value)} style={S.select}>
+              {WIDGET_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+            </select>
+          </label>
+          <label style={S.label}>
+            Título
+            <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="ex: CPU Usage" style={{ ...S.input, width: 160 }} />
+          </label>
+          <label style={S.label}>
+            Namespace
+            <select value={newNs} onChange={e => setNewNs(e.target.value)} style={S.select}>
+              <option value="">— qualquer —</option>
+              {nsOpts.map(n => <option key={n} value={n}>{n}</option>)}
+              <option value="nagios">nagios</option>
+              <option value="wazuh">wazuh</option>
+              <option value="n8n">n8n</option>
+            </select>
+          </label>
+          {(newKind === 'timeseries' || newKind === 'timeseries_multi' || newKind === 'kpi') && (
+            <label style={S.label}>
+              Métrica
+              <select value={newMetric} onChange={e => setNewMetric(e.target.value)} style={S.select}>
+                <option value="">— selecione —</option>
+                {filteredMetrics.map(m => (
+                  <option key={`${m.namespace}:${m.metric}`} value={m.metric}>{m.metric}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {(newKind === 'timeseries' || newKind === 'events') && (
+            <label style={S.label}>
+              Asset
+              <select value={newAsset} onChange={e => setNewAsset(e.target.value)} style={S.select}>
+                <option value="">— todos —</option>
+                {assets.map(a => <option key={a.asset_id} value={a.asset_id}>{a.name ?? a.asset_id}</option>)}
+              </select>
+            </label>
+          )}
+          <label style={S.label}>
+            Span
+            <select value={newSpan} onChange={e => setNewSpan(Number(e.target.value) as 1 | 2)} style={S.select}>
+              <option value={1}>1 — metade</option>
+              <option value={2}>2 — inteiro</option>
+            </select>
+          </label>
+          <button onClick={addWidget} style={S.btn}>Adicionar</button>
+        </div>
+      </div>
+
+      {/* Widget list */}
+      <div style={S.card}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
+          Widgets ({widgets.length})
+        </div>
+        {widgets.length === 0 && (
+          <div style={{ color: '#64748b', fontSize: 13 }}>Nenhum widget adicionado ainda.</div>
+        )}
+        {widgets.map(w => (
+          <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(140,160,255,.10)', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.10)', color: '#55f3ff', fontWeight: 700 }}>{w.kind}</span>
+            <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{w.title}</span>
+            <span style={{ fontSize: 11, color: '#64748b' }}>
+              {[w.namespace, w.metric, w.assetId].filter(Boolean).join(' · ')}
+            </span>
+            <span style={{ fontSize: 11, color: '#64748b' }}>span:{w.span}</span>
+            <button onClick={() => removeWidget(w.id)} style={{ ...S.btnSm, borderColor: 'rgba(248,113,113,.35)', color: '#f87171', padding: '4px 8px' }}>×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export function App() {
@@ -2463,6 +3338,7 @@ export function App() {
           </div>
         )}
         {tab === 'home'          && <HomeTab        assets={assets} setTab={setTab} />}
+        {tab === 'dashboards'    && <DashboardsTab  assets={assets} />}
         {tab === 'src-nagios'    && <NagiosTab      assets={assets} />}
         {tab === 'src-wazuh'     && <EventsTab      key="src-wazuh"     assets={assets} defaultNs="wazuh" />}
         {tab === 'src-fortigate' && <EventsTab      key="src-fortigate" assets={assets} defaultNs="wazuh" />}

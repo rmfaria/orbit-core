@@ -13,6 +13,7 @@ import { catalogAssetsHandler, catalogMetricsHandler, catalogDimensionsHandler }
 import { metricsHandler, metricsMiddleware } from './metrics.js';
 import { metricsPromHandler } from './metrics_prom.js';
 import { dashboardsRouter } from './routes/dashboards.js';
+import { aiRouter } from './routes/ai.js';
 import { correlationsHandler } from './routes/correlations.js';
 import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
@@ -52,8 +53,9 @@ app.post('/api/v1/query', a(queryHandler));
 app.post('/api/v1/ingest/metrics', a(ingestMetricsHandler));
 app.post('/api/v1/ingest/events', a(ingestEventsHandler));
 
-// dashboards (AI builders should call validate/apply routes; the AI itself should live outside)
-app.use('/api/v1', dashboardsRouter());
+// dashboards — CRUD + AI agent proxy
+app.use('/api/v1', dashboardsRouter(pool));
+app.use('/api/v1', aiRouter(pool));
 
 // correlations
 app.get('/api/v1/correlations', a(correlationsHandler));

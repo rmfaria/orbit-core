@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { OrbitQlQuery } from './index.js';
 
-export const WidgetKindSchema = z.enum(['timeseries', 'timeseries_multi', 'events', 'kpi']);
+export const WidgetKindSchema = z.enum(['timeseries', 'timeseries_multi', 'events', 'eps', 'kpi']);
 export type WidgetKind = z.infer<typeof WidgetKindSchema>;
 
 export const LayoutSchema = z.object({
