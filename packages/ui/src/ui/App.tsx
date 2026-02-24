@@ -87,6 +87,12 @@ function relativeFrom(hours: number) {
   return new Date(Date.now() - hours * 3600 * 1000).toISOString();
 }
 
+// If built with VITE_ORBIT_API_KEY, seed localStorage on first load.
+const _builtInKey = import.meta.env.VITE_ORBIT_API_KEY as string | undefined;
+if (_builtInKey && !localStorage.getItem('orbit_api_key')) {
+  localStorage.setItem('orbit_api_key', _builtInKey);
+}
+
 // Build fetch headers — reads API key from localStorage if present.
 function apiHeaders(): HeadersInit {
   const key = localStorage.getItem('orbit_api_key') ?? '';
