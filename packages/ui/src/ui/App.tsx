@@ -938,7 +938,7 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
 
 // ─── EPS CHART ────────────────────────────────────────────────────────────────
 
-function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string; from: string; to: string; variant?: 'card' | 'chart-box' }) {
+function EpsChart({ namespace, from, to, variant = 'card', onClose }: { namespace: string; from: string; to: string; variant?: 'card' | 'chart-box'; onClose?: () => void }) {
   const canvasRef  = React.useRef<HTMLCanvasElement | null>(null);
   const chartRef   = React.useRef<Chart | null>(null);
   const [rows, setRows]           = React.useState<Row[]>([]);
@@ -993,6 +993,9 @@ function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string
         <div className="orbit-chart-tag">
           EPS — Wazuh{loading ? ' · …' : ''} · bucket: {bucketLabel}
         </div>
+        {onClose && (
+          <button className="orbit-chart-close" onClick={onClose} title="Remover gráfico">×</button>
+        )}
         <div className="orbit-chart-canvas-wrap">
           {/* canvas always in DOM so Chart.js can attach on mount */}
           <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block' }} />
@@ -1491,6 +1494,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
 
   // hidden fixed charts ('cpu' | 'disk' | 'net' | 'suri')
   const [hiddenFixed, setHiddenFixed] = React.useState<string[]>([]);
+  const [hiddenEps, setHiddenEps]     = React.useState(false);
 
   const cpuRef = React.useRef<HTMLCanvasElement | null>(null);
   const diskRef = React.useRef<HTMLCanvasElement | null>(null);
@@ -1886,6 +1890,10 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
                     <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(155,124,255,.10)', borderColor: 'rgba(155,124,255,.3)', color: '#9b7cff' }}
                       onClick={() => setHiddenFixed([])}>↺ restaurar ({hiddenFixed.length})</button>
                   )}
+                  {hiddenEps && (
+                    <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(85,243,255,.10)', borderColor: 'rgba(85,243,255,.3)', color: '#55f3ff' }}
+                      onClick={() => setHiddenEps(false)}>+ EPS</button>
+                  )}
                 </div>
               );
             })()}
@@ -1980,9 +1988,11 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
                 </div>
               )}
               {/* EPS chart spanning full width */}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <EpsChart namespace="wazuh" from={relativeFrom(24)} to={new Date().toISOString()} variant="chart-box" />
-              </div>
+              {!hiddenEps && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <EpsChart namespace="wazuh" from={relativeFrom(24)} to={new Date().toISOString()} variant="chart-box" onClose={() => setHiddenEps(true)} />
+                </div>
+              )}
             </div>
           </div>
 
