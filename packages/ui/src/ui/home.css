@@ -171,6 +171,20 @@
 }
 @media (max-width: 980px) { .orbit-home-main { grid-template-columns: 1fr; } }
 
+/* Stacked layout: charts above, feed below */
+.orbit-home-below {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+
+/* Wide charts grid (3 cols) used in 'below' layout for better use of full width */
+.orbit-charts-grid--wide {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+@media (max-width: 900px) { .orbit-charts-grid--wide { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .orbit-charts-grid--wide { grid-template-columns: 1fr; } }
+
 /* Live event feed */
 .orbit-feed {
   display: flex;

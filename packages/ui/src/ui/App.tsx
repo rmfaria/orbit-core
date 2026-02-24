@@ -997,15 +997,34 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const [suriRows, setSuriRows] = React.useState<Row[]>([]);
   const [feed, setFeed] = React.useState<EventRow[]>([]);
 
+  // Layout toggle: 'side' = charts left + feed right; 'below' = charts above + feed below
+  const [chartLayout, setChartLayout] = React.useState<'side' | 'below'>('side');
+
+  // Extra charts (up to 2, for a max total of 6)
+  type ExtraChartCfg = { id: string; ns: string; metric: string; label: string };
+  const [extraCharts, setExtraCharts] = React.useState<ExtraChartCfg[]>([]);
+  const [extraRows, setExtraRows] = React.useState<Record<string, Row[]>>({});
+
+  // Add-chart picker state
+  const [showAddChart, setShowAddChart] = React.useState(false);
+  const [addNs, setAddNs] = React.useState('');
+  const [addMetric, setAddMetric] = React.useState('');
+  const [addLabel, setAddLabel] = React.useState('');
+  const [metricOpts, setMetricOpts] = React.useState<MetricOpt[]>([]);
+
   const cpuRef = React.useRef<HTMLCanvasElement | null>(null);
   const diskRef = React.useRef<HTMLCanvasElement | null>(null);
   const netRef = React.useRef<HTMLCanvasElement | null>(null);
   const suriRef = React.useRef<HTMLCanvasElement | null>(null);
+  const extra1Ref = React.useRef<HTMLCanvasElement | null>(null);
+  const extra2Ref = React.useRef<HTMLCanvasElement | null>(null);
 
   const cpuChart = React.useRef<Chart | null>(null);
   const diskChart = React.useRef<Chart | null>(null);
   const netChart = React.useRef<Chart | null>(null);
   const suriChart = React.useRef<Chart | null>(null);
+  const extra1Chart = React.useRef<Chart | null>(null);
+  const extra2Chart = React.useRef<Chart | null>(null);
 
   React.useEffect(() => {
     fetch('api/v1/health', { headers: apiGetHeaders() })
@@ -1021,6 +1040,21 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     const prefer = assets.find(a => a.asset_id === 'host:portn8n') ?? assets[0];
     setAssetId(prefer.asset_id);
   }, [assets, assetId]);
+
+  // load available metrics for the add-chart picker
+  React.useEffect(() => {
+    if (!assetId) return;
+    fetch(`api/v1/catalog/metrics?asset_id=${encodeURIComponent(assetId)}`, { headers: apiGetHeaders() })
+      .then(r => r.json())
+      .then(j => {
+        const opts: MetricOpt[] = j.metrics ?? [];
+        setMetricOpts(opts);
+        if (!addNs && opts.length) setAddNs(opts[0].namespace);
+        if (!addMetric && opts.length) setAddMetric(opts[0].metric);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId]);
 
   async function runPulse() {
     if (!assetId) return;
@@ -1119,6 +1153,24 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
       setSuriRows((rSuri.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })));
       setFeed((rEv.result?.rows ?? []) as EventRow[]);
 
+      // fetch extra charts in parallel
+      if (extraCharts.length) {
+        const extras = await Promise.all(
+          extraCharts.map(cfg =>
+            fetch('api/v1/query', {
+              method: 'POST', headers: apiHeaders(),
+              body: JSON.stringify({
+                language: 'orbitql',
+                query: { kind: 'timeseries', asset_id: assetId, namespace: cfg.ns, metric: cfg.metric, from, to, agg: 'avg', limit: 20000 },
+              }),
+            }).then(r => r.json()).then(j => ({ id: cfg.id, rows: (j.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })) }))
+          )
+        );
+        const newExtra: Record<string, Row[]> = {};
+        for (const e of extras) newExtra[e.id] = e.rows;
+        setExtraRows(newExtra);
+      }
+
     } catch (e: any) {
       setErr(String(e));
     }
@@ -1139,6 +1191,13 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     runPulse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
+
+  // re-fetch when extra charts are added/removed
+  React.useEffect(() => {
+    if (!assetId || !extraCharts.length) return;
+    runPulse();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extraCharts]);
 
   function glowGradient(ctx: CanvasRenderingContext2D, colorA: string, colorB: string) {
     const g = ctx.createLinearGradient(0, 0, 0, 320);
@@ -1243,6 +1302,8 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     if (diskRef.current && !diskChart.current) diskChart.current = makeNeLineChart(diskRef.current, 2);
     if (netRef.current && !netChart.current) netChart.current = makeNeLineChart(netRef.current, 2);
     if (suriRef.current && !suriChart.current) suriChart.current = makeNeLineChart(suriRef.current, 1);
+    if (extra1Ref.current && !extra1Chart.current && extraCharts[0]) extra1Chart.current = makeNeLineChart(extra1Ref.current, 1);
+    if (extra2Ref.current && !extra2Chart.current && extraCharts[1]) extra2Chart.current = makeNeLineChart(extra2Ref.current, 1);
   }
 
   React.useEffect(() => {
@@ -1252,6 +1313,8 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
       diskChart.current?.destroy(); diskChart.current = null;
       netChart.current?.destroy(); netChart.current = null;
       suriChart.current?.destroy(); suriChart.current = null;
+      extra1Chart.current?.destroy(); extra1Chart.current = null;
+      extra2Chart.current?.destroy(); extra2Chart.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1306,7 +1369,19 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     const suriTs = suriRows.map(r => r.ts);
     applyChart(suriChart.current, suriRows, suriTs, ['alerts'], ['alerts']);
 
-  }, [cpuRows, diskRows, netRows, suriRows]);
+    // Extra charts
+    if (extraCharts[0] && extra1Ref.current) {
+      if (!extra1Chart.current) extra1Chart.current = makeNeLineChart(extra1Ref.current, 1);
+      const rows = extraRows[extraCharts[0].id] ?? [];
+      applyChart(extra1Chart.current, rows, rows.map(r => r.ts), [extraCharts[0].label], [extraCharts[0].label]);
+    }
+    if (extraCharts[1] && extra2Ref.current) {
+      if (!extra2Chart.current) extra2Chart.current = makeNeLineChart(extra2Ref.current, 1);
+      const rows = extraRows[extraCharts[1].id] ?? [];
+      applyChart(extra2Chart.current, rows, rows.map(r => r.ts), [extraCharts[1].label], [extraCharts[1].label]);
+    }
+
+  }, [cpuRows, diskRows, netRows, suriRows, extraRows]);
 
   const lastCpu: Record<string, number> = {};
   for (const r of cpuRows) lastCpu[r.series] = r.value;
@@ -1365,6 +1440,11 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: dbColor, display: 'inline-block' }} />
               <span>db: {health?.db ?? '…'}</span>
             </div>
+            <button className="orbit-pill" style={{ cursor: 'pointer', border: '1px solid rgba(140,160,255,.28)', background: 'rgba(85,243,255,.08)' }}
+              onClick={() => setChartLayout(l => l === 'side' ? 'below' : 'side')}
+              title="Alternar layout dos gráficos">
+              {chartLayout === 'side' ? '⊟ lado' : '⊞ abaixo'}
+            </button>
           </div>
         </div>
 
@@ -1380,24 +1460,94 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
         </div>
 
         {/* Charts + feed */}
-        <div className="orbit-home-main" style={{ padding: '0 16px 16px' }}>
-          {/* Charts 2×2 */}
-          <div className="orbit-charts-grid">
-            <div className="orbit-chart-box">
-              <div className="orbit-chart-tag">CPU Load</div>
-              <div className="orbit-chart-canvas-wrap"><canvas ref={cpuRef} /></div>
+        <div className={chartLayout === 'below' ? 'orbit-home-below' : 'orbit-home-main'} style={{ padding: '0 16px 16px' }}>
+          {/* Charts section */}
+          <div>
+            {/* Add-chart bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 6px' }}>
+              <span style={{ fontSize: 11, color: 'rgba(233,238,255,.45)', letterSpacing: '.2px' }}>
+                {4 + extraCharts.length}/6 gráficos
+              </span>
+              {extraCharts.length < 2 && !showAddChart && (
+                <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(85,243,255,.10)', borderColor: 'rgba(85,243,255,.3)', color: '#55f3ff' }}
+                  onClick={() => setShowAddChart(true)}>+ gráfico</button>
+              )}
+              {extraCharts.length > 0 && (
+                <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(255,93,214,.08)', borderColor: 'rgba(255,93,214,.3)', color: '#ff5dd6' }}
+                  onClick={() => {
+                    const removed = extraCharts[extraCharts.length - 1];
+                    setExtraCharts(prev => prev.slice(0, -1));
+                    setExtraRows(prev => { const n = { ...prev }; delete n[removed.id]; return n; });
+                    if (extraCharts.length === 2) { extra2Chart.current?.destroy(); extra2Chart.current = null; }
+                    else { extra1Chart.current?.destroy(); extra1Chart.current = null; }
+                  }}>− remover</button>
+              )}
             </div>
-            <div className="orbit-chart-box">
-              <div className="orbit-chart-tag">Disk Queue</div>
-              <div className="orbit-chart-canvas-wrap"><canvas ref={diskRef} /></div>
-            </div>
-            <div className="orbit-chart-box">
-              <div className="orbit-chart-tag">Net Traffic</div>
-              <div className="orbit-chart-canvas-wrap"><canvas ref={netRef} /></div>
-            </div>
-            <div className="orbit-chart-box">
-              <div className="orbit-chart-tag">Suricata Alerts</div>
-              <div className="orbit-chart-canvas-wrap"><canvas ref={suriRef} /></div>
+
+            {/* Add-chart picker */}
+            {showAddChart && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', padding: '10px 12px', marginBottom: 8, background: 'rgba(12,18,40,.8)', border: '1px solid rgba(140,160,255,.18)', borderRadius: 12 }}>
+                <select className="orbit-pill" value={addNs}
+                  onChange={e => { setAddNs(e.target.value); setAddMetric(''); }}
+                  style={{ padding: '4px 8px' }}>
+                  {Array.from(new Set(metricOpts.map(m => m.namespace))).map(ns => (
+                    <option key={ns} value={ns}>{ns}</option>
+                  ))}
+                </select>
+                <select className="orbit-pill" value={addMetric}
+                  onChange={e => { setAddMetric(e.target.value); if (!addLabel) setAddLabel(e.target.value); }}
+                  style={{ padding: '4px 8px' }}>
+                  {metricOpts.filter(m => m.namespace === addNs).map(m => (
+                    <option key={m.metric} value={m.metric}>{m.metric}</option>
+                  ))}
+                </select>
+                <input className="orbit-pill" value={addLabel} placeholder="label"
+                  onChange={e => setAddLabel(e.target.value)}
+                  style={{ padding: '4px 8px', width: 90, background: 'transparent', border: '1px solid rgba(140,160,255,.18)', color: 'rgba(233,238,255,.85)', borderRadius: 999 }} />
+                <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(85,243,255,.12)', color: '#55f3ff', borderColor: 'rgba(85,243,255,.3)' }}
+                  onClick={() => {
+                    if (!addMetric) return;
+                    const id = `${addNs}:${addMetric}:${Date.now()}`;
+                    const label = addLabel || addMetric;
+                    setExtraCharts(prev => [...prev, { id, ns: addNs, metric: addMetric, label }]);
+                    setShowAddChart(false);
+                    setAddLabel('');
+                  }}>Adicionar</button>
+                <button className="orbit-badge" style={{ cursor: 'pointer' }}
+                  onClick={() => setShowAddChart(false)}>Cancelar</button>
+              </div>
+            )}
+
+            {/* Charts grid */}
+            <div className={`orbit-charts-grid${chartLayout === 'below' ? ' orbit-charts-grid--wide' : ''}`}>
+              <div className="orbit-chart-box">
+                <div className="orbit-chart-tag">CPU Load</div>
+                <div className="orbit-chart-canvas-wrap"><canvas ref={cpuRef} /></div>
+              </div>
+              <div className="orbit-chart-box">
+                <div className="orbit-chart-tag">Disk Queue</div>
+                <div className="orbit-chart-canvas-wrap"><canvas ref={diskRef} /></div>
+              </div>
+              <div className="orbit-chart-box">
+                <div className="orbit-chart-tag">Net Traffic</div>
+                <div className="orbit-chart-canvas-wrap"><canvas ref={netRef} /></div>
+              </div>
+              <div className="orbit-chart-box">
+                <div className="orbit-chart-tag">Suricata Alerts</div>
+                <div className="orbit-chart-canvas-wrap"><canvas ref={suriRef} /></div>
+              </div>
+              {extraCharts[0] && (
+                <div className="orbit-chart-box">
+                  <div className="orbit-chart-tag">{extraCharts[0].label}</div>
+                  <div className="orbit-chart-canvas-wrap"><canvas ref={extra1Ref} /></div>
+                </div>
+              )}
+              {extraCharts[1] && (
+                <div className="orbit-chart-box">
+                  <div className="orbit-chart-tag">{extraCharts[1].label}</div>
+                  <div className="orbit-chart-canvas-wrap"><canvas ref={extra2Ref} /></div>
+                </div>
+              )}
             </div>
           </div>
 
