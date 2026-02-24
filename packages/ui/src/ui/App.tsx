@@ -13,7 +13,7 @@ type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'home' | 'sources' | 'nagios' | 'events' | 'metrics' | 'correlations';
+type Tab        = 'home' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'admin';
 
 type CorrelationRow = {
   event_key:    string;
@@ -295,31 +295,31 @@ const S = {
     fontFamily: 'system-ui, -apple-system, sans-serif',
     minHeight: '100vh',
     color: '#e9eeff',
+    display: 'flex',
     background:
       'radial-gradient(1000px 640px at 18% 10%, rgba(85,243,255,0.10), transparent 55%),' +
       'radial-gradient(900px 560px at 82% 78%, rgba(155,124,255,0.11), transparent 58%),' +
       'linear-gradient(180deg, #040713, #0b1220)',
   } as React.CSSProperties,
-  header: {
-    position: 'sticky',
+  sidebar: {
+    width: 220,
+    minWidth: 220,
+    height: '100vh',
+    position: 'sticky' as const,
     top: 0,
+    background: 'rgba(4,7,19,0.88)',
+    borderRight: '1px solid rgba(140,160,255,0.14)',
+    backdropFilter: 'blur(12px)',
+    display: 'flex',
+    flexDirection: 'column' as const,
     zIndex: 10,
-    backdropFilter: 'blur(10px)',
-    background: 'rgba(4,7,19,0.72)',
-    borderBottom: '1px solid rgba(140,160,255,0.16)',
-    padding: '0 24px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 16,
-    height: 56,
+    overflowY: 'auto' as const,
   } as React.CSSProperties,
-  logo: { fontSize: 18, fontWeight: 800, color: '#55f3ff', marginRight: 8, letterSpacing: '0.2px' } as React.CSSProperties,
-  tabBar: {
-    display: 'flex',
-    gap: 0,
-    marginLeft: 16,
+  main: {
+    flex: 1,
+    minWidth: 0,
+    padding: '22px 24px',
   } as React.CSSProperties,
-  body: { padding: '22px 24px', maxWidth: 1160, margin: '0 auto' } as React.CSSProperties,
   card: {
     background: 'rgba(12,18,40,0.62)',
     border: '1px solid rgba(140,160,255,0.18)',
@@ -386,26 +386,140 @@ const S = {
   td: { padding: '10px 10px', borderBottom: '1px solid rgba(140,160,255,0.10)' } as React.CSSProperties,
 };
 
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+// ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+
+function Sidebar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+  const [sourcesOpen, setSourcesOpen] = React.useState(true);
+
+  React.useEffect(() => {
+    if (tab.startsWith('src-')) setSourcesOpen(true);
+  }, [tab]);
+
+  function navBtn(t: Tab, label: string) {
+    const active = tab === t;
+    return (
+      <button
+        key={t}
+        onClick={() => setTab(t)}
+        style={{
+          display: 'block',
+          width: '100%',
+          textAlign: 'left',
+          background: active ? 'rgba(85,243,255,0.10)' : 'transparent',
+          border: 'none',
+          borderLeft: `2px solid ${active ? '#55f3ff' : 'transparent'}`,
+          color: active ? '#e9eeff' : 'rgba(233,238,255,0.60)',
+          padding: '9px 20px',
+          cursor: 'pointer',
+          fontSize: 13,
+          fontWeight: active ? 700 : 500,
+          transition: 'all 0.15s',
+        }}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  function subNavBtn(t: Tab, label: string, dotColor: string) {
+    const active = tab === t;
+    return (
+      <button
+        key={t}
+        onClick={() => setTab(t)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          width: '100%',
+          textAlign: 'left',
+          background: active ? 'rgba(85,243,255,0.07)' : 'transparent',
+          border: 'none',
+          borderLeft: `2px solid ${active ? dotColor : 'transparent'}`,
+          color: active ? '#e9eeff' : 'rgba(233,238,255,0.52)',
+          padding: '7px 20px 7px 28px',
+          cursor: 'pointer',
+          fontSize: 12,
+          fontWeight: active ? 700 : 400,
+          transition: 'all 0.15s',
+        }}
+      >
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+        {label}
+      </button>
+    );
+  }
+
+  const sectionLabel = (text: string) => (
+    <div style={{
+      color: 'rgba(233,238,255,0.38)',
+      padding: '10px 20px 4px',
+      fontSize: 10,
+      fontWeight: 700,
+      letterSpacing: '0.10em',
+      textTransform: 'uppercase',
+    }}>{text}</div>
+  );
+
   return (
-    <button
-      onClick={onClick}
-      style={{
-        background: active ? 'rgba(12,18,40,0.55)' : 'transparent',
-        border: '1px solid transparent',
-        borderBottom: active ? '2px solid rgba(85,243,255,0.85)' : '2px solid transparent',
-        color: active ? '#e9eeff' : 'rgba(233,238,255,0.70)',
-        padding: '12px 14px 10px',
-        cursor: 'pointer',
-        fontSize: 13,
-        fontWeight: 800,
-        letterSpacing: '0.02em',
-        borderRadius: 12,
-        transition: 'all 0.15s',
-      }}
-    >
-      {children}
-    </button>
+    <div style={S.sidebar}>
+      {/* Logo */}
+      <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid rgba(140,160,255,0.12)', flexShrink: 0 }}>
+        <span style={{ fontSize: 17, fontWeight: 800, color: '#55f3ff', letterSpacing: '0.2px' }}>◎ Orbit</span>
+      </div>
+
+      {/* Nav */}
+      <nav style={{ flex: 1, paddingTop: 6 }}>
+        {navBtn('home', 'Home')}
+
+        {/* Fontes — collapsible */}
+        <div>
+          <button
+            onClick={() => setSourcesOpen(x => !x)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              color: 'rgba(233,238,255,0.38)',
+              padding: '10px 20px 4px',
+              cursor: 'pointer',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.10em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Fontes
+            <span style={{ fontSize: 9 }}>{sourcesOpen ? '▲' : '▼'}</span>
+          </button>
+          {sourcesOpen && (
+            <>
+              {subNavBtn('src-nagios',    'Nagios',     NS_COLOR.nagios)}
+              {subNavBtn('src-wazuh',     'Wazuh',      NS_COLOR.wazuh)}
+              {subNavBtn('src-fortigate', 'Fortigate',  NS_COLOR.fortigate)}
+              {subNavBtn('src-n8n',       'n8n',        NS_COLOR.n8n)}
+            </>
+          )}
+        </div>
+
+        {/* Análise */}
+        {sectionLabel('Análise')}
+        {navBtn('events',       'Eventos')}
+        {navBtn('metrics',      'Métricas')}
+        {navBtn('correlations', 'Correlações')}
+      </nav>
+
+      {/* Bottom */}
+      <div style={{ borderTop: '1px solid rgba(140,160,255,0.12)', paddingTop: 4, flexShrink: 0 }}>
+        {navBtn('admin', 'Admin')}
+        <div style={{ padding: '8px 20px 12px' }}>
+          <HealthBadge />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -736,9 +850,9 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
 
 const SEVERITY_OPTS = ['', 'critical', 'high', 'medium', 'low', 'info'];
 
-function EventsTab({ assets }: { assets: AssetOpt[] }) {
+function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs?: string }) {
   const [assetId, setAssetId]     = React.useState('');
-  const [namespace, setNamespace] = React.useState('');
+  const [namespace, setNamespace] = React.useState(defaultNs ?? '');
   const [severity, setSeverity]   = React.useState('');
   const [from, setFrom]           = React.useState(() => relativeFrom(24));
   const [to, setTo]               = React.useState(() => new Date().toISOString());
@@ -1509,7 +1623,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
           <div>
             <div style={{ fontWeight: 800, fontSize: 20, letterSpacing: '.4px' }}>◎ Orbit Core</div>
             <div style={{ color: 'rgba(233,238,255,.65)', fontSize: 12, marginTop: 4 }}>
-              Dashboard espacial • métricas contínuas (Nagios/Wazuh) • <a href="#" onClick={(e) => { e.preventDefault(); setTab('sources'); }} style={{ color: '#55f3ff', textDecoration: 'none' }}>fontes</a>
+              Dashboard espacial • métricas contínuas (Nagios/Wazuh) • <a href="#" onClick={(e) => { e.preventDefault(); setTab('src-nagios'); }} style={{ color: '#55f3ff', textDecoration: 'none' }}>fontes</a>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1872,6 +1986,86 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
   );
 }
 
+// ─── ADMIN TAB ────────────────────────────────────────────────────────────────
+
+function AdminTab() {
+  const [apiKey, setApiKey]         = React.useState(() => sessionStorage.getItem('orbit_api_key') ?? '');
+  const [saved, setSaved]           = React.useState(false);
+  const [apiProtected, setApiProtected] = React.useState<boolean | null>(null);
+  const [checking, setChecking]     = React.useState(true);
+
+  React.useEffect(() => {
+    setChecking(true);
+    // Unauthenticated fetch — no sessionStorage key used
+    fetch('api/v1/catalog/assets?limit=1')
+      .then(r => { setApiProtected(r.status === 401); })
+      .catch(() => setApiProtected(null))
+      .finally(() => setChecking(false));
+  }, []);
+
+  function saveKey() {
+    sessionStorage.setItem('orbit_api_key', apiKey);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  return (
+    <div>
+      <div style={S.card}>
+        <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>Administração</div>
+        <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13 }}>Configurações de segurança e acesso à API.</div>
+      </div>
+
+      <div style={S.card}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Proteção da API</div>
+        {checking ? (
+          <div style={{ color: '#64748b', fontSize: 13 }}>Verificando…</div>
+        ) : apiProtected === null ? (
+          <div style={{ color: '#f87171', fontSize: 13 }}>Não foi possível verificar o status da API.</div>
+        ) : apiProtected ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
+            <span style={{ color: '#4ade80', fontWeight: 700, fontSize: 13 }}>API protegida</span>
+            <span style={{ color: '#64748b', fontSize: 12 }}>— ORBIT_API_KEY configurada no servidor</span>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f87171', display: 'inline-block' }} />
+              <span style={{ color: '#f87171', fontWeight: 700, fontSize: 13 }}>API aberta</span>
+              <span style={{ color: '#94a3b8', fontSize: 12 }}>— sem autenticação</span>
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.7 }}>
+              Qualquer requisição pode ler e ingerir dados sem autenticação.<br />
+              Para proteger, defina{' '}
+              <code style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 4 }}>ORBIT_API_KEY</code>
+              {' '}no servidor orbit-core e reinicie o serviço.
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={S.card}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>API Key (client)</div>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 10 }}>
+          Chave enviada nas requisições desta UI. Armazenada apenas na sessão do browser (sessionStorage).
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && saveKey()}
+            placeholder="ORBIT_API_KEY (deixe vazio se sem auth)"
+            style={{ ...S.input, flex: 1 }}
+          />
+          <button onClick={saveKey} style={S.btnSm}>{saved ? 'Salvo ✓' : 'Salvar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
   return (
     <div>
@@ -1901,7 +2095,7 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
               </a>
             </div>
             <div style={{ marginTop: 10 }}>
-              <button style={S.btn} onClick={() => setTab('nagios')}>Open Nagios</button>
+              <button style={S.btn} onClick={() => setTab('src-nagios')}>Open Nagios</button>
             </div>
           </div>
           <div style={S.card}>
@@ -1997,29 +2191,17 @@ export function App() {
 
   return (
     <div style={S.root}>
-      {/* Header */}
-      <div style={S.header}>
-        <span style={S.logo}>◎ Orbit</span>
-        <div style={S.tabBar}>
-          <TabBtn active={tab === 'home'}         onClick={() => setTab('home')}>Home</TabBtn>
-          <TabBtn active={tab === 'sources'}      onClick={() => setTab('sources')}>Fontes</TabBtn>
-          <TabBtn active={tab === 'nagios'}       onClick={() => setTab('nagios')}>Nagios</TabBtn>
-          <TabBtn active={tab === 'events'}       onClick={() => setTab('events')}>Eventos</TabBtn>
-          <TabBtn active={tab === 'metrics'}      onClick={() => setTab('metrics')}>Métricas</TabBtn>
-          <TabBtn active={tab === 'correlations'} onClick={() => setTab('correlations')}>Correlações</TabBtn>
-        </div>
-        <HealthBadge />
-      </div>
-
-      {/* Body */}
-      <div style={S.body}>
-        <ApiKeyBanner />
-        {tab === 'home'         && <HomeTab         assets={assets} setTab={setTab} />}
-        {tab === 'sources'      && <SourcesTab      setTab={setTab} />}
-        {tab === 'nagios'       && <NagiosTab        assets={assets} />}
-        {tab === 'events'       && <EventsTab        assets={assets} />}
-        {tab === 'metrics'      && <MetricsTab       assets={assets} />}
-        {tab === 'correlations' && <CorrelationsTab  assets={assets} />}
+      <Sidebar tab={tab} setTab={setTab} />
+      <div style={S.main}>
+        {tab === 'home'          && <HomeTab        assets={assets} setTab={setTab} />}
+        {tab === 'src-nagios'    && <NagiosTab      assets={assets} />}
+        {tab === 'src-wazuh'     && <EventsTab      key="src-wazuh"     assets={assets} defaultNs="wazuh" />}
+        {tab === 'src-fortigate' && <EventsTab      key="src-fortigate" assets={assets} defaultNs="wazuh" />}
+        {tab === 'src-n8n'       && <EventsTab      key="src-n8n"       assets={assets} defaultNs="n8n"   />}
+        {tab === 'events'        && <EventsTab      key="events"        assets={assets} />}
+        {tab === 'metrics'       && <MetricsTab     assets={assets} />}
+        {tab === 'correlations'  && <CorrelationsTab assets={assets} />}
+        {tab === 'admin'         && <AdminTab />}
       </div>
     </div>
   );
