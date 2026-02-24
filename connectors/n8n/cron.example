@@ -1,0 +1,14 @@
+# n8n → orbit-core — cron example
+# Polls n8n REST API for failed and stuck executions every minute.
+
+* * * * * root \
+  ORBIT_API=https://prod.nesecurity.com.br/orbit-core \
+  ORBIT_BASIC_USER=orbitadmin \
+  ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass \
+  N8N_URL=http://localhost:5678 \
+  N8N_API_KEY=your-n8n-api-key-here \
+  N8N_VERIFY_TLS=false \
+  STUCK_AFTER_MINUTES=30 \
+  STATE_PATH=/var/lib/orbit-core/n8n-events.state.json \
+  python3 /opt/orbit-core/connectors/n8n/ship_events.py \
+  >>/var/log/orbit-core/n8n_shipper.log 2>&1
