@@ -52,7 +52,7 @@
           <div class="pill">Apache-2.0 • Postgres-first • Subpath-friendly</div>
           <h1>API-first telemetry core for <span class="grad">security & ops signals</span>.</h1>
           <p class="lead">
-            orbit-core ingests <strong>metrics</strong> and <strong>events</strong> from <strong>Nagios</strong> and <strong>Wazuh</strong>,
+            orbit-core ingests <strong>metrics</strong> and <strong>events</strong> from multiple sources (Nagios, Wazuh, n8n, Fortigate via Wazuh),
             stores them in <strong>Postgres</strong> with <strong>rollups + retention</strong>, and exposes a stable HTTP API
             for <strong>timeseries</strong>, <strong>events</strong> and <strong>multi-series group-by</strong> queries.
           </p>
@@ -203,6 +203,7 @@
               <li><span class="mono">POST /api/v1/ingest/events</span> — Events</li>
               <li><span class="mono">POST /api/v1/query</span> — orbitql query</li>
               <li><span class="mono">GET /api/v1/catalog/*</span> — assets/metrics/dimensions</li>
+              <li><span class="mono">POST /api/v1/dashboards/validate</span> — validate DashboardSpec (builders)</li>
             </ul>
           </div>
 
@@ -269,7 +270,7 @@ pnpm dev
             <h3>Production note</h3>
             <p>
               Keep secrets server-side. Put orbit-core behind a reverse proxy with TLS and auth.
-              Subpath deployments are supported.
+              You can also enable an application API key (see <span class="mono">ORBIT_API_KEY</span>). Subpath deployments are supported.
             </p>
           </div>
           <div class="card">
@@ -286,31 +287,51 @@ pnpm dev
     <section id="connectors" class="section section--alt">
       <div class="container">
         <h2>Connectors</h2>
-        <p class="muted">Primary connectors are deterministic, cron-friendly and no-AI.</p>
+        <p class="muted">Connectors are deterministic, cron-friendly and no-AI.</p>
 
         <div class="cards">
           <article class="card">
             <div class="card__k">Primary</div>
             <h3>Nagios Connector (Python)</h3>
-            <p>Ships perfdata and HARD events into orbit-core ingest endpoints.</p>
+            <p>Ships perfdata and HARD state changes (metrics + events).</p>
             <p class="small">
-              Install guide: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/nagios/INSTALL.md" target="_blank" rel="noreferrer">connectors/nagios/INSTALL.md</a>
+              Install: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/nagios/INSTALL.md" target="_blank" rel="noreferrer">connectors/nagios/INSTALL.md</a>
             </p>
           </article>
+
+          <article class="card">
+            <div class="card__k">Ready</div>
+            <h3>Wazuh Connector (Python)</h3>
+            <p>Ships Wazuh alerts from <code>alerts.json</code> into orbit-core events (severity mapping + state cursor).</p>
+            <p class="small">
+              Install: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/INSTALL.md" target="_blank" rel="noreferrer">connectors/wazuh/INSTALL.md</a>
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card__k">Ready</div>
+            <h3>n8n Connector (Python + workflow)</h3>
+            <p>Ships n8n execution errors + stuck runs (polling API) and optional realtime Error Trigger workflow.</p>
+            <p class="small">
+              Install: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/n8n/INSTALL.md" target="_blank" rel="noreferrer">connectors/n8n/INSTALL.md</a>
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card__k">Via Wazuh</div>
+            <h3>Fortigate (syslog → Wazuh)</h3>
+            <p>Fortigate logs flow through Wazuh and are surfaced as <span class="mono">namespace=wazuh</span> + <span class="mono">kind=fortigate</span>.</p>
+            <p class="small">
+              Install: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/fortigate/INSTALL.md" target="_blank" rel="noreferrer">connectors/fortigate/INSTALL.md</a>
+            </p>
+          </article>
+
           <article class="card">
             <div class="card__k">Optional</div>
             <h3>Nagios shipper (TypeScript)</h3>
             <p>Monorepo-integrated shipper package (use if you prefer TS toolchains).</p>
             <p class="small">
               Docs: <a href="https://github.com/rmfaria/orbit-core/tree/main/packages/nagios-shipper" target="_blank" rel="noreferrer">packages/nagios-shipper</a>
-            </p>
-          </article>
-          <article class="card">
-            <div class="card__k">Ready</div>
-            <h3>Wazuh connector (Python)</h3>
-            <p>Ships Wazuh alerts from <code>alerts.json</code> into orbit-core events with severity mapping and byte-offset state tracking.</p>
-            <p class="small">
-              Install guide: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/INSTALL.md" target="_blank" rel="noreferrer">connectors/wazuh/INSTALL.md</a>
             </p>
           </article>
         </div>
