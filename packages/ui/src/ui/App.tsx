@@ -1,5 +1,6 @@
 import React from 'react';
 import { Chart, registerables } from 'chart.js';
+import './home.css';
 
 // Register Chart.js components once.
 Chart.register(...registerables);
@@ -1313,147 +1314,118 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
 
   }, [cpuRows, diskRows, netRows, suriRows]);
 
+  const lastCpu: Record<string, number> = {};
+  for (const r of cpuRows) lastCpu[r.series] = r.value;
+  const lastDisk: Record<string, number> = {};
+  for (const r of diskRows) lastDisk[r.series] = r.value;
+  const lastNet: Record<string, number> = {};
+  for (const r of netRows) lastNet[r.series] = r.value;
+  const fmtN = (v: any, d = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(d) : '—');
+  const suriLast = suriRows.length ? suriRows[suriRows.length - 1].value : null;
+
+  const dbColor  = health?.db === 'ok' ? '#47ff9a' : health?.db === 'error' ? '#ff4d6d' : '#ffd36a';
+  const apiColor = health?.ok ? '#47ff9a' : '#ffd36a';
+
+  const kpis = [
+    { label: 'CPU Load',          value: `${fmtN(lastCpu['load1'])} • ${fmtN(lastCpu['load5'])} • ${fmtN(lastCpu['load15'])}`, hint: 'load1 • load5 • load15' },
+    { label: 'Disk Queue',        value: `${fmtN(lastDisk['aqu-sz'])} • ${fmtN(lastDisk['%util'])}`,                             hint: 'aqu-sz • %util' },
+    { label: 'Net Traffic',       value: `${fmtN(lastNet['RX Mbps'])} • ${fmtN(lastNet['TX Mbps'])}`,                            hint: 'RX Mbps • TX Mbps' },
+    { label: 'Suricata Alerts',   value: fmtN(suriLast, 0),                                                                       hint: 'últimos 5 min' },
+    { label: 'API',               value: health?.ok ? 'online' : '…',                                                             hint: '/api/v1/health' },
+    { label: 'Postgres',          value: health?.db ?? '…',                                                                        hint: 'database' },
+  ];
+
   return (
-    <div>
-      <div style={S.card}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+    <div style={{ position: 'relative' }}>
+      {/* Star-field layer */}
+      <div className="orbit-stars" />
+
+      {/* Top panel: brand + status pills */}
+      <div className="orbit-panel">
+        <div className="orbit-panel-head">
           <div>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>Home</div>
-            <div style={{ fontSize: 20, fontWeight: 900, marginTop: 4 }}>Orbit Core</div>
-            <div style={{ color: 'rgba(233,238,255,0.78)', marginTop: 6, fontSize: 13 }}>
-              Portal principal. Selecione uma <b>Fonte</b> (Nagios/Wazuh/…) para explorar métricas e eventos.
+            <div style={{ fontWeight: 800, fontSize: 20, letterSpacing: '.4px' }}>◎ Orbit Core</div>
+            <div style={{ color: 'rgba(233,238,255,.65)', fontSize: 12, marginTop: 4 }}>
+              Dashboard espacial • métricas contínuas (Nagios/Wazuh) • <a href="#" onClick={(e) => { e.preventDefault(); setTab('sources'); }} style={{ color: '#55f3ff', textDecoration: 'none' }}>fontes</a>
             </div>
           </div>
-
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <a href="#" onClick={(e) => { e.preventDefault(); window.location.href = '/orbit-studio/'; }} style={{ ...S.btnSm, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Orbit‑Studio</a>
-            <a href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer" style={{ ...S.btnSm, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>GitHub</a>
-          </div>
-        </div>
-
-        <div style={{ ...S.grid3, marginTop: 12 }}>
-          <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>API</div>
-            <div style={{ fontWeight: 900, marginTop: 6 }}>{health?.ok ? 'ok' : '…'}</div>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.70)', marginTop: 6 }} className="mono">
-              /api/v1/health
-            </div>
-          </div>
-          <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>DB</div>
-            <div style={{ fontWeight: 900, marginTop: 6 }}>{health?.db ?? '…'}</div>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.70)', marginTop: 6 }}>
-              Postgres
-            </div>
-          </div>
-          <div style={S.card}>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>Build</div>
-            <div style={{ fontWeight: 900, marginTop: 6 }} className="mono">{health?.build?.git ? String(health.build.git).slice(0, 10) : '—'}</div>
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.70)', marginTop: 6 }}>
-              {health?.build?.time ? fmtTs(health.build.time) : ''}
-            </div>
-          </div>
-        </div>
-
-        {err && <div style={S.err}>{err}</div>}
-      </div>
-
-      <div style={S.card}>
-        {/* Legacy-like header */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontWeight: 900 }}>Pulse (últimos 60 min)</div>
-            <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>
-              rows: {Math.max(cpuRows.length, diskRows.length, netRows.length, suriRows.length)} • last: {new Date().toLocaleString()}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ ...S.btnSm, display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ opacity: 0.7 }}>view</span>
-              <select style={{ ...S.select, border: 'none', padding: 0, background: 'transparent' }} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="orbit-pill">
+              <span className="orbit-badge">view</span>
+              <select value={assetId} onChange={(e) => setAssetId(e.target.value)}>
                 {assets.map(a => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
               </select>
             </div>
-            <div style={{ ...S.btnSm, display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ opacity: 0.7 }}>range</span>
-              <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(1)); setTo(new Date().toISOString()); }}>60m</button>
-              <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(6)); setTo(new Date().toISOString()); }}>6h</button>
-              <button style={S.btnSm} onClick={() => { setFrom(relativeFrom(24)); setTo(new Date().toISOString()); }}>24h</button>
+            <div className="orbit-pill">
+              <span className="orbit-badge">range</span>
+              {[['60m',1],['6h',6],['24h',24]].map(([lbl, h]) => (
+                <button key={lbl} className="orbit-badge" style={{ cursor: 'pointer', background: 'transparent' }}
+                  onClick={() => { setFrom(relativeFrom(Number(h))); setTo(new Date().toISOString()); }}>{lbl}</button>
+              ))}
             </div>
-            <button style={S.btn} onClick={runPulse}>Refresh</button>
-            <button style={S.btnSm} onClick={() => setTab('nagios')}>Nagios</button>
+            <div className="orbit-pill">
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: apiColor, display: 'inline-block' }} />
+              <span>{health ? (health.ok ? 'live' : 'degraded') : 'connecting…'}</span>
+            </div>
+            <div className="orbit-pill">
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: dbColor, display: 'inline-block' }} />
+              <span>db: {health?.db ?? '…'}</span>
+            </div>
           </div>
         </div>
 
-        {/* KPI strip (scrollable like legacy) */}
-        <div style={{ display: 'flex', gap: 12, marginTop: 12, overflowX: 'auto', paddingBottom: 6 }}>
-          {(() => {
-            const lastCpu: Record<string, number> = {};
-            for (const r of cpuRows) lastCpu[r.series] = r.value;
-            const lastDisk: Record<string, number> = {};
-            for (const r of diskRows) lastDisk[r.series] = r.value;
-            const lastNet: Record<string, number> = {};
-            for (const r of netRows) lastNet[r.series] = r.value;
-            const fmt = (v: any, d = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(d) : '—');
-            const suriLast = suriRows.length ? suriRows[suriRows.length - 1].value : null;
-
-            const kpis = [
-              { label: 'CPU Load', value: `${fmt(lastCpu['load1'])} • ${fmt(lastCpu['load5'])} • ${fmt(lastCpu['load15'])}`, hint: 'load1 • load5 • load15' },
-              { label: 'Disk Queue', value: `${fmt(lastDisk['aqu-sz'])} • ${fmt(lastDisk['%util'])}`, hint: 'aqu-sz • %util' },
-              { label: 'Net Traffic', value: `${fmt(lastNet['RX Mbps'])} • ${fmt(lastNet['TX Mbps'])}`, hint: 'RX Mbps • TX Mbps' },
-              { label: 'Suricata Alerts (5m)', value: fmt(suriLast, 0), hint: 'contador' },
-            ];
-
-            return kpis.map((k) => (
-              <div key={k.label} style={{ minWidth: 220, padding: 12, borderRadius: 16, border: '1px solid rgba(140,160,255,0.14)', background: 'rgba(3,6,18,0.35)' }}>
-                <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)' }}>{k.label}</div>
-                <div style={{ fontSize: 20, fontWeight: 900, marginTop: 8 }}>{k.value}</div>
-                <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)', marginTop: 6 }}>{k.hint}</div>
-              </div>
-            ));
-          })()}
+        {/* KPI strip */}
+        <div className="orbit-kpi-strip">
+          {kpis.map((k) => (
+            <div key={k.label} className="orbit-kpi">
+              <div className="kpi-label">{k.label}</div>
+              <div className="kpi-value">{k.value}</div>
+              <div className="kpi-hint">{k.hint}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Legacy-like layout: charts (left) + feed (right) */}
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1.1fr .9fr', marginTop: 12 }}>
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
-            <div style={S.card}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>CPU Load</div>
-              <canvas ref={cpuRef} style={{ display: 'block', width: '100%' }} />
-            </div>
-            <div style={S.card}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>Disk Queue</div>
-              <canvas ref={diskRef} style={{ display: 'block', width: '100%' }} />
-            </div>
-            <div style={S.card}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>Net Traffic</div>
-              <canvas ref={netRef} style={{ display: 'block', width: '100%' }} />
-            </div>
-            <div style={S.card}>
-              <div style={{ fontWeight: 900, marginBottom: 8 }}>Suricata Alerts</div>
-              <canvas ref={suriRef} style={{ display: 'block', width: '100%' }} />
+        {/* Charts + feed */}
+        <div className="orbit-home-main" style={{ padding: '0 16px 16px' }}>
+          {/* Charts 2×2 */}
+          <div className="orbit-chart-wrap" style={{ padding: 0 }}>
+            <div className="orbit-charts-grid">
+              {[
+                { label: 'CPU Load',       ref: cpuRef },
+                { label: 'Disk Queue',     ref: diskRef },
+                { label: 'Net Traffic',    ref: netRef },
+                { label: 'Suricata Alerts', ref: suriRef },
+              ].map(({ label, ref }) => (
+                <div key={label} className="orbit-chart-box">
+                  <div className="orbit-chart-tag">{label}</div>
+                  <canvas ref={ref} />
+                </div>
+              ))}
             </div>
           </div>
 
-          <div style={S.card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+          {/* Live event feed */}
+          <div className="orbit-panel" style={{ margin: 0 }}>
+            <div className="orbit-panel-head">
               <div>
-                <div style={{ fontWeight: 900 }}>Nagios Live Feed</div>
-                <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginTop: 4 }}>últimos eventos (inclui OK/UP)</div>
+                <div className="orbit-panel-title">Nagios Live Feed</div>
+                <div className="orbit-panel-meta">últimos eventos HARD (inclui OK/UP)</div>
               </div>
-              <div style={S.btnSm}>stream</div>
+              <div className="orbit-pill"><span className="orbit-badge">stream</span></div>
             </div>
-
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 560, overflow: 'auto' }}>
+            <div className="orbit-feed">
+              {feed.length === 0 && (
+                <div style={{ color: 'rgba(233,238,255,.45)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+                  Nenhum evento no período
+                </div>
+              )}
               {feed.slice(0, 20).map((e, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', border: '1px solid rgba(140,160,255,0.12)', borderRadius: 14, background: 'rgba(3,6,18,0.35)' }}>
-                  <div style={{ minWidth: 56 }}>
-                    <SevBadge sev={e.severity} />
-                  </div>
+                <div key={idx} className="orbit-feed-row">
+                  <SevBadge sev={e.severity} />
                   <div style={{ flex: 1 }}>
                     <strong style={{ display: 'block' }}>{e.title}</strong>
-                    <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.65)', marginTop: 4, lineHeight: 1.3 }}>{e.message || ''}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.55)', marginTop: 6 }}>{fmtTs(e.ts)}</div>
+                    <div style={{ fontSize: 12, color: 'rgba(233,238,255,.65)', marginTop: 4, lineHeight: 1.3 }}>{e.message || ''}</div>
+                    <div style={{ fontSize: 12, color: 'rgba(233,238,255,.45)', marginTop: 6 }}>{fmtTs(e.ts)}</div>
                   </div>
                 </div>
               ))}

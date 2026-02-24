@@ -1,0 +1,185 @@
+/* ── NE Orbit home panel aesthetics ───────────────────────────────────────── */
+
+/* Animated star-field (fixed layer, behind everything) */
+.orbit-stars {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,.55) 0, transparent 2px),
+    radial-gradient(1px 1px at 30% 80%, rgba(255,255,255,.35) 0, transparent 2px),
+    radial-gradient(1px 1px at 55% 45%, rgba(255,255,255,.45) 0, transparent 2px),
+    radial-gradient(1px 1px at 70% 30%, rgba(255,255,255,.50) 0, transparent 2px),
+    radial-gradient(1px 1px at 90% 70%, rgba(255,255,255,.40) 0, transparent 2px);
+  background-size: 360px 240px;
+  opacity: .55;
+  filter: blur(.1px);
+  animation: orbit-drift 18s linear infinite;
+}
+@keyframes orbit-drift {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-40px); }
+}
+
+/* Glassmorphism panel with conic glow ::before */
+.orbit-panel {
+  border: 1px solid rgba(140,160,255,.18);
+  background: rgba(12,18,40,.62);
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.55);
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 14px;
+}
+.orbit-panel::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  background: conic-gradient(
+    from 210deg,
+    rgba(85,243,255,.18),
+    rgba(155,124,255,.18),
+    rgba(255,93,214,.14),
+    rgba(85,243,255,.18)
+  );
+  filter: blur(18px);
+  opacity: .25;
+  z-index: 0;
+}
+.orbit-panel > * { position: relative; z-index: 1; }
+
+.orbit-panel-head {
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(140,160,255,.12);
+}
+.orbit-panel-title  { font-weight: 800; letter-spacing: .3px; }
+.orbit-panel-meta   { font-size: 12px; color: rgba(233,238,255,.65); }
+
+/* Pill badge (status / controls) */
+.orbit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(140,160,255,.18);
+  background: rgba(12,18,40,.35);
+  border-radius: 999px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.55);
+  font-size: 12px;
+  color: rgba(233,238,255,.65);
+}
+.orbit-pill select {
+  background: transparent;
+  color: rgba(233,238,255,.75);
+  border: 0;
+  outline: none;
+  font-size: 12px;
+}
+.orbit-badge {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(140,160,255,.16);
+  color: rgba(233,238,255,.65);
+}
+
+/* KPI horizontal scrolling strip */
+.orbit-kpi-strip {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.orbit-kpi-strip::-webkit-scrollbar        { height: 10px; }
+.orbit-kpi-strip::-webkit-scrollbar-thumb  { background: rgba(140,160,255,.18); border-radius: 999px; }
+.orbit-kpi-strip::-webkit-scrollbar-track  { background: transparent; }
+
+.orbit-kpi {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+  min-width: 210px;
+  padding: 12px 12px 11px;
+  border: 1px solid rgba(140,160,255,.14);
+  border-radius: 16px;
+  background: rgba(3,6,18,.35);
+}
+.orbit-kpi .kpi-label { font-size: 12px; color: rgba(233,238,255,.65); }
+.orbit-kpi .kpi-value { font-size: 20px; font-weight: 900; margin-top: 8px; letter-spacing: .2px; }
+.orbit-kpi .kpi-hint  { font-size: 12px; color: rgba(233,238,255,.65); margin-top: 6px; }
+
+/* Chart area */
+.orbit-chart-wrap { position: relative; padding: 48px 16px 16px; }
+
+.orbit-charts-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 720px) { .orbit-charts-grid { grid-template-columns: 1fr; } }
+
+.orbit-chart-box {
+  position: relative;
+  border: 1px solid rgba(140,160,255,.12);
+  border-radius: 16px;
+  background: rgba(10,14,28,.28);
+  overflow: hidden;
+}
+.orbit-chart-box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(800px 250px at 15% 15%, rgba(85,243,255,.08), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+.orbit-chart-box canvas {
+  width: 100% !important;
+  height: 180px !important;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+.orbit-chart-tag {
+  position: absolute;
+  left: 14px;
+  top: 10px;
+  font-size: 12px;
+  color: rgba(233,238,255,.72);
+  letter-spacing: .2px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Two-column layout: charts | feed */
+.orbit-home-main {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1.1fr .9fr;
+}
+@media (max-width: 980px) { .orbit-home-main { grid-template-columns: 1fr; } }
+
+/* Live event feed */
+.orbit-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 16px 16px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+.orbit-feed-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid rgba(140,160,255,.12);
+  border-radius: 14px;
+  background: rgba(3,6,18,.35);
+}
