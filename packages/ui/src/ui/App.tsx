@@ -47,6 +47,15 @@ const SEV_BG: Record<string, string> = {
   info:     '#172554',
 };
 
+const NS_COLOR: Record<string, string> = {
+  nagios: '#38bdf8',
+  wazuh:  '#a78bfa',
+};
+const NS_BG: Record<string, string> = {
+  nagios: '#0c1a3a',
+  wazuh:  '#1e1040',
+};
+
 const NAGIOS_STATE_COLOR: Record<string, string> = {
   OK:           '#4ade80',
   UP:           '#4ade80',
@@ -403,6 +412,28 @@ function SevBadge({ sev }: { sev: string }) {
     }}>
       {sev}
     </span>
+  );
+}
+
+function NsBadge({ ns }: { ns: string }) {
+  const color = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
+  const bg    = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';
+  return (
+    <span style={{
+      display: 'inline-block',
+      padding: '2px 7px',
+      borderRadius: 99,
+      fontSize: 10,
+      fontWeight: 700,
+      background: bg,
+      color,
+      border: `1px solid ${color}40`,
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em',
+      alignSelf: 'flex-start',
+      marginTop: 1,
+      whiteSpace: 'nowrap',
+    }}>{ns}</span>
   );
 }
 
@@ -996,6 +1027,8 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const [netRows, setNetRows] = React.useState<MultiRow[]>([]);
   const [suriRows, setSuriRows] = React.useState<Row[]>([]);
   const [feed, setFeed] = React.useState<EventRow[]>([]);
+  // selected namespaces for the consolidated feed
+  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh']);
 
   // Layout toggle: 'side' = charts left + feed right; 'below' = charts above + feed below
   const [chartLayout, setChartLayout] = React.useState<'side' | 'below'>('side');
@@ -1128,11 +1161,9 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
         language: 'orbitql',
         query: {
           kind: 'events',
-          asset_id: assetId,
-          namespace: 'nagios',
           from,
           to,
-          limit: 60,
+          limit: 200,
         }
       };
 
@@ -1587,31 +1618,60 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
             </div>
           </div>
 
-          {/* Live event feed */}
+          {/* Live event feed — consolidated */}
           <div className="orbit-panel" style={{ margin: 0 }}>
             <div className="orbit-panel-head">
               <div>
-                <div className="orbit-panel-title">Nagios Live Feed</div>
-                <div className="orbit-panel-meta">últimos eventos HARD (inclui OK/UP)</div>
+                <div className="orbit-panel-title">Live Feed</div>
+                <div className="orbit-panel-meta">eventos consolidados por fonte</div>
               </div>
-              <div className="orbit-pill"><span className="orbit-badge">stream</span></div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* source toggle pills — built from namespaces in feed + always show known ones */}
+                {[...new Set([...feed.map(e => e.namespace), 'nagios', 'wazuh'])].sort().map(ns => {
+                  const active = feedNs.includes(ns);
+                  const color  = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
+                  const bg     = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';
+                  return (
+                    <button key={ns} onClick={() =>
+                      setFeedNs(prev => prev.includes(ns) ? prev.filter(x => x !== ns) : [...prev, ns])
+                    } style={{
+                      padding: '4px 11px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      border: `1px solid ${active ? color : 'rgba(140,160,255,.2)'}`,
+                      background: active ? bg : 'transparent',
+                      color: active ? color : 'rgba(233,238,255,.35)',
+                      cursor: 'pointer',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      transition: 'all .15s',
+                    }}>{ns}</button>
+                  );
+                })}
+                <span className="orbit-badge" style={{ marginLeft: 4 }}>stream</span>
+              </div>
             </div>
             <div className="orbit-feed">
-              {feed.length === 0 && (
-                <div style={{ color: 'rgba(233,238,255,.45)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
-                  Nenhum evento no período
-                </div>
-              )}
-              {feed.slice(0, 20).map((e, idx) => (
-                <div key={idx} className="orbit-feed-row">
-                  <SevBadge sev={e.severity} />
-                  <div style={{ flex: 1 }}>
-                    <strong style={{ display: 'block' }}>{e.title}</strong>
-                    <div style={{ fontSize: 12, color: 'rgba(233,238,255,.65)', marginTop: 4, lineHeight: 1.3 }}>{e.message || ''}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(233,238,255,.45)', marginTop: 6 }}>{fmtTs(e.ts)}</div>
+              {(() => {
+                const visible = feed.filter(e => feedNs.includes(e.namespace));
+                if (visible.length === 0) return (
+                  <div style={{ color: 'rgba(233,238,255,.45)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+                    Nenhum evento no período
                   </div>
-                </div>
-              ))}
+                );
+                return visible.slice(0, 30).map((e, idx) => (
+                  <div key={idx} className="orbit-feed-row">
+                    <SevBadge sev={e.severity} />
+                    <NsBadge ns={e.namespace} />
+                    <div style={{ flex: 1 }}>
+                      <strong style={{ display: 'block' }}>{e.title}</strong>
+                      <div style={{ fontSize: 12, color: 'rgba(233,238,255,.65)', marginTop: 4, lineHeight: 1.3 }}>{e.message || ''}</div>
+                      <div style={{ fontSize: 12, color: 'rgba(233,238,255,.45)', marginTop: 6 }}>{fmtTs(e.ts)}</div>
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
           </div>
         </div>
