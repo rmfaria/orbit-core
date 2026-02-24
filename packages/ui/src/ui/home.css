@@ -121,6 +121,8 @@
   display: grid;
   gap: 14px;
   grid-template-columns: 1fr 1fr;
+  align-content: start; /* rows don't distribute extra vertical space */
+  align-items: start;   /* cells don't stretch beyond their content */
 }
 @media (max-width: 720px) { .orbit-charts-grid { grid-template-columns: 1fr; } }
 
