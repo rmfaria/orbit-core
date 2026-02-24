@@ -440,6 +440,7 @@ function NsBadge({ ns }: { ns: string }) {
 function FeedRow({ e }: { e: EventRow }) {
   const [open, setOpen] = React.useState(false);
   const expandable = e.namespace === 'wazuh' && !!e.message;
+  const devname = e.message?.match(/devname="([^"]+)"/)?.[1] ?? null;
   return (
     <div
       className="orbit-feed-row"
@@ -450,6 +451,9 @@ function FeedRow({ e }: { e: EventRow }) {
       <NsBadge ns={e.namespace} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <strong style={{ display: 'block' }}>{e.title}</strong>
+        {devname && !open && (
+          <div style={{ fontSize: 12, color: 'rgba(160,180,255,.55)', marginTop: 3 }}>{devname}</div>
+        )}
         {(!expandable || open) && e.message && (
           <div style={{
             fontSize: 12,
