@@ -939,10 +939,11 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
 // ─── EPS CHART ────────────────────────────────────────────────────────────────
 
 function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string; from: string; to: string; variant?: 'card' | 'chart-box' }) {
-  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
-  const [rows, setRows]         = React.useState<Row[]>([]);
+  const canvasRef  = React.useRef<HTMLCanvasElement | null>(null);
+  const chartRef   = React.useRef<Chart | null>(null);
+  const [rows, setRows]           = React.useState<Row[]>([]);
   const [bucketSec, setBucketSec] = React.useState<number>(60);
-  const [loading, setLoading]   = React.useState(false);
+  const [loading, setLoading]     = React.useState(false);
 
   async function load() {
     setLoading(true);
@@ -962,19 +963,25 @@ function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string
 
   React.useEffect(() => { load(); }, [namespace, from, to]);
 
+  // Create Chart.js instance once canvas is mounted
   React.useEffect(() => {
-    const c = canvasRef.current;
-    if (!c || !rows.length) return;
-    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-    c.style.width = '100%';
-    const cssW = c.offsetWidth || 900;
-    const cssH = 160;
-    c.style.height = `${cssH}px`;
-    c.width = cssW * dpr;
-    c.height = cssH * dpr;
-    const ctx = c.getContext('2d');
-    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawChart(c, rows);
+    if (!canvasRef.current) return;
+    if (!chartRef.current) chartRef.current = makeNeLineChart(canvasRef.current, 1);
+    return () => { chartRef.current?.destroy(); chartRef.current = null; };
+  }, []);
+
+  // Update chart data whenever rows change
+  React.useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !rows.length) return;
+    const isoToHHMM = (ts: string) => {
+      const d = new Date(ts);
+      return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    };
+    chart.data.labels = rows.map(r => isoToHHMM(r.ts));
+    chart.data.datasets[0].label = 'EPS';
+    chart.data.datasets[0].data  = rows.map(r => r.value);
+    chart.update('none');
   }, [rows]);
 
   const bucketLabel = bucketSec >= 3600 ? `${bucketSec / 3600}h` : bucketSec >= 60 ? `${bucketSec / 60}min` : `${bucketSec}s`;
@@ -988,7 +995,7 @@ function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string
         <div className="orbit-chart-canvas-wrap">
           {!loading && rows.length === 0
             ? <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>Sem dados no período</div>
-            : <canvas ref={canvasRef} style={{ display: 'block' }} />
+            : <canvas ref={canvasRef} />
           }
         </div>
       </div>
@@ -1004,7 +1011,7 @@ function EpsChart({ namespace, from, to, variant = 'card' }: { namespace: string
       {!loading && rows.length === 0 ? (
         <div style={{ height: 40, display: 'flex', alignItems: 'center', color: '#64748b', fontSize: 12 }}>Sem dados no período</div>
       ) : (
-        <canvas ref={canvasRef} style={{ display: 'block', width: '100%' }} />
+        <canvas ref={canvasRef} />
       )}
     </div>
   );
@@ -1345,6 +1352,103 @@ function HealthBadge() {
   );
 }
 
+// ─── SHARED CHART HELPERS ────────────────────────────────────────────────────
+
+function glowGradient(ctx: CanvasRenderingContext2D, colorA: string, colorB: string) {
+  const g = ctx.createLinearGradient(0, 0, 0, 320);
+  g.addColorStop(0, colorA);
+  g.addColorStop(1, colorB);
+  return g;
+}
+
+function makeNeLineChart(canvas: HTMLCanvasElement, datasetCount: number) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const colors = ['rgba(85,243,255,.95)','rgba(155,124,255,.95)','rgba(255,93,214,.85)','rgba(255,211,106,.90)'];
+
+  const datasets = Array.from({ length: datasetCount }).map((_, i) => ({
+    label: `s${i+1}`,
+    data: [] as number[],
+    borderColor: colors[i % colors.length],
+    backgroundColor: i === 0 ? glowGradient(ctx,'rgba(85,243,255,.22)','rgba(85,243,255,0)') : 'rgba(0,0,0,0)',
+    tension: 0.38,
+    fill: i === 0,
+    pointRadius: 0,
+    borderWidth: 2,
+  }));
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 450 },
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          border: { display: false },
+          grid: { color: 'rgba(140,160,255,.05)', drawTicks: false },
+          ticks: {
+            color: 'rgba(233,238,255,.50)',
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 7,
+            padding: 6,
+            font: { size: 10, weight: '600' },
+          },
+        },
+        y: {
+          border: { display: false },
+          grid: { color: 'rgba(140,160,255,.07)', drawTicks: false },
+          ticks: {
+            color: 'rgba(233,238,255,.50)',
+            autoSkip: true,
+            maxTicksLimit: 5,
+            padding: 6,
+            font: { size: 10, weight: '600' },
+          },
+        },
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: 'rgba(233,238,255,.72)',
+            boxWidth: 10,
+            boxHeight: 10,
+            usePointStyle: true,
+            pointStyle: 'rectRounded',
+            padding: 14,
+            font: { size: 10, weight: '700' },
+          },
+        },
+        tooltip: {
+          backgroundColor: 'rgba(3,6,18,.92)',
+          borderColor: 'rgba(140,160,255,.25)',
+          borderWidth: 1,
+          titleColor: 'rgba(233,238,255,.9)',
+          bodyColor: 'rgba(233,238,255,.75)',
+        },
+      },
+    },
+    plugins: [{
+      id: 'neGlow',
+      beforeDatasetsDraw(c) {
+        const { ctx } = c;
+        ctx.save();
+        ctx.shadowColor = 'rgba(85,243,255,.28)';
+        ctx.shadowBlur = 18;
+      },
+      afterDatasetsDraw(c) {
+        c.ctx.restore();
+      },
+    }]
+  });
+
+  return chart;
+}
+
 // ─── HOME + SOURCES ──────────────────────────────────────────────────────────
 
 function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => void }) {
@@ -1573,104 +1677,6 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     if (hiddenFixed.includes('net'))  { netChart.current?.destroy();  netChart.current  = null; }
     if (hiddenFixed.includes('suri')) { suriChart.current?.destroy(); suriChart.current = null; }
   }, [hiddenFixed]);
-
-  function glowGradient(ctx: CanvasRenderingContext2D, colorA: string, colorB: string) {
-    const g = ctx.createLinearGradient(0, 0, 0, 320);
-    g.addColorStop(0, colorA);
-    g.addColorStop(1, colorB);
-    return g;
-  }
-
-  function makeNeLineChart(canvas: HTMLCanvasElement, datasetCount: number) {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    const colors = ['rgba(85,243,255,.95)','rgba(155,124,255,.95)','rgba(255,93,214,.85)','rgba(255,211,106,.90)'];
-
-    const datasets = Array.from({ length: datasetCount }).map((_, i) => ({
-      label: `s${i+1}`,
-      data: [] as number[],
-      borderColor: colors[i % colors.length],
-      backgroundColor: i === 0 ? glowGradient(ctx,'rgba(85,243,255,.22)','rgba(85,243,255,0)') : 'rgba(0,0,0,0)',
-      tension: 0.38,
-      fill: i === 0,
-      pointRadius: 0,
-      borderWidth: 2,
-    }));
-
-    const chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets,
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: { duration: 450 },
-        interaction: { mode: 'index', intersect: false },
-        scales: {
-          x: {
-            border: { display: false },
-            grid: { color: 'rgba(140,160,255,.05)', drawTicks: false },
-            ticks: {
-              color: 'rgba(233,238,255,.50)',
-              maxRotation: 0,
-              autoSkip: true,
-              maxTicksLimit: 7,
-              padding: 6,
-              font: { size: 10, weight: '600' },
-            },
-          },
-          y: {
-            border: { display: false },
-            grid: { color: 'rgba(140,160,255,.07)', drawTicks: false },
-            ticks: {
-              color: 'rgba(233,238,255,.50)',
-              autoSkip: true,
-              maxTicksLimit: 5,
-              padding: 6,
-              font: { size: 10, weight: '600' },
-            },
-          },
-        },
-        plugins: {
-          legend: {
-            labels: {
-              color: 'rgba(233,238,255,.72)',
-              boxWidth: 10,
-              boxHeight: 10,
-              usePointStyle: true,
-              pointStyle: 'rectRounded',
-              padding: 14,
-              font: { size: 10, weight: '700' },
-            },
-          },
-          tooltip: {
-            backgroundColor: 'rgba(3,6,18,.92)',
-            borderColor: 'rgba(140,160,255,.25)',
-            borderWidth: 1,
-            titleColor: 'rgba(233,238,255,.9)',
-            bodyColor: 'rgba(233,238,255,.75)',
-          },
-        },
-      },
-      plugins: [{
-        id: 'neGlow',
-        beforeDatasetsDraw(c) {
-          const { ctx } = c;
-          ctx.save();
-          ctx.shadowColor = 'rgba(85,243,255,.28)';
-          ctx.shadowBlur = 18;
-        },
-        afterDatasetsDraw(c) {
-          c.ctx.restore();
-        },
-      }]
-    });
-
-    return chart;
-  }
 
   function ensureCharts() {
     if (cpuRef.current && !cpuChart.current) cpuChart.current = makeNeLineChart(cpuRef.current, 3);
