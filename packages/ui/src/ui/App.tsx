@@ -2390,20 +2390,29 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export function App() {
-  const [tab, setTab]       = React.useState<Tab>('home');
-  const [assets, setAssets] = React.useState<AssetOpt[]>([]);
+  const [tab, setTab]         = React.useState<Tab>('home');
+  const [assets, setAssets]   = React.useState<AssetOpt[]>([]);
+  const [needsKey, setNeedsKey] = React.useState(false);
 
   React.useEffect(() => {
     fetch('api/v1/catalog/assets?limit=500', { headers: apiGetHeaders() })
-      .then((r) => r.json())
-      .then((j) => setAssets((j?.assets ?? []).map((a: any) => ({ asset_id: a.asset_id, name: a.name ?? a.asset_id }))))
+      .then((r) => { if (r.status === 401) { setNeedsKey(true); return null; } return r.json(); })
+      .then((j) => { if (j) { setNeedsKey(false); setAssets((j?.assets ?? []).map((a: any) => ({ asset_id: a.asset_id, name: a.name ?? a.asset_id }))); } })
       .catch(() => {});
-  }, []);
+  }, [tab]);
 
   return (
     <div style={S.root}>
       <TopBar tab={tab} setTab={setTab} />
       <div style={{ flex: 1, minWidth: 0, padding: '22px 24px' }}>
+        {needsKey && tab !== 'admin' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', marginBottom: 18, background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.35)', borderRadius: 12, fontSize: 13, color: '#fbbf24' }}>
+            <span style={{ fontSize: 18 }}>⚠</span>
+            <span>API protegida por chave. Configure a <strong>API Key</strong> em</span>
+            <button onClick={() => setTab('admin')} style={{ background: 'rgba(251,191,36,.15)', border: '1px solid rgba(251,191,36,.4)', borderRadius: 8, color: '#fbbf24', padding: '4px 12px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>⚙ Admin</button>
+            <span>para carregar os dados.</span>
+          </div>
+        )}
         {tab === 'home'          && <HomeTab        assets={assets} setTab={setTab} />}
         {tab === 'src-nagios'    && <NagiosTab      assets={assets} />}
         {tab === 'src-wazuh'     && <EventsTab      key="src-wazuh"     assets={assets} defaultNs="wazuh" />}
