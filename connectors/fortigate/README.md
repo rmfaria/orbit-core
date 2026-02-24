@@ -39,6 +39,39 @@ Para verificar:
 grep -r "fortigate" /var/ossec/ruleset/rules/ | head -5
 ```
 
+### Como o `kind=fortigate` é gerado
+
+O conector Wazuh (`ship_events.py`) define o campo `kind` do evento orbit-core
+a partir de `rule.groups[0]` no alerta Wazuh:
+
+```
+alerta.rule.groups = ["fortigate", "firewall"]  →  kind = "fortigate"
+```
+
+**Requisito:** as regras Wazuh que processam os syslogs do Fortigate devem ter
+`fortigate` como **primeiro grupo** (`<group>fortigate,...</group>`).
+As regras nativas do Wazuh já fazem isso. Se você usar regras customizadas,
+certifique-se de incluir `fortigate` no início da lista de grupos.
+
+Para confirmar que os eventos estão chegando com o grupo correto:
+
+```bash
+tail -f /var/ossec/logs/alerts/alerts.json | python3 -c "
+import sys, json
+for line in sys.stdin:
+    a = json.loads(line)
+    if 'fortigate' in (a.get('rule',{}).get('groups') or []):
+        print(a['rule']['groups'], a['rule']['description'])
+"
+```
+
+### Como o Fortigate aparece separado na UI orbit-core
+
+Os eventos chegam com `namespace=wazuh` e `kind=fortigate`. A UI do orbit-core
+usa a função `eventSource()` para surfaceá-los como uma fonte distinta — o pill
+**fortigate** no live feed e a opção de filtro na aba Eventos mostram apenas
+esses eventos, mesmo que estejam misturados com outros alertas Wazuh no banco.
+
 ## Mapeamento de campos
 
 | Campo Fortigate | Campo orbit-core |
@@ -56,11 +89,12 @@ grep -r "fortigate" /var/ossec/ruleset/rules/ | head -5
 
 ```bash
 # Listar eventos Fortigate no orbit-core
+# Nota: namespace=wazuh é correto — Fortigate chega via pipeline Wazuh.
+#       O campo "kind" do orbit-core distingue os eventos Fortigate dos demais.
 curl -s -u orbitadmin:PASS \
   -X POST https://prod.nesecurity.com.br/orbit-core/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
-    "language":"orbitql",
     "query":{
       "kind":"events",
       "from":"2026-02-24T00:00:00Z",
@@ -70,6 +104,10 @@ curl -s -u orbitadmin:PASS \
     }
   }'
 ```
+
+Para filtrar apenas eventos Fortigate, filtre pelo campo `kind` no resultado
+(a API orbit-core não suporta filtro por `kind` na query — use `namespace=wazuh`
+e filtre localmente, ou use o pill **fortigate** no live feed da UI).
 
 ## Notas
 
