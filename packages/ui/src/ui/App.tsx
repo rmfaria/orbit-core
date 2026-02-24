@@ -1388,19 +1388,22 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
         {/* Charts + feed */}
         <div className="orbit-home-main" style={{ padding: '0 16px 16px' }}>
           {/* Charts 2×2 */}
-          <div className="orbit-chart-wrap" style={{ padding: 0 }}>
-            <div className="orbit-charts-grid">
-              {[
-                { label: 'CPU Load',       ref: cpuRef },
-                { label: 'Disk Queue',     ref: diskRef },
-                { label: 'Net Traffic',    ref: netRef },
-                { label: 'Suricata Alerts', ref: suriRef },
-              ].map(({ label, ref }) => (
-                <div key={label} className="orbit-chart-box">
-                  <div className="orbit-chart-tag">{label}</div>
-                  <canvas ref={ref} />
-                </div>
-              ))}
+          <div className="orbit-charts-grid">
+            <div className="orbit-chart-box">
+              <div className="orbit-chart-tag">CPU Load</div>
+              <canvas ref={cpuRef} />
+            </div>
+            <div className="orbit-chart-box">
+              <div className="orbit-chart-tag">Disk Queue</div>
+              <canvas ref={diskRef} />
+            </div>
+            <div className="orbit-chart-box">
+              <div className="orbit-chart-tag">Net Traffic</div>
+              <canvas ref={netRef} />
+            </div>
+            <div className="orbit-chart-box">
+              <div className="orbit-chart-tag">Suricata Alerts</div>
+              <canvas ref={suriRef} />
             </div>
           </div>
 
