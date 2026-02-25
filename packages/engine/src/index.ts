@@ -1,3 +1,10 @@
+/**
+ * orbit-core
+ *
+ * Created by Rodrigo Menchio <rodrigomenchio@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import type { QueryRequest } from '@orbit/core-contracts';
 
 /**
