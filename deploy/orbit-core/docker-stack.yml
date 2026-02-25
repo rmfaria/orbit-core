@@ -9,8 +9,8 @@ services:
   # ── API ─────────────────────────────────────────────────────────────────────
   orbitcore_api:
     image: node:22-alpine
-    command: ["node", "/app/dist/index.js"]
-    working_dir: /app
+    command: ["node", "/app/packages/api/dist/index.js"]
+    working_dir: /app/packages/api
     environment:
       - DATABASE_URL=postgres://postgres:postgres@orbitcore_pg:5432/orbit
       - ORBIT_API_KEY=${ORBIT_API_KEY}
@@ -63,7 +63,7 @@ services:
     networks:
       - Portn8n
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/index.html"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/index.html"]
       interval: 30s
       timeout: 3s
       retries: 3
