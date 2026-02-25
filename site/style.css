@@ -244,10 +244,12 @@ pre{margin:0; padding:14px 14px 16px; overflow:auto; font-size:13px; line-height
 
 .cta{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px}
 
-.footer{padding:26px 0 40px; border-top:1px solid rgba(39,54,89,.55)}
-.footer__inner{display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap}
-.footer__brand{font-weight:900}
+.footer{padding:28px 0 46px; border-top:1px solid rgba(39,54,89,.55)}
+.footer__inner{display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap}
+.footer__brand{font-weight:900; letter-spacing:.10em; text-transform:uppercase}
 .footer__links{display:flex; gap:14px; flex-wrap:wrap}
+.footer__links a{padding:7px 10px; border-radius:999px; border:1px solid var(--stroke2); background: rgba(15,26,51,.16)}
+.footer__links a:hover{text-decoration:none; border-color: rgba(85,243,255,.35)}
 
 .small{font-size:13px}
 .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
