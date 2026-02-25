@@ -306,7 +306,7 @@ ${eventCatalog}
   widgets: WidgetSpec[]   // 1–20
 }
 WidgetSpec = { id, title, kind, layout: {x:0,y:0,w:1|2,h:1}, query }
-  kind: "timeseries" | "timeseries_multi" | "events" | "eps" | "kpi"
+  kind: "timeseries" | "timeseries_multi" | "events" | "eps" | "kpi" | "gauge"
   w=1 → half width,  w=2 → full width
   query must NOT contain "from" or "to"
 
@@ -325,6 +325,11 @@ WidgetSpec = { id, title, kind, layout: {x:0,y:0,w:1|2,h:1}, query }
 
 ### kpi (w=1) — latest value, REQUIRES asset_id (same query as timeseries)
 { "kind": "timeseries", "asset_id": "${exAssetId}", "namespace": "${exNs}", "metric": "${exMetric}" }
+
+### gauge (w=1) — half-donut gauge, color-coded by value percentage; REQUIRES asset_id + min + max
+{ "kind": "timeseries", "asset_id": "${exAssetId}", "namespace": "${exNs}", "metric": "${exMetric}", "min": 0, "max": 100 }
+  # Use gauge for percentage-like metrics (CPU %, disk %, latency ms with known ceiling)
+  # min/max set the display range: green=0-50%, yellow=50-75%, red=75-100%
 
 ### events (w=1 or w=2) — event feed table
 { "kind": "events", "namespace": "${evNsLabel}", "limit": 20 }
@@ -363,7 +368,8 @@ Use severities=["medium","high","critical"] for broader monitoring.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Return ONLY the JSON object — no markdown fences, no text outside JSON
 2. NEVER include "from" or "to" in any query
-3. timeseries and kpi MUST have "asset_id" — use real asset_ids from the catalog
+3. timeseries, kpi and gauge MUST have "asset_id" — use real asset_ids from the catalog
+3b. gauge MUST have "min" and "max" numeric fields (e.g. 0/100 for percentages)
 4. timeseries_multi MUST have "series" array — each entry MUST have asset_id+namespace+metric+label
 5. eps query.kind MUST be "event_count"
 6. events query.kind MUST be "events"

@@ -2526,6 +2526,10 @@ function DashboardWidgetRenderer({ widget, from, to, assets }: { widget: WidgetS
     return <DashWidgetKpi widget={widget} from={from} to={to} assets={assets} />;
   }
 
+  if (kind === 'gauge') {
+    return <DashWidgetGauge widget={widget} from={from} to={to} assets={assets} />;
+  }
+
   // default: timeseries
   return <DashWidgetTimeseries widget={widget} from={from} to={to} assets={assets} />;
 }
@@ -2735,6 +2739,105 @@ function DashWidgetKpi({ widget, from, to, assets }: { widget: WidgetSpec; from:
   );
 }
 
+function DashWidgetGauge({ widget, from, to, assets }: { widget: WidgetSpec; from: string; to: string; assets: AssetOpt[] }) {
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const chartRef  = React.useRef<Chart | null>(null);
+  const [value, setValue] = React.useState<number | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const min = Number((widget.query as Record<string, unknown>).min ?? 0);
+  const max = Number((widget.query as Record<string, unknown>).max ?? 100);
+
+  function gaugeColor(pct: number): string {
+    if (pct >= 0.75) return '#f87171';
+    if (pct >= 0.50) return '#fbbf24';
+    return '#4ade80';
+  }
+
+  // Create Chart.js doughnut (half-gauge) once
+  React.useEffect(() => {
+    if (!canvasRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+    chartRef.current = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        datasets: [{
+          data: [0, 100],
+          backgroundColor: ['#4ade80', 'rgba(140,160,255,.08)'],
+          borderWidth: 0,
+          borderRadius: 4,
+        }] as any,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        circumference: 180,
+        rotation: -90,
+        cutout: '74%',
+        animation: { duration: 600 },
+        plugins: {
+          legend:  { display: false },
+          tooltip: { enabled: false },
+        },
+      },
+    });
+    return () => { chartRef.current?.destroy(); chartRef.current = null; };
+  }, []);
+
+  // Fetch last metric value
+  React.useEffect(() => {
+    setLoading(true);
+    const wq = widget.query as Record<string, unknown>;
+    let q: Record<string, unknown> = { ...wq, from, to };
+    delete q.min; delete q.max;  // strip display-only fields before sending to API
+    if (!q.asset_id && assets.length > 0) q.asset_id = assets[0].asset_id;
+    if (!q.asset_id) { setLoading(false); return; }
+
+    fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
+      .then(r => r.json())
+      .then(j => {
+        const rows: Row[] = j?.result?.rows ?? [];
+        const v = rows.length ? rows[rows.length - 1].value : null;
+        setValue(v);
+        const chart = chartRef.current;
+        if (!chart || v === null) return;
+        const clampedV = Math.max(min, Math.min(max, v));
+        const pct      = (clampedV - min) / (max - min);
+        const color    = gaugeColor(pct);
+        const filled   = pct * 100;
+        chart.data.datasets[0].data = [filled, 100 - filled] as any;
+        (chart.data.datasets[0] as any).backgroundColor = [color, 'rgba(140,160,255,.08)'];
+        chart.update('none');
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [widget.id, from, to, assets]);
+
+  const clampedV = value !== null ? Math.max(min, Math.min(max, value)) : null;
+  const pct      = clampedV !== null ? (clampedV - min) / (max - min) : null;
+  const color    = pct !== null ? gaugeColor(pct) : '#55f3ff';
+  const display  = loading ? '…' : value === null ? '—'
+    : value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value.toFixed(1);
+
+  return (
+    <div className="orbit-chart-box" style={{ gridColumn: `span ${widget.layout.w}`, display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: 150 }}>
+      <div className="orbit-chart-tag">{widget.title}</div>
+      <div style={{ position: 'relative', width: '100%', height: 110 }}>
+        <canvas ref={canvasRef} />
+        <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none' }}>
+          <div style={{ fontSize: 32, fontWeight: 900, color, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>{display}</div>
+          <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>{(widget.query as Record<string, unknown>).metric as string ?? ''}</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', width: '80%', fontSize: 10, color: '#475569', marginTop: 2 }}>
+        <span>{min}</span>
+        <span>{max}</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── DASHBOARDS TAB ───────────────────────────────────────────────────────────
 
 type DashMode = 'list' | 'build' | 'view';
@@ -2758,6 +2861,8 @@ type BuildWidget = {
   severities: string;
   kindFilter: string;
   span: 1 | 2;
+  gaugeMin: number;
+  gaugeMax: number;
 };
 
 type EventNsCatalog = {
@@ -2769,7 +2874,7 @@ type EventNsCatalog = {
   severities: string[];
 };
 
-const WIDGET_KINDS = ['timeseries', 'timeseries_multi', 'events', 'eps', 'kpi'];
+const WIDGET_KINDS = ['timeseries', 'timeseries_multi', 'events', 'eps', 'kpi', 'gauge'];
 const TIME_PRESETS = ['60m', '6h', '24h', '7d', '30d'];
 
 function buildWidgetToSpec(w: BuildWidget): WidgetSpec {
@@ -2784,6 +2889,9 @@ function buildWidgetToSpec(w: BuildWidget): WidgetSpec {
     if (w.kindFilter) query.kinds      = [w.kindFilter];
   } else if (w.kind === 'timeseries_multi') {
     query = { kind: 'timeseries_multi', namespace: w.namespace, metric: w.metric, group_by: ['asset_id'] };
+  } else if (w.kind === 'gauge') {
+    query = { kind: 'timeseries', namespace: w.namespace, metric: w.metric, min: w.gaugeMin, max: w.gaugeMax };
+    if (w.assetId) query.asset_id = w.assetId;
   } else {
     // timeseries or kpi
     query = { kind: 'timeseries', namespace: w.namespace, metric: w.metric };
@@ -3100,6 +3208,8 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
   const [newSev,        setNewSev]        = React.useState('');
   const [newKindFilter, setNewKindFilter] = React.useState('');
   const [newSpan,       setNewSpan]       = React.useState<1 | 2>(1);
+  const [newGaugeMin,   setNewGaugeMin]   = React.useState(0);
+  const [newGaugeMax,   setNewGaugeMax]   = React.useState(100);
 
   // Catalog
   const [nsOpts,      setNsOpts]      = React.useState<string[]>([]);
@@ -3208,6 +3318,8 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
       severities: newSev,
       kindFilter: newKindFilter,
       span:       newSpan,
+      gaugeMin:   newGaugeMin,
+      gaugeMax:   newGaugeMax,
     };
     setWidgets(prev => [...prev, w]);
     setNewTitle('');
@@ -3318,7 +3430,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
               {nsOpts.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
-          {(newKind === 'timeseries' || newKind === 'timeseries_multi' || newKind === 'kpi') && (
+          {(newKind === 'timeseries' || newKind === 'timeseries_multi' || newKind === 'kpi' || newKind === 'gauge') && (
             <label style={S.label}>
               Métrica
               <select value={newMetric} onChange={e => setNewMetric(e.target.value)} style={S.select}>
@@ -3329,7 +3441,19 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
               </select>
             </label>
           )}
-          {(newKind === 'timeseries' || newKind === 'events') && (
+          {newKind === 'gauge' && (
+            <>
+              <label style={S.label}>
+                Min
+                <input type="number" value={newGaugeMin} onChange={e => setNewGaugeMin(Number(e.target.value))} style={{ ...S.input, width: 64 }} />
+              </label>
+              <label style={S.label}>
+                Max
+                <input type="number" value={newGaugeMax} onChange={e => setNewGaugeMax(Number(e.target.value))} style={{ ...S.input, width: 64 }} />
+              </label>
+            </>
+          )}
+          {(newKind === 'timeseries' || newKind === 'events' || newKind === 'gauge') && (
             <label style={S.label}>
               Asset
               <select value={newAsset} onChange={e => setNewAsset(e.target.value)} style={S.select}>
