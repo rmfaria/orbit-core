@@ -1,0 +1,10 @@
+# Nagios HARD events → orbit-core
+# Install: cp this file to /etc/cron.d/openclaw-nagios-orbitcore-events
+# Secrets: set ORBIT_API_KEY to the value in the orbit-core-api.service unit
+#
+# IMPORTANT: use http://localhost:3000 (not the public HTTPS URL) to avoid
+# the reverse proxy silently dropping ingestion requests.
+
+* * * * * root ORBIT_API_KEY=<ORBIT_API_KEY> ORBIT_API=http://localhost:3000 \
+  python3 /root/.openclaw/workspace/scripts/nagios_orbitcore_events_shipper.py \
+  >/var/log/nagios4/orbitcore_events_shipper.log 2>&1

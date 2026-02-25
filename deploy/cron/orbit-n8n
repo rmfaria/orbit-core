@@ -1,0 +1,14 @@
+# n8n execution errors → orbit-core (active connector / polling)
+# Install: cp this file to /etc/cron.d/orbit-n8n
+# Secrets: ORBIT_API_KEY, N8N_API_KEY
+
+* * * * * root \
+  ORBIT_API_KEY=<ORBIT_API_KEY> \
+  ORBIT_API=http://localhost:3000 \
+  N8N_URL=https://n8n.nesecurity.com.br \
+  N8N_API_KEY=<N8N_API_KEY> \
+  N8N_VERIFY_TLS=true \
+  STUCK_AFTER_MINUTES=30 \
+  STATE_PATH=/var/lib/orbit-core/n8n-events.state.json \
+  python3 /opt/orbit-core/connectors/n8n/ship_events.py \
+  >>/var/log/orbit-core/n8n_shipper.log 2>&1
