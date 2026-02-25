@@ -10,6 +10,8 @@ import cors from 'cors';
 import pino from 'pino';
 import { pinoHttp } from 'pino-http';
 import { ZodError } from 'zod';
+import rateLimit from 'express-rate-limit';
+import { randomUUID } from 'crypto';
 
 import { loadEnv } from './env.js';
 import { makeAuthMiddleware } from './auth.js';
@@ -40,8 +42,25 @@ app.use(express.json({ limit: '1mb' }));
 app.use(pinoHttp({ logger }));
 app.use(metricsMiddleware);
 
+// Attach a unique request ID for log correlation.
+app.use((req, _res, next) => {
+  req.headers['x-request-id'] ??= randomUUID();
+  next();
+});
+
 // Health is always public — used by load-balancers and readiness probes.
 app.get('/api/v1/health', a(healthHandler));
+
+// Rate limiting: 300 req/min keyed by API key or IP.
+// Applied after /health so probes are never throttled.
+const limiter = rateLimit({
+  windowMs: 60_000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.headers['x-api-key'] as string) || req.ip || 'anon',
+});
+app.use('/api/v1', limiter);
 
 // All other endpoints require authentication when ORBIT_API_KEY is set.
 app.use(makeAuthMiddleware(env));

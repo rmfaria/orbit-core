@@ -1,14 +1,14 @@
 // correlate.ts — background event-metric correlation engine.
 //
 // Runs every 5 minutes. Algorithm per event:
-//   1. Find all metrics for the same asset_id within ±WIN_MIN of the event.
-//   2. Compute baseline (avg + stddev) from the 24 h preceding the event
-//      (excluding the ±WIN_MIN window, which may be noisy).
-//   3. Find the peak value within ±PEAK_MIN of the event.
-//   4. Compute z_score = (peak − avg) / stddev  and
+//   1. Find all metrics for the same asset_id within ±WIN_MIN of the event,
+//      along with their baseline stats and peak values — all in one CTE query.
+//   2. Compute z_score = (peak − avg) / stddev  and
 //      rel_change = (peak − avg) / |avg|.
-//   5. If z_score ≥ Z_THRESHOLD  OR  rel_change ≥ REL_THRESHOLD → anomaly.
-//   6. INSERT … ON CONFLICT DO UPDATE → idempotent; re-runs are safe.
+//   3. If z_score ≥ Z_THRESHOLD  OR  rel_change ≥ REL_THRESHOLD → anomaly.
+//   4. INSERT … ON CONFLICT DO UPDATE → idempotent; re-runs are safe.
+//
+// Performance: O(events × 1) queries instead of the previous O(events × metrics × 3).
 
 import type { Pool } from 'pg';
 import pino from 'pino';
@@ -33,6 +33,42 @@ const SEV_FILTER = ['medium', 'high', 'critical'];
 // How far back to look for events on each run.
 // Wide enough to survive a process restart.
 const LOOKBACK_H = 2;
+
+// Single CTE that discovers active metrics + computes baseline + peak in one round-trip.
+// Parameters: $1=asset_id, $2=event_ts, $3=WIN_MIN, $4=BASELINE_H, $5=PEAK_MIN
+const CORRELATE_CTE = `
+  WITH active AS (
+    SELECT DISTINCT namespace, metric
+    FROM metric_points
+    WHERE asset_id = $1
+      AND ts BETWEEN $2::timestamptz - make_interval(mins => $3)
+               AND $2::timestamptz + make_interval(mins => $3)
+  ),
+  baselines AS (
+    SELECT namespace, metric,
+           AVG(value)::float8    AS baseline_avg,
+           STDDEV(value)::float8 AS baseline_std
+    FROM metric_points
+    WHERE asset_id = $1
+      AND (namespace, metric) IN (SELECT namespace, metric FROM active)
+      AND ts >= $2::timestamptz - make_interval(hours => $4)
+      AND ts <  $2::timestamptz - make_interval(mins => $3)
+    GROUP BY namespace, metric
+  ),
+  peaks AS (
+    SELECT namespace, metric, MAX(value)::float8 AS peak_value
+    FROM metric_points
+    WHERE asset_id = $1
+      AND (namespace, metric) IN (SELECT namespace, metric FROM active)
+      AND ts BETWEEN $2::timestamptz - make_interval(mins => $5)
+               AND $2::timestamptz + make_interval(mins => $5)
+    GROUP BY namespace, metric
+  )
+  SELECT b.namespace, b.metric, b.baseline_avg, b.baseline_std, p.peak_value
+  FROM baselines b
+  JOIN peaks p USING (namespace, metric)
+  WHERE b.baseline_avg IS NOT NULL
+`;
 
 async function runCorrelation(pool: Pool): Promise<void> {
   // Step 1 — fetch events eligible for correlation.
@@ -61,71 +97,33 @@ async function runCorrelation(pool: Pool): Promise<void> {
 
   logger.debug({ count: evRes.rows.length }, 'correlate: processing events');
 
+  let anomalyCount = 0;
+
   for (const ev of evRes.rows) {
     const { event_key, asset_id, event_ts } = ev;
 
-    // Step 2 — discover metrics active near this event.
-    const mRes = await pool.query<{ namespace: string; metric: string }>(
-      `SELECT DISTINCT namespace, metric
-       FROM metric_points
-       WHERE asset_id = $1
-         AND ts BETWEEN $2::timestamptz - ($3 || ' minutes')::interval
-                    AND $2::timestamptz + ($3 || ' minutes')::interval`,
-      [asset_id, event_ts, WIN_MIN]
-    );
+    // Step 2 — single CTE returns all active metrics + baseline + peak for this event.
+    const statsRes = await pool.query<{
+      namespace:    string;
+      metric:       string;
+      baseline_avg: number;
+      baseline_std: number | null;
+      peak_value:   number;
+    }>(CORRELATE_CTE, [asset_id, event_ts, WIN_MIN, BASELINE_H, PEAK_MIN]);
 
-    if (mRes.rows.length === 0) continue;
+    if (statsRes.rows.length === 0) continue;
 
-    for (const { namespace: mns, metric } of mRes.rows) {
-      // Step 3 — baseline stats (avg + stddev) from 24 h before the event,
-      // excluding the noisy window around the event itself.
-      const blRes = await pool.query<{
-        baseline_avg: string | null;
-        baseline_std: string | null;
-      }>(
-        `SELECT
-           AVG(value)::double precision    AS baseline_avg,
-           STDDEV(value)::double precision AS baseline_std
-         FROM metric_points
-         WHERE asset_id  = $1
-           AND namespace = $2
-           AND metric    = $3
-           AND ts >= $4::timestamptz - ($5 || ' hours')::interval
-           AND ts <  $4::timestamptz - ($6 || ' minutes')::interval`,
-        [asset_id, mns, metric, event_ts, BASELINE_H, WIN_MIN]
-      );
+    for (const row of statsRes.rows) {
+      const { namespace: mns, metric, baseline_avg, baseline_std, peak_value } = row;
 
-      const baselineAvg =
-        blRes.rows[0]?.baseline_avg != null ? Number(blRes.rows[0].baseline_avg) : null;
-      const baselineStd =
-        blRes.rows[0]?.baseline_std != null ? Number(blRes.rows[0].baseline_std) : null;
-
-      if (baselineAvg == null) continue; // insufficient baseline data
-
-      // Step 4 — peak value in the tighter ±PEAK_MIN window.
-      const pkRes = await pool.query<{ peak_value: string | null }>(
-        `SELECT MAX(value)::double precision AS peak_value
-         FROM metric_points
-         WHERE asset_id  = $1
-           AND namespace = $2
-           AND metric    = $3
-           AND ts BETWEEN $4::timestamptz - ($5 || ' minutes')::interval
-                      AND $4::timestamptz + ($5 || ' minutes')::interval`,
-        [asset_id, mns, metric, event_ts, PEAK_MIN]
-      );
-
-      const peakValue =
-        pkRes.rows[0]?.peak_value != null ? Number(pkRes.rows[0].peak_value) : null;
-      if (peakValue == null) continue;
-
-      // Step 5 — compute scores.
+      // Step 3 — compute scores.
       const zScore =
-        baselineStd != null && baselineStd > 0
-          ? (peakValue - baselineAvg) / baselineStd
+        baseline_std != null && baseline_std > 0
+          ? (peak_value - baseline_avg) / baseline_std
           : null;
       const relChange =
-        Math.abs(baselineAvg) > 0
-          ? (peakValue - baselineAvg) / Math.abs(baselineAvg)
+        Math.abs(baseline_avg) > 0
+          ? (peak_value - baseline_avg) / Math.abs(baseline_avg)
           : null;
 
       const isAnomaly =
@@ -134,7 +132,7 @@ async function runCorrelation(pool: Pool): Promise<void> {
 
       if (!isAnomaly) continue;
 
-      // Step 6 — persist (idempotent).
+      // Step 4 — persist (idempotent).
       await pool.query(
         `INSERT INTO orbit_correlations
            (event_ts, event_key, asset_id, metric_ns, metric,
@@ -147,10 +145,11 @@ async function runCorrelation(pool: Pool): Promise<void> {
            detected_at = now()`,
         [
           event_ts, event_key, asset_id, mns, metric,
-          baselineAvg, baselineStd, peakValue, zScore, relChange,
+          baseline_avg, baseline_std, peak_value, zScore, relChange,
         ]
       );
 
+      anomalyCount++;
       logger.info(
         {
           asset_id,
@@ -162,11 +161,17 @@ async function runCorrelation(pool: Pool): Promise<void> {
       );
     }
   }
+
+  if (anomalyCount > 0) {
+    logger.info({ events: evRes.rows.length, anomalies: anomalyCount }, 'correlate: run complete');
+  }
 }
 
 async function runSafe(pool: Pool): Promise<void> {
+  const t0 = Date.now();
   try {
     await runCorrelation(pool);
+    logger.debug({ ms: Date.now() - t0 }, 'correlate: job finished');
   } catch (err) {
     logger.error({ err }, 'correlate: job failed');
   }

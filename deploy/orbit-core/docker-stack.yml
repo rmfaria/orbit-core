@@ -1,0 +1,142 @@
+version: "3.8"
+
+# orbit-core Docker Swarm stack
+# Deploy: docker stack deploy -c deploy/orbit-core/docker-stack.yml openclaw
+# Requires: .env with DATABASE_URL and ORBIT_API_KEY
+
+services:
+
+  # ── API ─────────────────────────────────────────────────────────────────────
+  orbitcore_api:
+    image: node:22-alpine
+    command: ["node", "/app/dist/index.js"]
+    working_dir: /app
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@orbitcore_pg:5432/orbit
+      - ORBIT_API_KEY=${ORBIT_API_KEY}
+      - PORT=3010
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    volumes:
+      - /root/.openclaw/workspace/orbit-core:/app:ro
+    networks:
+      - Portn8n
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3010/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.orbitcore-api.rule=Host(`prod.nesecurity.com.br`) && (PathPrefix(`/orbit-core/api`) || PathPrefix(`/orbit-core/metrics`))
+        - traefik.http.routers.orbitcore-api.entrypoints=websecure
+        - traefik.http.routers.orbitcore-api.tls=true
+        - traefik.http.routers.orbitcore-api.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.orbitcore-api.middlewares=orbitcore-strip
+        - traefik.http.routers.orbitcore-api.priority=70
+        - traefik.http.middlewares.orbitcore-strip.stripprefix.prefixes=/orbit-core
+        - traefik.http.services.orbitcore-api.loadbalancer.server.port=3010
+
+  # ── UI ──────────────────────────────────────────────────────────────────────
+  orbitcore_ui:
+    image: nginx:alpine
+    volumes:
+      - /root/.openclaw/workspace/orbit-core/deploy/nginx-orbitcore-ui.conf:/etc/nginx/conf.d/default.conf:ro
+      - /root/.openclaw/workspace/orbit-core/packages/ui/dist:/usr/share/nginx/html:ro
+    networks:
+      - Portn8n
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/index.html"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.orbitcore-ui.rule=Host(`prod.nesecurity.com.br`) && (PathPrefix(`/orbit-core`) || PathPrefix(`/orbit-core/`))
+        - traefik.http.routers.orbitcore-ui.entrypoints=websecure
+        - traefik.http.routers.orbitcore-ui.tls=true
+        - traefik.http.routers.orbitcore-ui.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.orbitcore-ui.middlewares=orbitcore-slash,orbitcore-strip
+        - traefik.http.routers.orbitcore-ui.priority=65
+        - traefik.http.middlewares.orbitcore-slash.redirectregex.regex=^https?://([^/]+)/orbit-core$$
+        - traefik.http.middlewares.orbitcore-slash.redirectregex.replacement=https://$$1/orbit-core/
+        - traefik.http.middlewares.orbitcore-slash.redirectregex.permanent=true
+        - traefik.http.services.orbitcore-ui.loadbalancer.server.port=80
+
+  # ── Postgres ─────────────────────────────────────────────────────────────────
+  orbitcore_pg:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=orbit
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - orbitcore_pg:/var/lib/postgresql/data
+    networks:
+      - Portn8n
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orbit"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+volumes:
+  orbitcore_pg:
+    external: true
+    name: openclaw_orbitcore_pg
+
+networks:
+  Portn8n:
+    external: true
+    name: Portn8n
