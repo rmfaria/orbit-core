@@ -1,3 +1,10 @@
+/**
+ * orbit-core
+ *
+ * Created by Rodrigo Menchio <rodrigomenchio@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { Router } from 'express';
 import type { Pool } from 'pg';
 import { DashboardSpecSchema } from '@orbit/core-contracts';

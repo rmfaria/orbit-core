@@ -1,3 +1,10 @@
+/**
+ * orbit-core
+ *
+ * Created by Rodrigo Menchio <rodrigomenchio@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React from 'react';
 import { Chart, registerables } from 'chart.js';
 import './home.css';

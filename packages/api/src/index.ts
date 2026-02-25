@@ -1,3 +1,10 @@
+/**
+ * orbit-core
+ *
+ * Created by Rodrigo Menchio <rodrigomenchio@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import express, { type Request, type Response, type NextFunction, type RequestHandler } from 'express';
 import cors from 'cors';
 import pino from 'pino';

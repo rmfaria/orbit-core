@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# orbit-core
+#
+# Created by Rodrigo Menchio <rodrigomenchio@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
 """
 n8n → orbit-core event shipper.  [ACTIVE]
 
