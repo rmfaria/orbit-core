@@ -1,169 +1,109 @@
-# Dashboard Playbook (Orbit)
+# Dashboard Playbook (spec + guardrails)
 
-Guia de padrões e guardrails para criação de dashboards no orbit-core —
-seja manualmente no builder, via AI agent, ou programaticamente via API.
+This document defines practical rules for authoring dashboards in orbit-core.
+It exists to keep dashboards **fast**, **predictable**, and **validatable**.
 
-## Princípios
+## Principles
 
-- **Nenhum SQL raw** em dashboards gerados.
-- Use apenas **OrbitQL** (kind: timeseries / timeseries_multi / events / event_count).
-- Prefira **performance-first defaults**:
-  - auto-bucket por range (omitir `bucket_sec`)
-  - limites conservadores
-  - Top‑N ao agrupar por dimensão
-- Evite cardinalidade ilimitada.
-- Use nomes estáveis e descritivos.
+- Prefer **performance-first queries**:
+  - use rollups via the query engine (do not force raw when not needed)
+  - use Top‑N when grouping by dimensions
+- Use stable, descriptive names.
+- Keep dashboards portable (avoid environment-specific assumptions when possible).
 
-## Convenções de nomenclatura
+## Naming conventions
 
-- Dashboard: `<escopo> — <propósito>` (ex: `Produção — Saúde dos Servidores`)
-- Widget: `<métrica> — <breakdown>` (ex: `CPU Load — load1/load5/load15`)
+- Dashboard: `<scope> — <purpose>` (e.g. `Production — Server Health`)
+- Widget: `<metric> — <breakdown>` (e.g. `CPU Load — load1/load5/load15`)
 
-## DashboardSpec — campos obrigatórios
+## DashboardSpec — required fields
 
-```json
-{
-  "id": "dash-1234567890",
-  "name": "Nome do Dashboard",
-  "version": "v1",
-  "time": { "preset": "24h" },
-  "tags": [],
-  "widgets": [...]
-}
-```
+A dashboard is a JSON object with:
 
-Presets de tempo: `60m` | `6h` | `24h` | `7d` | `30d`
+- `id` (string)
+- `title` (string)
+- `time` (preset + refresh)
+- `layout` (grid)
+- `widgets[]` (each widget has a `kind` and a `query`)
 
-## Widgets — tipos e queries
+See the Zod contract in `packages/core-contracts/src/dashboard.ts`.
 
-### `timeseries` (span=1)
+## Widget kinds
 
-Série temporal única. **Obrigatório: `asset_id`.**
-O `kind` na query deve ser `"timeseries"`.
+### `timeseries`
+
+Single timeseries. **Requires `asset_id`.**
 
 ```json
 {
   "kind": "timeseries",
-  "asset_id": "host:servidor1",
-  "namespace": "nagios",
-  "metric": "load1"
+  "title": "CPU load (1m)",
+  "span": 1,
+  "query": {
+    "kind": "timeseries",
+    "asset_id": "host:vm002",
+    "namespace": "nagios",
+    "metric": "load1"
+  }
 }
 ```
 
-### `timeseries_multi` (span=2)
+### `timeseries_multi`
 
-Múltiplas séries. **Obrigatório: `series` array com `asset_id` em cada entrada.**
+Multiple series. **Requires `series[]` and each entry must include `asset_id`.**
 
-```json
-{
-  "kind": "timeseries_multi",
-  "series": [
-    { "asset_id": "host:srv1", "namespace": "nagios", "metric": "load1", "label": "srv1" },
-    { "asset_id": "host:srv2", "namespace": "nagios", "metric": "load1", "label": "srv2" }
-  ]
-}
-```
+Supports:
+- `group_by_dimension`
+- Top‑N settings (`top_n`, `top_by`, `top_lookback_days`)
 
-### `kpi` (span=1)
+### `kpi`
 
-Valor instantâneo (último ponto da série). Usa query `timeseries` — **obrigatório: `asset_id`.**
+Instant value (last point). Internally uses `timeseries` and returns the last datapoint.
 
-```json
-{
-  "kind": "timeseries",
-  "asset_id": "host:servidor1",
-  "namespace": "nagios",
-  "metric": "memory_used"
-}
-```
+### `events`
 
-### `events` (span=1 ou 2)
+Filtered events feed.
 
-Feed de eventos filtrado. O `kind` na query deve ser `"events"`.
+Typical filters:
+- `namespace`
+- `kinds[]`
+- `severities[]`
 
-```json
-{ "kind": "events", "namespace": "wazuh", "limit": 20 }
-{ "kind": "events", "namespace": "wazuh", "severities": ["high", "critical"], "limit": 50 }
-{ "kind": "events", "namespace": "wazuh", "asset_id": "host:servidor1", "limit": 20 }
-{ "kind": "events", "namespace": "wazuh", "kinds": ["authentication_failed"], "limit": 20 }
-```
+### `eps`
 
-### `eps` (span=2)
+Events per second chart. The underlying query kind must be `event_count`.
 
-Gráfico EPS (eventos/segundo). O `kind` na query deve ser `"event_count"`.
+### `gauge`
 
-```json
-{ "kind": "event_count", "namespace": "wazuh" }
-{ "kind": "event_count", "namespace": "wazuh", "asset_id": "host:servidor1" }
-```
+A half-donut gauge, typically driven by a KPI query.
 
-**Importante:** a query dos widgets **não deve conter `from` / `to`** — esses campos
-são injetados em runtime pelo renderer baseado em `time.preset` do dashboard.
+## Guardrail: renderer injects `from` / `to`
 
-## Padrões de widget por caso de uso
+Widget queries **must not** hardcode `from`/`to`.
+The renderer injects the time range at runtime based on the dashboard `time.preset`.
 
-### Monitoramento de servidor (Nagios)
+## Suggested patterns
 
-| Widget | Kind | Query |
-|--------|------|-------|
-| CPU Load | `timeseries_multi` | metric=load1, series com todos os hosts |
-| Memória Usada | `timeseries` | metric=memory_used, asset_id=host específico |
-| Disco | `timeseries_multi` | metric=size ou metric=procs |
-| Disponibilidade | `kpi` | metric=rta, asset_id=host |
+### Infrastructure (Nagios)
 
-### Segurança Wazuh
+- CPU Load (load1)
+- Memory used
+- Disk usage by mount (multi-series with Top‑N)
 
-| Widget | Kind | Observação |
-|--------|------|------------|
-| EPS Global | `eps` | namespace=wazuh, span=2 |
-| EPS por Agente | `eps` | namespace=wazuh, asset_id=host:X |
-| Feed Crítico | `events` | severities=["high","critical"], span=2 |
-| Feed por Agente | `events` | asset_id=host:X |
-| Fortigate | `events` | kinds=["fortigate"], span=2 |
+### Security (Wazuh)
 
-### Automação n8n
+- Critical feed: `severities=["high","critical"]`
+- EPS chart over 24h
 
-| Widget | Kind | Query |
-|--------|------|-------|
-| Falhas | `events` | namespace=n8n, kinds=["execution_error"] |
-| Travados | `events` | namespace=n8n, kinds=["execution_stuck"] |
+### Automation (n8n)
 
-## Limites recomendados
+- Failed executions (high)
+- Stuck executions (medium)
 
-| Parâmetro | Padrão | Máximo |
-|-----------|--------|--------|
-| `limit` (events) | 20 | 200 por widget |
-| `top_n` | 20 | 50 |
-| Widgets por dashboard | — | 60 |
-| Range de tempo | 24h | 30d |
+## AI-assisted authoring (if enabled)
 
-## Uso do AI Agent
+If you use an AI assistant to propose a DashboardSpec:
 
-1. Configurar `ai_api_key` (Anthropic) e `ai_model` em **Admin → AI Agent**
-2. Ir em **Dashboards → Criar Dashboard**
-3. Descrever o dashboard em linguagem natural:
-   > "quero monitorar CPU e memória dos servidores nagios e ver o EPS do wazuh com alertas críticos"
-4. Clicar **⚡ Gerar com IA**
-5. Revisar os widgets gerados no builder — editar se necessário
-6. Clicar **Salvar**
-
-O AI agent consulta o catálogo real do banco (métricas por ativo, namespaces de eventos,
-kinds, agents, severities) e usa apenas fontes de dados existentes.
-
-## Validação via API
-
-```bash
-curl -s -X POST https://prod.example.com/orbit-core/api/v1/dashboards/validate \
-  -H "X-Api-Key: <chave>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": "test-dash",
-    "name": "Teste",
-    "version": "v1",
-    "time": {"preset": "24h"},
-    "tags": [],
-    "widgets": [...]
-  }'
-```
-
-Retorna `{ ok: true, spec: ... }` se válido, ou `{ ok: false, error: ... }` com detalhes.
+- it must only use assets/metrics/dimensions that exist in the live catalog
+- the output must validate via `POST /api/v1/dashboards/validate` before persistence
+- do not allow arbitrary SQL

@@ -1,187 +1,131 @@
-# Wazuh — Query Examples (OrbitQL)
+# Wazuh query examples (orbit-core)
 
-Exemplos de queries para o namespace `wazuh` via `POST /api/v1/query`.
+These are practical examples for querying Wazuh-derived events stored in orbit-core.
 
-## Autenticação
+All examples assume:
+- API base: `https://prod.example.com/orbit-core/api/v1`
+- auth header: `X-Api-Key: <your-key>`
 
-```bash
-# API Key (recomendado)
--H "X-Api-Key: <sua-chave>"
-
-# BasicAuth (legado)
--u orbitadmin:PASS
-```
-
----
-
-## 1) Últimos alertas (qualquer severidade)
+## Authentication
 
 ```bash
-curl -s -H "X-Api-Key: <chave>" \
-  -X POST https://prod.example.com/orbit-core/api/v1/query \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "query": {
-      "kind": "events",
-      "namespace": "wazuh",
-      "from": "'"$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)"'",
-      "to":   "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
-      "limit": 50
-    }
-  }'
+export ORBIT_API_BASE='https://prod.example.com/orbit-core/api/v1'
+export ORBIT_API_KEY='...'
 ```
 
-## 2) Alertas de alta/crítica severidade
-
-```json
-{
-  "query": {
-    "kind": "events",
-    "namespace": "wazuh",
-    "from": "2026-02-24T00:00:00Z",
-    "to":   "2026-02-25T00:00:00Z",
-    "severities": ["high", "critical"],
-    "limit": 100
-  }
-}
-```
-
-## 3) Alertas de um agente específico
-
-```json
-{
-  "query": {
-    "kind": "events",
-    "namespace": "wazuh",
-    "asset_id": "host:meu-servidor",
-    "from": "2026-02-24T00:00:00Z",
-    "to":   "2026-02-25T00:00:00Z",
-    "limit": 200
-  }
-}
-```
-
-## 4) Apenas eventos Fortigate (via Wazuh)
-
-```json
-{
-  "query": {
-    "kind": "events",
-    "namespace": "wazuh",
-    "kinds": ["fortigate"],
-    "from": "2026-02-24T00:00:00Z",
-    "to":   "2026-02-25T00:00:00Z",
-    "limit": 100
-  }
-}
-```
-
-## 5) EPS — Eventos por segundo (último 1h, bucket de 1 min)
-
-```json
-{
-  "query": {
-    "kind": "event_count",
-    "namespace": "wazuh",
-    "from": "2026-02-24T11:00:00Z",
-    "to":   "2026-02-24T12:00:00Z",
-    "bucket_sec": 60
-  }
-}
-```
-
-Resposta:
-```json
-{
-  "ok": true,
-  "result": {
-    "columns": [{"name": "ts", "type": "timestamptz"}, {"name": "value", "type": "float8"}],
-    "rows": [
-      {"ts": "2026-02-24T11:00:00Z", "value": 2.5},
-      {"ts": "2026-02-24T11:01:00Z", "value": 1.8},
-      ...
-    ]
-  },
-  "meta": {"effective_bucket_sec": 60}
-}
-```
-
-`value` = eventos por segundo (count / bucket_sec).
-
-## 6) EPS — seleção automática de bucket
-
-Omitir `bucket_sec` — o backend seleciona automaticamente com base no range:
-
-```json
-{
-  "query": {
-    "kind": "event_count",
-    "namespace": "wazuh",
-    "from": "2026-02-17T00:00:00Z",
-    "to":   "2026-02-24T00:00:00Z"
-  }
-}
-```
-
-## 7) Dashboard via AI Agent
-
-Gerar um DashboardSpec com widgets Wazuh via Claude:
+Helper:
 
 ```bash
-curl -s -X POST https://prod.example.com/orbit-core/api/v1/ai/dashboard \
-  -H "X-Api-Key: <orbit-chave>" \
-  -H "X-Ai-Key: <anthropic-chave>" \
+orbit_query () {
+  curl -sS "$ORBIT_API_BASE/query" \
+    -H "X-Api-Key: $ORBIT_API_KEY" \
+    -H 'Content-Type: application/json' \
+    -d "$1"
+}
+```
+
+## 1) Latest alerts (any severity)
+
+```bash
+orbit_query '{
+  "kind": "events",
+  "namespace": "wazuh",
+  "from": "2026-02-24T00:00:00Z",
+  "to":   "2026-02-25T00:00:00Z",
+  "limit": 50
+}'
+```
+
+## 2) High + critical alerts
+
+```bash
+orbit_query '{
+  "kind": "events",
+  "namespace": "wazuh",
+  "from": "2026-02-24T00:00:00Z",
+  "to":   "2026-02-25T00:00:00Z",
+  "severities": ["high", "critical"],
+  "limit": 100
+}'
+```
+
+## 3) Alerts for a single agent/asset
+
+```bash
+orbit_query '{
+  "kind": "events",
+  "namespace": "wazuh",
+  "asset_id": "host:vm002",
+  "from": "2026-02-24T00:00:00Z",
+  "to":   "2026-02-25T00:00:00Z",
+  "limit": 100
+}'
+```
+
+## 4) Fortigate (via Wazuh)
+
+Fortigate events are emitted as `namespace=wazuh` and `kind=fortigate`.
+
+```bash
+orbit_query '{
+  "kind": "events",
+  "namespace": "wazuh",
+  "kinds": ["fortigate"],
+  "from": "2026-02-24T00:00:00Z",
+  "to":   "2026-02-25T00:00:00Z",
+  "limit": 200
+}'
+```
+
+## 5) EPS — events per second (last 1h, 1-minute buckets)
+
+```bash
+orbit_query '{
+  "kind": "event_count",
+  "namespace": "wazuh",
+  "from": "2026-02-24T23:00:00Z",
+  "to":   "2026-02-25T00:00:00Z",
+  "bucket_sec": 60
+}'
+```
+
+## 6) EPS — automatic bucket selection
+
+If `bucket_sec` is omitted, orbit-core may choose it based on the requested time range.
+
+```bash
+orbit_query '{
+  "kind": "event_count",
+  "namespace": "wazuh",
+  "from": "2026-02-20T00:00:00Z",
+  "to":   "2026-02-25T00:00:00Z"
+}'
+```
+
+## 7) AI dashboard generation (if enabled)
+
+```bash
+curl -sS "$ORBIT_API_BASE/ai/dashboard" \
+  -H "X-Api-Key: $ORBIT_API_KEY" \
+  -H "X-Ai-Key: $ANTHROPIC_KEY" \
   -H "X-Ai-Model: claude-sonnet-4-6" \
-  -H "Content-Type: application/json" \
-  -d '{ "prompt": "dashboard de segurança com EPS global, alertas críticos e feed por agente" }'
+  -H 'Content-Type: application/json' \
+  -d '{ "prompt": "Security dashboard with global EPS, critical alerts and per-agent feed" }'
 ```
 
-Retorna `{ ok: true, spec: DashboardSpec }` com widgets gerados a partir do catálogo real.
+Returns `{ ok: true, spec: DashboardSpec }`.
 
-## 8) Catálogo de eventos (namespaces, kinds, agents, severities)
+## 8) Events catalog (namespaces, kinds, agents, severities)
 
 ```bash
-curl -s -H "X-Api-Key: <chave>" \
-  https://prod.example.com/orbit-core/api/v1/catalog/events
+curl -sS "$ORBIT_API_BASE/catalog/events" \
+  -H "X-Api-Key: $ORBIT_API_KEY"
 ```
 
-Resposta:
-```json
-{
-  "ok": true,
-  "namespaces": [
-    {
-      "namespace": "wazuh",
-      "total": 125000,
-      "last_seen": "2026-02-24T19:00:00Z",
-      "kinds": ["authentication_failed", "syslog", "fortigate"],
-      "agents": ["host:wazuh-gm-sec", "host:wazuh-sec-ne"],
-      "severities": ["critical", "high", "medium", "low", "info"]
-    }
-  ]
-}
-```
+## Severity mapping (Wazuh rule.level)
 
----
-
-## Mapeamento de campos
-
-| Campo orbit-core | Origem no alerta Wazuh |
-|-----------------|------------------------|
-| `ts` | `timestamp` |
-| `asset_id` | `host:<agent.name>` |
-| `namespace` | `"wazuh"` (fixo) |
-| `kind` | `rule.groups[0]` |
-| `severity` | mapeado de `rule.level` (0–15) |
-| `title` | `rule.description` |
-| `message` | `full_log` |
-| `fingerprint` | `agent.id:rule.id:alert.id` |
-| `attributes` | `rule.*`, `agent.*`, `data.*` |
-
-**Severidade por nível:**
-
-| Level | Severity |
-|-------|---------|
+| level | severity |
+|---:|---|
 | 0–3 | `info` |
 | 4–6 | `low` |
 | 7–10 | `medium` |

@@ -1,95 +1,76 @@
-# Conectores
+# Connectors
 
-orbit-core ingere telemetria de múltiplas fontes via conectores determinísticos
-(sem IA, seguros para cron). Todos enviam para a mesma API de ingestão.
+orbit-core ingests telemetry from multiple sources through **deterministic connectors** (no AI).
+They are designed to be **cron-safe**, predictable and easy to audit.
 
-## Visão geral
+All connectors ship to the same ingest API:
 
-| Conector | Tipo | Dados | Namespace | Instalação |
-|----------|------|-------|-----------|------------|
-| **Nagios** | Passivo (arquivo local) | Métricas (perfdata) + Eventos (HARD state changes) | `nagios` | [INSTALL.md](../connectors/nagios/INSTALL.md) |
-| **Wazuh** | Passivo (arquivo local) | Alertas de segurança | `wazuh` | [INSTALL.md](../connectors/wazuh/INSTALL.md) |
-| **Fortigate** | Via Wazuh (syslog) | Logs de firewall | `wazuh` / `kind=fortigate` | [INSTALL.md](../connectors/fortigate/INSTALL.md) |
-| **n8n** | Ativo (polling REST API) + Error Trigger | Falhas e execuções travadas | `n8n` | [INSTALL.md](../connectors/n8n/INSTALL.md) |
+- `POST /api/v1/ingest/metrics`
+- `POST /api/v1/ingest/events`
 
----
+## Overview
 
-## Autenticação
+| Connector | Type | Data | Namespace | Install |
+|---|---|---|---|---|
+| **Nagios** | Passive (local files) | Metrics (perfdata) + Events (HARD state changes) | `nagios` | [`connectors/nagios/INSTALL.md`](../connectors/nagios/INSTALL.md) |
+| **Wazuh** | Passive (local files) | Security alerts | `wazuh` | [`connectors/wazuh/INSTALL.md`](../connectors/wazuh/INSTALL.md) |
+| **Fortigate** | Via Wazuh (syslog) | Firewall logs | `wazuh` + `kind=fortigate` | [`connectors/fortigate/INSTALL.md`](../connectors/fortigate/INSTALL.md) |
+| **n8n** | Active (polling REST API) + Error Trigger | Execution failures + stuck runs | `n8n` | [`connectors/n8n/INSTALL.md`](../connectors/n8n/INSTALL.md) |
 
-Todos os conectores suportam **API Key** (recomendado) ou **BasicAuth** (legado).
+## Authentication (recommended)
 
-**Recomendado — API Key:**
-```bash
-ORBIT_API_KEY=<sua-chave>
-```
-O conector envia o header `X-Api-Key: <chave>` em todas as requisições.
+Use an application API key.
 
-**Legado — BasicAuth:**
-```bash
-ORBIT_BASIC_USER=orbitadmin
-ORBIT_BASIC_FILE=/etc/orbit-core/orbitadmin.pass   # arquivo com a senha
-# ou
-ORBIT_BASIC_PASS=senha   # direto (menos seguro)
-```
+- Server: set `ORBIT_API_KEY`
+- Clients/connectors: send `X-Api-Key: <key>`
 
-> Se `ORBIT_API_KEY` estiver definida, BasicAuth é ignorado.
-
----
+If `ORBIT_API_KEY` is set on the API, it becomes the **authoritative** auth layer for most routes.
+BasicAuth may still be used at the reverse-proxy edge, but do not rely on it as the only protection.
 
 ## Nagios
 
-Dois shippers Python, ambos rodando como cron no servidor Nagios.
+Two Python shippers (cron), plus one optional writer script.
 
 ```
-Nagios → perfdata spool files    → ship_metrics.py → POST /api/v1/ingest/metrics
-Nagios → write_hard_event.py     → neb-hard-events.jsonl
-       → ship_events.py          → POST /api/v1/ingest/events
+Nagios → perfdata spool files → ship_metrics.py → POST /api/v1/ingest/metrics
+Nagios → write_hard_event.py  → neb-hard-events.jsonl
+      → ship_events.py        → POST /api/v1/ingest/events
 ```
 
-| Script | O que faz |
-|--------|-----------|
-| `ship_metrics.py` | Lê perfdata tab-separated → MetricPoints |
-| `ship_events.py` | Lê JSONL spool de mudanças de estado HARD → Events |
-| `write_hard_event.py` | Global event handler do Nagios — produz o spool JSONL |
+| Script | Purpose |
+|---|---|
+| `ship_metrics.py` | Converts tab-separated perfdata to MetricPoints |
+| `ship_events.py` | Ships HARD state changes from a JSONL spool to Events |
+| `write_hard_event.py` | Nagios global event handler that produces the JSONL spool |
 
-**Mapeamento de eventos:**
+Event mapping (high level):
 
-| Campo Nagios | orbit-core |
+| Nagios | orbit-core |
 |---|---|
 | `$HOSTNAME$` | `asset_id = host:<hostname>` |
 | — | `namespace = nagios` |
 | — | `kind = state_change` |
-| state (host/service) | `severity` (DOWN→critical, WARNING→medium, etc.) |
+| host/service state | `severity` (DOWN → critical, WARNING → medium, etc.) |
 
-> `write_hard_event.py` deve estar configurado como `global_service_event_handler`
-> e `global_host_event_handler` no `nagios.cfg` — sem isso, nenhum evento é enviado.
-> Apenas mudanças de estado **HARD** são capturadas.
+**Important**: `write_hard_event.py` must be configured as:
+- `global_service_event_handler`
+- `global_host_event_handler`
 
-**Cron example:**
-```
-* * * * * root \
-  ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_API_KEY=<sua-chave> \
-  python3 /opt/orbit-core/connectors/nagios/ship_metrics.py \
-  >>/var/log/orbit-core/nagios_metrics_shipper.log 2>&1
-```
+in `nagios.cfg`. Only **HARD** changes are captured.
 
-Referências: [README](../connectors/nagios/README.md) · [INSTALL](../connectors/nagios/INSTALL.md)
-
----
+References: [`connectors/nagios/README.md`](../connectors/nagios/README.md) · [`INSTALL.md`](../connectors/nagios/INSTALL.md)
 
 ## Wazuh
 
-Conector passivo que lê `alerts.json` diretamente do disco.
-**Deve rodar no mesmo servidor que o Wazuh Manager.**
+Passive connector that reads `alerts.json` directly from disk (Wazuh Manager host).
 
 ```
 Wazuh Manager → /var/ossec/logs/alerts/alerts.json → ship_events.py → POST /api/v1/ingest/events
 ```
 
-**Mapeamento:**
+Mapping:
 
-| Campo Wazuh | orbit-core |
+| Wazuh | orbit-core |
 |---|---|
 | `agent.name` | `asset_id = host:<name>` |
 | — | `namespace = wazuh` |
@@ -98,151 +79,84 @@ Wazuh Manager → /var/ossec/logs/alerts/alerts.json → ship_events.py → POST
 | `rule.description` | `title` |
 | `full_log` | `message` |
 
-**Permissão de leitura:** `alerts.json` pertence ao grupo `wazuh` (0640).
-O usuário do cron precisa estar no grupo: `usermod -aG wazuh <user>`.
+File permissions: `alerts.json` is typically `0640` and owned by group `wazuh`.
+The cron user must be in that group.
 
-**Variáveis de ambiente recomendadas para produção:**
+Alternative mode — OpenSearch (`ship_events_opensearch.py`):
+- queries the Wazuh Indexer via REST
+- can run from another host
+- requires the indexer to be reachable (many deployments bind to `127.0.0.1:9200`)
 
-| Variável | Valor recomendado | Descrição |
-|---|---|---|
-| `MAX_BYTES_PER_RUN` | `52428800` (50 MB) | Máximo de bytes lidos por execução |
-| `BATCH_SIZE` | `100` | Eventos por request (manter ≤ 100 para não exceder 1MB de payload) |
-
-**Cron example:**
-```
-* * * * * root \
-  ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_API_KEY=<sua-chave> \
-  WAZUH_ALERTS_JSON=/var/ossec/logs/alerts/alerts.json \
-  STATE_PATH=/var/lib/orbit-core/wazuh-events.state.json \
-  MAX_BYTES_PER_RUN=52428800 \
-  BATCH_SIZE=100 \
-  python3 /opt/orbit-core/connectors/wazuh/ship_events.py \
-  >>/var/log/orbit-core/wazuh_shipper.log 2>&1
-```
-
-**Modo alternativo — OpenSearch (`ship_events_opensearch.py`):**
-Consulta o Wazuh Indexer via REST API. Pode rodar em qualquer servidor com acesso
-de rede ao OpenSearch. Atenção: em muitos deployments o OpenSearch escuta apenas em
-`127.0.0.1:9200` — verificar com `ss -tlnp | grep 9200` antes de usar este modo.
-
-Referências: [README](../connectors/wazuh/README.md) · [INSTALL](../connectors/wazuh/INSTALL.md)
-
----
+References: [`connectors/wazuh/README.md`](../connectors/wazuh/README.md) · [`INSTALL.md`](../connectors/wazuh/INSTALL.md)
 
 ## Fortigate
 
-Não tem conector próprio. Os logs chegam via pipeline Wazuh:
+There is no standalone Fortigate connector.
+Logs flow through the Wazuh pipeline:
 
 ```
-Fortigate → syslog UDP/TCP 514 → Wazuh Manager → ship_events.py → orbit-core
+Fortigate → syslog 514 → Wazuh Manager → ship_events.py → orbit-core
 ```
 
-Os eventos chegam com `namespace=wazuh` e `kind=fortigate` — a UI do orbit-core
-usa essa combinação para surfaceá-los como fonte distinta no live feed e filtros.
+Events arrive as `namespace=wazuh` and `kind=fortigate`.
+The UI uses that combination to surface Fortigate as a distinct source.
 
-**Configuração no Fortigate (CLI):**
-
-```
-config log syslogd setting
-    set status enable
-    set server <IP_WAZUH_MANAGER>
-    set port 514
-    set facility local7
-    set format default
-end
-```
-
-**Requisito:** as regras nativas do Wazuh (`0270-fortigate_rules.xml`) devem estar
-presentes. Verificar com `grep -r "fortigate" /var/ossec/ruleset/rules/ | head -3`.
-
-O campo `kind=fortigate` é gerado porque `rule.groups[0] = "fortigate"` nessas regras.
-
-Referências: [README](../connectors/fortigate/README.md) · [INSTALL](../connectors/fortigate/INSTALL.md)
-
----
+References: [`connectors/fortigate/README.md`](../connectors/fortigate/README.md) · [`INSTALL.md`](../connectors/fortigate/INSTALL.md)
 
 ## n8n
 
-Dois modos complementares — recomenda-se usar ambos.
+Two complementary modes (recommended: use both).
 
-### Modo ativo — `ship_events.py` (polling REST API)
-
-```
-n8n REST API (/api/v1/executions?status=error)   → ship_events.py → POST /api/v1/ingest/events
-n8n REST API (/api/v1/executions?status=running) → ship_events.py → POST /api/v1/ingest/events
-```
-
-Roda como cron a cada minuto em qualquer servidor com acesso de rede ao n8n e ao orbit-core.
-Captura **todas** as falhas da instância + execuções travadas (> `STUCK_AFTER_MINUTES`).
-
-| Evento | kind | severity |
-|--------|------|---------|
-| Workflow `status=error` | `execution_error` | `high` |
-| Execução running > N min | `execution_stuck` | `medium` |
-
-`asset_id = workflow:<nome>` · `namespace = n8n` · `fingerprint = n8n:error:<id>`
-
-**Requisito:** API key do n8n (`Settings → n8n API → Create an API key`).
-
-### Modo plug-and-play — `orbit_error_reporter.json` (Error Trigger)
-
-Workflow importável no n8n. Dispara em **tempo real** via Error Trigger quando um
-workflow falha.
+### Active mode — `ship_events.py` (polling REST API)
 
 ```
-Workflow falha → Error Trigger → orbit_error_reporter → POST /api/v1/ingest/events
+n8n REST API (/api/v1/executions?status=error)   → ship_events.py → ingest/events
+n8n REST API (/api/v1/executions?status=running) → ship_events.py → ingest/events
 ```
 
-> **Atenção:** o Error Trigger **não dispara automaticamente** para todos os workflows.
-> Cada workflow monitorado precisa ter o Orbit Error Reporter definido como seu
-> *Error Workflow* em **⚙ Settings → Error Workflow**.
+Run every minute on any host that can reach both n8n and orbit-core.
+Captures:
+- all failed executions
+- stuck executions (running longer than `STUCK_AFTER_MINUTES`)
 
-| Modo | Cobertura | Latência |
-|------|-----------|---------|
-| `ship_events.py` (polling) | Todos os workflows | ≤ 1 min |
-| Error Trigger | Só workflows configurados | Tempo real (< 1s) |
-| `ship_events.py` (stuck) | Todos em `status=running` | ≤ 1 min |
+| Event | kind | severity |
+|---|---|---|
+| failed execution | `execution_error` | `high` |
+| stuck execution | `execution_stuck` | `medium` |
 
-**Cron example:**
-```
-* * * * * root \
-  ORBIT_API=https://prod.example.com/orbit-core \
-  ORBIT_API_KEY=<sua-chave> \
-  N8N_URL=http://localhost:5678 \
-  N8N_API_KEY=<n8n-api-key> \
-  STATE_PATH=/var/lib/orbit-core/n8n-events.state.json \
-  python3 /opt/orbit-core/connectors/n8n/ship_events.py \
-  >>/var/log/orbit-core/n8n_shipper.log 2>&1
-```
+### Plug-and-play — Error Trigger workflow
 
-Referências: [README](../connectors/n8n/README.md) · [INSTALL](../connectors/n8n/INSTALL.md)
+Import `orbit_error_reporter.json` into n8n.
+It sends events in near real time when a workflow fails.
 
----
+**Important**: Error Trigger does **not** apply globally.
+Each workflow must set the Orbit Error Reporter as its **Error Workflow**.
 
-## Desenvolvendo um novo conector
+References: [`connectors/n8n/README.md`](../connectors/n8n/README.md) · [`INSTALL.md`](../connectors/n8n/INSTALL.md)
 
-Padrões a seguir:
+## Building a new connector
 
-1. **Determinístico / sem IA** — seguro para rodar via cron
-2. **State file com `fcntl.flock`** — cursor de byte-offset (arquivos locais) ou ISO timestamp (APIs)
-3. **Batch ingest** — `POST /api/v1/ingest/events` com array `{"events": [...]}`
-4. **Fingerprint** — garante deduplicação no orbit-core
-5. **Autenticação via `ORBIT_API_KEY`** — header `X-Api-Key`; manter `BATCH_SIZE` ≤ 100 para eventos grandes
+Guidelines:
 
-Campos obrigatórios de um evento:
+1. **Deterministic / no AI** — safe for cron
+2. **State file** with `fcntl.flock` — cursor via byte offset (files) or ISO timestamp (APIs)
+3. **Batch ingest** — `POST /api/v1/ingest/events` with `{ "events": [...] }`
+4. **Fingerprint** — enables exact deduplication in orbit-core
+5. **Auth** — prefer `ORBIT_API_KEY` → `X-Api-Key` header
+
+Minimal required fields for an event:
 
 ```json
 {
   "ts":          "2026-02-24T12:00:00Z",
-  "asset_id":    "host:meuservidor",
-  "namespace":   "meu-conector",
-  "kind":        "tipo-do-evento",
+  "asset_id":    "host:myserver",
+  "namespace":   "my-connector",
+  "kind":        "event-type",
   "severity":    "high",
-  "title":       "Descrição curta",
-  "message":     "Detalhes completos",
-  "fingerprint": "meu-conector:evento:id-unico"
+  "title":       "Short description",
+  "message":     "Full details",
+  "fingerprint": "my-connector:event:id"
 }
 ```
 
-Ver `connectors/nagios/ship_events.py` como referência de implementação.
+Implementation reference: `connectors/nagios/ship_events.py`.

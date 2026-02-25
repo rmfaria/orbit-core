@@ -1,264 +1,165 @@
-# orbit-core — Arquitetura (atual)
+# orbit-core — Architecture (current)
 
-Atualizado: 2026-02-24
+Last updated: 2026-02-24
 
-## 1) Visão geral
+## 1) Overview
 
-**orbit-core** é um core de telemetria + eventos **API-first** + **Postgres**, com schema canônico para:
+**orbit-core** is an API-first telemetry core backed by Postgres, with a canonical schema for:
 
-- **Ativos** (`assets`)
-- **Séries temporais** (`metric_points`) + **rollups** (`metric_rollup_5m`, `metric_rollup_1h`)
-- **Eventos** (`orbit_events`)
+- **Assets** (`assets`)
+- **Timeseries metrics** (`metric_points`) + **rollups** (`metric_rollup_5m`, `metric_rollup_1h`)
+- **Events** (`orbit_events`)
 - **Dashboards** (`dashboards`)
 
-Conectores (Nagios, Wazuh, Fortigate, n8n) enviam dados via endpoints de ingestão.
-Consumidores consultam via `POST /api/v1/query`.
-Um **AI agent** interpreta prompts em linguagem natural, consulta o catálogo do banco
-e gera `DashboardSpec` via API Anthropic Claude.
+Deterministic connectors (Nagios, Wazuh, Fortigate via Wazuh, n8n) ship data to ingest endpoints.
+Consumers query data via `POST /api/v1/query`.
 
-## 2) Componentes
+An optional **AI agent** can assist with dashboard authoring by:
+- querying the live catalog
+- producing a strict `DashboardSpec`
+- validating it server-side before persistence
 
-### 2.1 Edge (reverse proxy)
+## 2) Diagram
 
-Configuração típica de produção (Traefik / Nginx):
+![orbit-core diagram](./diagrams/orbit-core-architecture.png)
 
-- Terminação TLS
-- Autenticação por API Key (`X-Api-Key` header) — gerenciada pelo container da API, não pelo proxy
-- Roteamento por subpath (ex: `/orbit-core/`)
-- Redirect `/orbit-core` → `/orbit-core/` para evitar problemas de path relativo no SPA
+Diagram source: `docs/diagrams/orbit-core-architecture.dot`.
 
-### 2.2 API (Node 22 / Express)
+This diagram is intentionally **educational**:
+- it separates **sources** from **connectors**
+- it highlights the **edge boundary** (TLS/auth/subpath)
+- it shows how everything converges on the same ingest API and Postgres schema
 
-Rotas principais:
+## 3) Components
 
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/api/v1/health` | Health + build info + status do banco |
-| GET | `/api/v1/metrics` | Métricas internas (JSON) |
-| GET | `/api/v1/metrics/prom` | Métricas internas (Prometheus) |
-| POST | `/api/v1/ingest/metrics` | Ingestão de métricas em batch |
-| POST | `/api/v1/ingest/events` | Ingestão de eventos em batch |
-| POST | `/api/v1/query` | Queries OrbitQL |
-| GET | `/api/v1/catalog/assets` | Catálogo de ativos |
-| GET | `/api/v1/catalog/metrics` | Catálogo de métricas por ativo |
-| GET | `/api/v1/catalog/dimensions` | Valores de dimensões |
-| GET | `/api/v1/catalog/events` | Catálogo de namespaces de eventos |
-| CRUD | `/api/v1/dashboards/*` | Gerenciamento de dashboards (JSONB) |
-| POST | `/api/v1/ai/dashboard` | Proxy Anthropic + geração de DashboardSpec |
-| GET | `/api/v1/correlations` | Correlação de eventos |
+### 3.1 Edge (reverse proxy)
 
-**Autenticação:** `X-Api-Key` header (variável `ORBIT_API_KEY` no servidor).
-BasicAuth é suportado como fallback para compatibilidade.
+Typical production setup (Traefik / Nginx):
 
-**Limite de payload:** `express.json({ limit: '1mb' })` — manter `BATCH_SIZE` ≤ 100 em eventos
-grandes (ex: Wazuh) para não exceder o limite.
+- TLS termination
+- **API key authentication** (`X-Api-Key`) enforced by the API container (recommended)
+- optional BasicAuth at the edge (legacy / extra layer)
+- subpath routing (e.g. `/orbit-core/`)
+- redirect `/orbit-core` → `/orbit-core/` to avoid SPA relative-path bugs
 
-### 2.3 UI (Vite + React)
+### 3.2 API (Node 22 / Express)
 
-Interface de observabilidade completa:
+Primary routes:
 
-| Aba | Conteúdo |
-|-----|----------|
-| **Home** | KPIs, gráficos de série temporal (CPU, Disk, Net, Suricata), EPS do Wazuh, live feed consolidado |
-| **Dashboards** | Builder com AI assistant, lista de dashboards salvos, modo view em grid, rotação/slideshow |
-| **Métricas** | Query builder para `timeseries` e `timeseries_multi` com seleção de ativo/namespace/métrica |
-| **Eventos** | Tabela filtrada de eventos com suporte a namespace, severidade e range de tempo |
-| **Correlações** | Feed de correlações de eventos detectadas automaticamente |
-| **Nagios** | Aba dedicada: métricas Nagios por host |
-| **Wazuh** | Aba dedicada: EPS chart + tabela de alertas Wazuh |
-| **Fortigate** | Aba dedicada: feed de eventos Fortigate (via namespace wazuh/kind=fortigate) |
-| **n8n** | Aba dedicada: falhas e execuções travadas de workflows |
-| **Admin** | API Key, configuração do AI Agent (Anthropic key + modelo), status das fontes |
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/v1/health` | Health + build info + DB status |
+| GET | `/api/v1/metrics` | Internal metrics (JSON) |
+| GET | `/api/v1/metrics/prom` | Internal metrics (Prometheus) |
+| POST | `/api/v1/ingest/metrics` | Batch ingest metrics |
+| POST | `/api/v1/ingest/events` | Batch ingest events |
+| POST | `/api/v1/query` | OrbitQL queries |
+| GET | `/api/v1/catalog/assets` | Assets catalog |
+| GET | `/api/v1/catalog/metrics` | Metrics catalog by asset |
+| GET | `/api/v1/catalog/dimensions` | Dimension values |
+| GET | `/api/v1/catalog/events` | Events catalog |
+| CRUD | `/api/v1/dashboards/*` | Dashboard persistence (JSONB) |
+| POST | `/api/v1/dashboards/validate` | Validate DashboardSpec |
+| POST | `/api/v1/ai/dashboard` | Anthropic proxy + DashboardSpec generation |
+| GET | `/api/v1/correlations` | Event correlations |
 
-A API Key é persistida em `localStorage` e pode ser pré-configurada em build via
-`VITE_ORBIT_API_KEY` (`.env` no pacote UI).
+Authentication:
+- recommended: `X-Api-Key` header (`ORBIT_API_KEY`)
+- legacy: BasicAuth (edge-only / compatibility)
 
-### 2.4 Postgres
+Payload limits:
+- `express.json({ limit: '1mb' })` → keep connector batches bounded (events can be large)
 
-Schema canônico com rollups e retenção automática:
+### 3.3 UI (Vite + React)
 
-| Tabela | Conteúdo | Retenção |
-|--------|----------|----------|
-| `assets` | Catálogo de ativos com nome, tipo, tags | — |
-| `metric_points` | Métricas RAW (valor + dimensões JSONB) | 14 dias |
-| `metric_rollup_5m` | Rollup 5 minutos | 90 dias |
-| `metric_rollup_1h` | Rollup 1 hora | 180 dias |
-| `orbit_events` | Eventos normalizados (ts, asset_id, namespace, kind, severity, title, message, attributes, fingerprint) | — |
-| `orbit_correlations` | Correlações detectadas automaticamente | — |
-| `dashboards` | Specs de dashboards como JSONB (id text PK, spec jsonb) | — |
+Main tabs:
 
-## 3) Fluxo de dados
+| Tab | Content |
+|---|---|
+| **Home** | KPIs, charts, EPS, consolidated live feed |
+| **Dashboards** | Builder (AI-assisted optional), saved dashboards, rotation/view mode |
+| **Metrics** | Query builder for `timeseries` and `timeseries_multi` |
+| **Events** | Filtered events table |
+| **Correlations** | Automatically detected event correlations |
+| **Sources** | Source cards and status |
+| **Admin** | API key, AI agent config, operational info |
 
-### 3.1 Conectores → orbit-core
+The API key is stored in `localStorage` and can be preconfigured at build time via:
+- `VITE_ORBIT_API_KEY` (UI package `.env`)
 
-```
-Nagios perfdata spool  → ship_metrics.py  → POST /api/v1/ingest/metrics
-Nagios HARD events     → ship_events.py   → POST /api/v1/ingest/events
-Wazuh alerts.json      → ship_events.py   → POST /api/v1/ingest/events
-n8n REST API           → ship_events.py   → POST /api/v1/ingest/events
-Fortigate syslog → Wazuh → ship_events.py → POST /api/v1/ingest/events
-```
+### 3.4 Postgres
 
-Todos os conectores são **determinísticos** (sem IA), seguros para cron,
-com rastreamento de estado via arquivo (byte-offset ou timestamp ISO 8601).
+Canonical schema with automated rollups and retention:
 
-### 3.2 AI Agent — fluxo end-to-end
+| Table | Content | Retention |
+|---|---|---:|
+| `assets` | Asset catalog (name, type, tags) | — |
+| `metric_points` | Raw metrics (value + JSONB dimensions) | 14 days |
+| `metric_rollup_5m` | 5-minute rollup | 90 days |
+| `metric_rollup_1h` | 1-hour rollup | 180 days |
+| `orbit_events` | Normalized events | — |
+| `orbit_correlations` | Correlation records | — |
+| `dashboards` | Dashboard specs as JSONB | — |
 
-```
-1. UI: usuário digita prompt → POST /api/v1/ai/dashboard
-   Headers: X-Ai-Key (Anthropic), X-Ai-Model (ex: claude-sonnet-4-6)
-   Body: { prompt: string }
+## 4) Data flow
 
-2. API: 6 queries paralelas ao banco
-   - asset_metrics: métricas por ativo (namespace, metric, pts)
-   - asset_names: nomes legíveis dos ativos
-   - eventNsStats: namespaces de eventos com total + last_seen
-   - eventKinds: tipos de evento por namespace
-   - eventAgents: agentes por namespace
-   - eventSevs: distribuição de severidade por namespace
-
-3. API: monta system prompt com catálogo real + schema + guias
-
-4. API: POST https://api.anthropic.com/v1/messages
-   Headers: x-api-key, anthropic-version: 2023-06-01
-   Body: { model, max_tokens: 4096, system, messages }
-
-5. API: extrai JSON da resposta, valida com DashboardSpecSchema (Zod)
-
-6. API: retorna { ok: true, spec: DashboardSpec }
-
-7. UI: preenche builder com os widgets gerados (editável)
-```
-
-### 3.3 Query → seleção automática de fonte (RAW vs rollup)
-
-O backend seleciona a tabela com base no range solicitado:
-
-| Range | Tabela |
-|-------|--------|
-| ≤ 14 dias | `metric_points` (RAW) |
-| 14–90 dias | `metric_rollup_5m` |
-| > 90 dias | `metric_rollup_1h` |
-
-A resposta inclui `meta.source_table`.
-
-## 4) OrbitQL — tipos de query
-
-### 4.1 `timeseries`
-
-Série temporal única com downsample e agregação opcional (`avg`/`min`/`max`/`sum`).
-**Requer `asset_id`.**
-
-```json
-{
-  "kind": "timeseries",
-  "asset_id": "host:servidor1",
-  "namespace": "nagios",
-  "metric": "load1",
-  "from": "2026-02-24T00:00:00Z",
-  "to": "2026-02-24T01:00:00Z"
-}
-```
-
-### 4.2 `timeseries_multi`
-
-Múltiplas séries. **Requer `series` array com `asset_id` por entrada.**
-Suporta:
-- `group_by_dimension` — split por dimensão (ex: `"service"`)
-- `top_n` (padrão 20), `top_by` (`count` ou `last`), `top_lookback_days` (padrão 7)
-
-```json
-{
-  "kind": "timeseries_multi",
-  "series": [
-    { "asset_id": "host:srv1", "namespace": "nagios", "metric": "load1", "label": "srv1" },
-    { "asset_id": "host:srv2", "namespace": "nagios", "metric": "load1", "label": "srv2" }
-  ],
-  "from": "...", "to": "..."
-}
-```
-
-### 4.3 `events`
-
-Busca filtrada de eventos. Filtros: `namespace`, `asset_id`, `severities`, `kinds`, range de tempo.
-
-```json
-{
-  "kind": "events",
-  "namespace": "wazuh",
-  "severities": ["high", "critical"],
-  "from": "...", "to": "...",
-  "limit": 50
-}
-```
-
-### 4.4 `event_count`
-
-Contagem de eventos em buckets de tempo — usado para calcular EPS (eventos/segundo).
-Retorna `ts` + `value` (count / bucket_sec). `bucket_sec` é selecionado automaticamente
-com base no range se não especificado.
-
-## 5) DashboardSpec
-
-Dashboards são salvos como JSONB na tabela `dashboards`. Schema (Zod):
-
-```typescript
-DashboardSpec = {
-  id: string,
-  name: string,
-  description?: string,
-  version: "v1",
-  time: { preset: "60m" | "6h" | "24h" | "7d" | "30d" },
-  tags: string[],
-  widgets: WidgetSpec[]   // 1-60
-}
-
-WidgetSpec = {
-  id: string,
-  title: string,
-  kind: "timeseries" | "timeseries_multi" | "events" | "eps" | "kpi",
-  layout: { x: number, y: number, w: 1 | 2, h: number },
-  query: OrbitQlQuery   // SEM from/to — adicionados em runtime pelo renderer
-}
-```
-
-## 6) Operações
-
-### 6.1 Rollups + retenção
-
-Jobs de background executados pelo próprio processo da API:
-- RAW → 5m: a cada 5 minutos
-- 5m → 1h: a cada hora
-- Retenção (purge): diariamente
-
-### 6.2 Deploy de produção (Docker Swarm + Traefik)
+### 4.1 Connectors → orbit-core
 
 ```
-Internet → Traefik (TLS) → /orbit-core/api/* → orbitcore_api (Node, porta 3000)
-                         → /orbit-core/*      → orbitcore_ui  (Nginx, servindo dist/)
+Nagios perfdata spool   → connectors/nagios/ship_metrics.py → POST /api/v1/ingest/metrics
+Nagios HARD event spool → connectors/nagios/ship_events.py  → POST /api/v1/ingest/events
+Wazuh alerts.json       → connectors/wazuh/ship_events.py   → POST /api/v1/ingest/events
+n8n REST API polling    → connectors/n8n/ship_events.py     → POST /api/v1/ingest/events
+Fortigate syslog → Wazuh → connectors/wazuh/ship_events.py  → POST /api/v1/ingest/events
 ```
 
-Variáveis de ambiente do container da API:
-- `DATABASE_URL` — connection string do Postgres
-- `ORBIT_API_KEY` — chave de autenticação
-- `NODE_ENV=production`
+All connectors are **deterministic** (no AI), cron-friendly, and track state using a local file:
+- byte-offset cursors for local JSONL files
+- ISO timestamp cursors for API polling
 
-### 6.3 Deploy script
+### 4.2 AI dashboard builder (end-to-end)
 
-```bash
-bash /root/.openclaw/workspace/orbit-core/deploy.sh
-```
+High-level flow:
 
-O script faz: git pull → build (core-contracts → api → ui) → migrations → restart systemd + Docker service → health check.
+1. UI sends a prompt to `POST /api/v1/ai/dashboard`
+2. API queries the live catalog (assets/metrics/event namespaces)
+3. API builds a system prompt with contracts + catalog + playbooks
+4. The model produces a `DashboardSpec`
+5. API validates it server-side (Zod) and returns it to the UI
 
-## 7) Conectores
+## 5) Query engine notes
 
-Ver [docs/connectors.md](connectors.md) para visão geral completa.
+### 5.1 `timeseries`
 
-| Conector | Namespace | Script | Modo |
-|----------|-----------|--------|------|
-| Nagios | `nagios` | `ship_metrics.py`, `ship_events.py` | Passivo (arquivo local) |
-| Wazuh | `wazuh` | `ship_events.py` | Passivo (arquivo local) |
-| Wazuh | `wazuh` | `ship_events_opensearch.py` | Ativo (OpenSearch REST) |
-| Fortigate | `wazuh` / `kind=fortigate` | via Wazuh | Passivo |
-| n8n | `n8n` | `ship_events.py` | Ativo (polling REST API) |
+Single series with optional aggregation and downsampling.
+
+### 5.2 `timeseries_multi`
+
+Multiple series with optional:
+- `group_by_dimension` (splits a series into multiple)
+- Top‑N limiting (`top_n`, `top_by`, `top_lookback_days`) to control cardinality
+
+### 5.3 RAW vs rollup selection
+
+The query engine selects the source table automatically based on the requested time range.
+The response includes `meta.source_table`.
+
+## 6) Operations
+
+### 6.1 Rollups + retention
+
+Rollups and retention are executed as background jobs (API workers) or via cron scripts,
+depending on the deployment.
+
+### 6.2 Production deploy (Docker Swarm + Traefik)
+
+See `deploy.sh` and the stack files under `docker/` for the server reference deployment.
+
+Key API container environment variables:
+- `DATABASE_URL`
+- `ORBIT_API_KEY`
+- (optional) AI settings for `/api/v1/ai/dashboard`
+
+## 7) Connectors
+
+See [`docs/connectors.md`](connectors.md) for the full overview and authoring standards.

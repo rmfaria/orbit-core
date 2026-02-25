@@ -1,115 +1,83 @@
-# Fortigate Connector (orbit-core)
+# Fortigate (via Wazuh) — Connector Notes (orbit-core)
 
-Integração via **Wazuh syslog forwarding** — o Fortigate envia syslogs para o Wazuh Manager,
-que os processa e encaminha para o orbit-core como eventos normalizados.
+Fortigate does not have a standalone connector.
+Integration is done through **Wazuh syslog forwarding**:
 
-## Fluxo de dados
+- Fortigate sends syslogs to the Wazuh Manager
+- the Wazuh connector ships them to orbit-core as normalized events
+
+## Data flow
 
 ```
 Fortigate → syslog (UDP/TCP 514) → Wazuh Manager → orbit-core
 ```
 
-Eventos chegam com:
-- `namespace` = `wazuh`
-- `kind`      = `fortigate`
-- `severity`  mapeado do `level` da regra Wazuh
+Events arrive as:
+- `namespace = wazuh`
+- `kind = fortigate`
+- `severity` mapped from Wazuh rule level
 
-## Configuração no Fortigate
+## Fortigate configuration
 
-No CLI do Fortigate:
+Fortigate CLI:
 
-```
+```text
 config log syslogd setting
     set status enable
-    set server <IP_WAZUH_MANAGER>
+    set server <WAZUH_MANAGER_IP>
     set port 514
     set facility local7
     set format default
 end
 ```
 
-## Configuração no Wazuh Manager
+## Wazuh notes
 
-O Wazuh inclui regras nativas para Fortigate (grupo `fortigate`).
-Nenhuma configuração adicional é necessária se as regras padrão estiverem ativas.
+Wazuh ships Fortigate events when Fortigate rules are present (group `fortigate`).
 
-Para verificar:
+Verify rules:
 
 ```bash
 grep -r "fortigate" /var/ossec/ruleset/rules/ | head -5
 ```
 
-### Como o `kind=fortigate` é gerado
+### How `kind=fortigate` is generated
 
-O conector Wazuh (`ship_events.py`) define o campo `kind` do evento orbit-core
-a partir de `rule.groups[0]` no alerta Wazuh:
+The Wazuh connector sets `kind` from `rule.groups[0]`:
 
-```
-alerta.rule.groups = ["fortigate", "firewall"]  →  kind = "fortigate"
-```
-
-**Requisito:** as regras Wazuh que processam os syslogs do Fortigate devem ter
-`fortigate` como **primeiro grupo** (`<group>fortigate,...</group>`).
-As regras nativas do Wazuh já fazem isso. Se você usar regras customizadas,
-certifique-se de incluir `fortigate` no início da lista de grupos.
-
-Para confirmar que os eventos estão chegando com o grupo correto:
-
-```bash
-tail -f /var/ossec/logs/alerts/alerts.json | python3 -c "
-import sys, json
-for line in sys.stdin:
-    a = json.loads(line)
-    if 'fortigate' in (a.get('rule',{}).get('groups') or []):
-        print(a['rule']['groups'], a['rule']['description'])
-"
+```text
+rule.groups = ["fortigate", "firewall"]  →  kind = "fortigate"
 ```
 
-### Como o Fortigate aparece separado na UI orbit-core
+Requirement: Fortigate rules must include `fortigate` as the **first** group.
 
-Os eventos chegam com `namespace=wazuh` e `kind=fortigate`. A UI do orbit-core
-usa a função `eventSource()` para surfaceá-los como uma fonte distinta — o pill
-**fortigate** no live feed e a opção de filtro na aba Eventos mostram apenas
-esses eventos, mesmo que estejam misturados com outros alertas Wazuh no banco.
+### UI source separation
 
-## Mapeamento de campos
+Although Fortigate events are stored under `namespace=wazuh`, the UI surfaces them as a separate source using `kind=fortigate`.
 
-| Campo Fortigate | Campo orbit-core |
+## Field mapping (typical)
+
+| Fortigate field | orbit-core |
 |---|---|
-| `devname`     | `attributes.devname` (via `full_log`) |
-| `type`        | parte do `kind` (via `rule.groups`) |
-| `action`      | `attributes.data.action` |
-| `srcip`       | `attributes.data.srcip` |
-| `dstip`       | `attributes.data.dstip` |
-| `app`         | `attributes.data.app` |
-| `msg`         | `title` |
-| log completo  | `message` (full_log) |
+| `devname` | `attributes.devname` (parsed from `full_log`) |
+| full log | `message` |
 
-## Verificação
+## Verification
 
 ```bash
-# Listar eventos Fortigate no orbit-core (filtro por kind=fortigate)
-# Nota: namespace=wazuh é correto — Fortigate chega via pipeline Wazuh.
-curl -s -H "X-Api-Key: <sua-chave>" \
+curl -s -H "X-Api-Key: <your-key>" \
   -X POST https://prod.example.com/orbit-core/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
-    "query":{
-      "kind":"events",
-      "namespace":"wazuh",
-      "kinds":["fortigate"],
-      "from":"'"$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)"'",
-      "to":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
-      "limit":20
-    }
+    "kind":"events",
+    "namespace":"wazuh",
+    "kinds":["fortigate"],
+    "from":"...",
+    "to":"...",
+    "limit":20
   }'
 ```
 
-O filtro `"kinds": ["fortigate"]` seleciona apenas eventos com `kind=fortigate`.
-Alternativamente, use o pill **fortigate** no live feed da UI.
-
-## Notas
-
-- Eventos Fortigate são ingeridos pelo conector Wazuh passivo (`ship_events.py`)
-- O cron roda a cada minuto no servidor Wazuh Manager (`/etc/cron.d/orbit-wazuh`)
-- Não é necessário conector separado enquanto o Wazuh Manager receber os syslogs
+Notes:
+- Fortigate events are ingested by the Wazuh connector (`connectors/wazuh/ship_events.py`)
+- there is no extra script required as long as Wazuh is receiving the syslogs

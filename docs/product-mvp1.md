@@ -1,98 +1,78 @@
-# Orbit Core – Product Doc
+# orbit-core — Product MVP1
 
-Atualizado: 2026-02-24
+## Problem
 
-## Problema
+Security and operations teams routinely monitor **multiple telemetry sources** (Nagios, Wazuh, Fortigate, n8n), but the data ends up fragmented:
 
-Equipes de segurança e operações precisam monitorar múltiplas fontes de telemetria
-(Nagios, Wazuh, Fortigate, n8n) num único painel, com dashboards personalizados,
-feed de eventos ao vivo e a capacidade de gerar visualizações a partir de descrições
-em linguagem natural.
+- metrics in one system
+- security alerts in another
+- automation failures somewhere else
+- dashboards glued together with brittle queries
 
-## Usuários-alvo
+orbit-core is a small, API-first core that unifies **metrics + events** into a single Postgres-backed system with predictable retention and fast, safe queries.
 
-- Analistas SOC
-- Engenheiros de detecção
-- Engenheiros de plataforma operando Wazuh / Nagios
-- Times DevOps monitorando automações n8n
+## Target users
 
-## Funcionalidades implementadas
+- Detection engineers
+- SOC / SecOps analysts
+- SRE / DevOps teams
+- Teams operating n8n automations
 
-### Ingestão e armazenamento
+## MVP1 scope
 
-- `POST /api/v1/ingest/metrics` — métricas em batch (série temporal com dimensões JSONB)
-- `POST /api/v1/ingest/events` — eventos em batch (namespace, kind, severity, title, message, fingerprint)
-- Rollups automáticos: RAW → 5m → 1h, com retenção configurável
-- Seleção automática de tabela RAW / rollup baseada no range da query
+### Ingestion + storage
 
-### Conectores
+- `POST /api/v1/ingest/metrics` — batch metrics ingestion (timeseries + JSONB dimensions)
+- `POST /api/v1/ingest/events` — batch events ingestion
+- Automatic rollups: RAW → 5m → 1h
+- Retention policy (default): 14d raw, 90d 5m, 180d 1h
+- Query engine automatically selects raw vs rollups by time range
 
-| Conector | Dados | Namespace | Modo |
-|----------|-------|-----------|------|
-| Nagios | métricas perfdata + eventos HARD state change | `nagios` | cron (arquivo) |
-| Wazuh | alertas de segurança | `wazuh` | cron (arquivo / OpenSearch) |
-| Fortigate | logs de firewall | `wazuh` / `kind=fortigate` | via Wazuh syslog |
-| n8n | falhas e execuções travadas | `n8n` | cron + Error Trigger |
+### Connectors
 
-### Query engine (OrbitQL)
+| Connector | Data | Namespace | Mode |
+|---|---|---|---|
+| Nagios | perfdata metrics + HARD state change events | `nagios` | cron (local files) |
+| Wazuh | security alerts | `wazuh` | cron (file / OpenSearch optional) |
+| Fortigate | firewall logs (via Wazuh syslog pipeline) | `wazuh` + `kind=fortigate` | via Wazuh |
+| n8n | workflow failures + stuck executions | `n8n` | cron + Error Trigger |
 
-- `timeseries` — série temporal com auto-bucket e rollup transparente
-- `timeseries_multi` — múltiplas séries com group_by_dimension opcional
-- `events` — busca filtrada por namespace, kind, severity, asset_id
-- `event_count` — contagem de eventos/segundo (EPS) com bucket automático
+### Query engine
 
-### Dashboard Builder
+- `timeseries` — single series with auto-bucket and transparent rollups
+- `timeseries_multi` — multi-series with optional `group_by_dimension` + Top-N limiting
+- `events` — filtered event feed
+- `event_count` — EPS (events/sec) with automatic bucketing
 
-- Dashboards salvos em Postgres como JSONB
-- 5 tipos de widget: `timeseries`, `timeseries_multi`, `events`, `eps`, `kpi`
-- Layout em grid (span 1 = metade, span 2 = inteiro)
-- Preset de tempo: 60m / 6h / 24h / 7d / 30d
-- Modo rotação (slideshow) com intervalo configurável (15s / 30s / 1min / 5min)
+### UI
 
-### AI Agent (Dashboard Builder)
+- Rotation mode (slideshow) with configurable interval
+- Uses the live catalog (metrics by asset, event namespaces/kinds/agents/severities)
 
-- `POST /api/v1/ai/dashboard` — gera DashboardSpec via Claude (Anthropic)
-- Consulta catálogo real: métricas por ativo, namespaces de eventos, kinds, agents, severities
-- System prompt com catálogo estruturado + guia Wazuh + regras de validação
-- Headers: `X-Ai-Key` (chave Anthropic), `X-Ai-Model` (ex: `claude-sonnet-4-6`)
-- Configuração da chave no Admin da UI, armazenada em `localStorage`
+### Dashboard Builder (assistive)
 
-### UI — Abas
+- CRUD dashboards and widgets
+- Optional AI assistant:
+  - uses the real catalog
+  - outputs a strict `DashboardSpec`
+  - validated server-side before saving/applying
 
-| Aba | Conteúdo |
-|-----|----------|
-| **Home** | KPIs, gráficos, EPS Wazuh, live feed |
-| **Dashboards** | List / Builder / View + rotação |
-| **Métricas** | Query builder livre |
-| **Eventos** | Feed filtrado |
-| **Correlações** | Correlações automáticas |
-| **Nagios / Wazuh / Fortigate / n8n** | Abas dedicadas por fonte |
-| **Admin** | API Key + AI Agent config |
+### Security
 
-### Catálogo
+- In production, require `ORBIT_API_KEY` (send `X-Api-Key: ...`)
+- Keep secrets server-side; do not ship keys to the browser bundle
 
-- `GET /api/v1/catalog/assets` — ativos com filtro por nome
-- `GET /api/v1/catalog/metrics` — métricas por ativo (namespace, metric, points, last_ts)
-- `GET /api/v1/catalog/dimensions` — valores de dimensões
-- `GET /api/v1/catalog/events` — namespaces de eventos com kinds, agents e severities
+## Quality criteria
 
-### Segurança
+- Typical queries return in < 2s
+- Dimension group-bys are bounded (Top‑N) to avoid cardinality explosions
+- AI-generated dashboards must validate against the contracts in a single call
+- One-command deploy (`deploy.sh`) with end-of-run health check
 
-- `ORBIT_API_KEY` obrigatório em produção (`X-Api-Key` header)
-- BasicAuth como fallback de compatibilidade
-- Nenhum SQL raw exposto; todas as queries via OrbitQL (parâmetros seguros)
+## Roadmap (next versions)
 
-## Critérios de qualidade
-
-- Setup local em < 5 minutos (excluindo Postgres)
-- Queries retornam em < 2s para datasets típicos
-- AI gera dashboards válidos com fontes reais em uma chamada
-- Deploy via script único (`deploy.sh`) com health check ao final
-
-## Roadmap (próximas versões)
-
-- Multi-tenant (namespaces isolados por cliente)
-- Alertas automáticos baseados em thresholds
-- Armazenamento ClickHouse para volumes maiores
-- Agendamento de relatórios por e-mail
-- RBAC (roles por fonte / dashboard)
+- alerting on thresholds / anomalies
+- scheduled reports (email/webhook)
+- more sources/connectors
+- improved correlation rules + explainability
+- retention/rollup configuration via admin

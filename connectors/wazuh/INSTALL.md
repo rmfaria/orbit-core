@@ -1,39 +1,35 @@
 # Wazuh Connector — Installation Guide
 
-This guide installs the **orbit-core Wazuh Connector** on the Wazuh Manager host
-(Debian/Ubuntu).
+This guide installs the Wazuh connector for orbit-core.
 
-It ships Wazuh alerts from `alerts.json` → `POST /api/v1/ingest/events`.
+You can run it in two modes:
 
-> Goal: run as a deterministic cron job (no-AI).
-
----
+- **Passive (file-based)**: reads `alerts.json` locally on the Wazuh Manager host
+- **Active (OpenSearch)**: polls the Wazuh Indexer via REST (useful when running from another host)
 
 ## 0) Prerequisites
 
-- Wazuh Manager installed and running
-- Python **3.10+**
-- Network access from the Wazuh Manager host to the orbit-core API
+- Wazuh Manager running and producing `alerts.json`
+- Python 3.10+
+- network access to the orbit-core API
+- API key for orbit-core (`ORBIT_API_KEY`)
 
-### Install Python dependency
+Install Python dependencies:
 
 ```bash
-apt-get update
-apt-get install -y python3 python3-pip
+apt-get update && apt-get install -y python3 python3-pip
 pip3 install requests
 ```
-
----
 
 ## 1) Install the connector scripts
 
 ```bash
 mkdir -p /opt/orbit-core/connectors
 cp -a ./connectors/wazuh /opt/orbit-core/connectors/
-chmod +x /opt/orbit-core/connectors/wazuh/ship_events.py
+chmod +x /opt/orbit-core/connectors/wazuh/*.py
 ```
 
-Create state and log directories:
+Create state/log directories:
 
 ```bash
 mkdir -p /var/lib/orbit-core
@@ -42,69 +38,34 @@ chown root:root /var/lib/orbit-core /var/log/orbit-core
 chmod 0755 /var/lib/orbit-core /var/log/orbit-core
 ```
 
----
+## 2) File permissions (passive mode)
 
-## 2) Verify the Wazuh alerts file
-
-The connector reads:
+If you use `ship_events.py`, ensure the cron user can read:
 
 - `/var/ossec/logs/alerts/alerts.json`
 
-Confirm it exists and is being written:
-
-```bash
-ls -lh /var/ossec/logs/alerts/alerts.json
-tail -n 2 /var/ossec/logs/alerts/alerts.json
-```
-
-Each line should be a valid JSON alert object:
-
-```json
-{"timestamp":"2024-02-23T14:00:00.000+0000","rule":{"level":10,"description":"...","id":"5402"},"agent":{"id":"001","name":"web01"}, ...}
-```
-
-> **Note**: The file is in JSONL format (one alert per line) and is rotated daily by
-> Wazuh. The shipper detects rotation automatically via byte-offset tracking.
-
-### Grant read access (if running as a non-wazuh user)
-
-If the cron job runs as `root`, no extra permissions are needed.
-If running as another user, add read access:
-
-```bash
-# Allow the cron user to read Wazuh alert files
-setfacl -R -m u:<cron-user>:r /var/ossec/logs/alerts/
-```
-
-Or add the cron user to the `wazuh` group:
+Typically the file is owned by group `wazuh` (`0640`). Add the cron user to that group:
 
 ```bash
 usermod -aG wazuh <cron-user>
+id <cron-user>
+ls -la /var/ossec/logs/alerts/alerts.json
 ```
 
----
+## 3) Configure orbit-core authentication
 
-## 3) Configure autenticação
-
-**Recomendado — API Key** (configure `ORBIT_API_KEY` no servidor orbit-core):
+Recommended: store the API key in a file.
 
 ```bash
-# Salvar a chave em arquivo seguro para uso no cron
 mkdir -p /etc/orbit-core
 chmod 0750 /etc/orbit-core
-printf '%s' 'SUA_ORBIT_API_KEY_AQUI' > /etc/orbit-core/orbit.key
+printf '%s' 'YOUR_ORBIT_API_KEY' > /etc/orbit-core/orbit.key
 chmod 0640 /etc/orbit-core/orbit.key
 ```
 
-**Legado — BasicAuth** (suportado como fallback):
-```bash
-printf '%s' 'SUA_SENHA_AQUI' > /etc/orbit-core/orbitadmin.pass
-chmod 0640 /etc/orbit-core/orbitadmin.pass
-```
+Do not commit secrets.
 
----
-
-## 4) Configure the cron job
+## 4) Configure cron (passive mode)
 
 Create `/etc/cron.d/orbit-wazuh`:
 
@@ -120,91 +81,24 @@ Create `/etc/cron.d/orbit-wazuh`:
   >>/var/log/orbit-core/wazuh_shipper.log 2>&1
 ```
 
-Reload cron:
+Reload cron if needed:
 
 ```bash
 systemctl reload cron || true
 ```
 
----
-
-## 5) Verify ingestion
-
-### Run manually (one-shot)
+## 5) Verify
 
 ```bash
-ORBIT_API=https://prod.example.com/orbit-core \
-ORBIT_API_KEY=$(cat /etc/orbit-core/orbit.key) \
-python3 /opt/orbit-core/connectors/wazuh/ship_events.py
+tail -20 /var/log/orbit-core/wazuh_shipper.log
+cat /var/lib/orbit-core/wazuh-events.state.json
 ```
 
-### Check orbit-core
+Query the last events:
 
 ```bash
-# Health
-curl -s -H "X-Api-Key: $(cat /etc/orbit-core/orbit.key)" \
-  https://prod.example.com/orbit-core/api/v1/health
-
-# List assets (should show Wazuh agents as host:<name>)
-curl -s -H "X-Api-Key: $(cat /etc/orbit-core/orbit.key)" \
-  'https://prod.example.com/orbit-core/api/v1/catalog/assets?q=host:'
-
-# Query events (last hour)
 curl -s -H "X-Api-Key: $(cat /etc/orbit-core/orbit.key)" \
   -X POST https://prod.example.com/orbit-core/api/v1/query \
-  -H 'content-type: application/json' \
-  -d '{
-    "query": {
-      "kind": "events",
-      "namespace": "wazuh",
-      "from": "'$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)'",
-      "to": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
-      "limit": 20
-    }
-  }'
+  -H 'Content-Type: application/json' \
+  -d '{"kind":"events","namespace":"wazuh","from":"...","to":"...","limit":5}'
 ```
-
----
-
-## Troubleshooting
-
-| Symptom | Cause / Fix |
-|---|---|
-| `401/403` from orbit-core | API Key incorreta; verificar `ORBIT_API_KEY` ou `ORBIT_BASIC_USER`/`ORBIT_BASIC_FILE` |
-| No events ingested | Check log: `/var/log/orbit-core/wazuh_shipper.log`; verify `alerts.json` path and read permissions |
-| Events not updating | State file may have a stale offset; delete `/var/lib/orbit-core/wazuh-events.state.json` to re-process from the beginning |
-| Duplicate events after log rotation | Normal on first run after rotation — the shipper detects truncation and resets offset to 0 |
-| `alerts.json` not found | Wazuh JSON alerts may be disabled; check `ossec.conf` for `<alerts><log_format>json</log_format></alerts>` |
-
-### Enable JSON alerts in Wazuh (if not already enabled)
-
-Edit `/var/ossec/etc/ossec.conf`:
-
-```xml
-<ossec_config>
-  <alerts>
-    <log_all>no</log_all>
-    <log_all_json>no</log_all_json>
-    <email_notification>no</email_notification>
-    <alerts_log>yes</alerts_log>
-    <jsonout_output>yes</jsonout_output>   <!-- enable this -->
-    <email_alert_level>12</email_alert_level>
-  </alerts>
-</ossec_config>
-```
-
-Restart Wazuh Manager:
-
-```bash
-systemctl restart wazuh-manager
-ls -lh /var/ossec/logs/alerts/alerts.json
-```
-
----
-
-## Security notes
-
-- Do not commit secrets. Use `ORBIT_API_KEY` via arquivo (`/etc/orbit-core/orbit.key`) ou variável de ambiente.
-- The connector only reads from Wazuh — it never writes to it.
-- Keep orbit-core behind TLS + auth in production.
-- Restrict `/etc/orbit-core/` to root-only (`chmod 0750`).

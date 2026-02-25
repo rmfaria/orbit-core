@@ -1,137 +1,95 @@
-# RFC-0001: Orbit Core Architecture
+# RFC-0001 — Architecture
 
-- Status: **Implemented** (superseded por [ARCHITECTURE.md](ARCHITECTURE.md))
-- Owner: Orbit Core OSS
-- Criado: 2026-02-22 | Atualizado: 2026-02-24
+> Note: this RFC documents early architecture decisions.
+> For the current implementation, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-> **Nota:** Este RFC documenta as decisões de arquitetura tomadas no início do projeto.
-> Para o estado atual da implementação, consulte [ARCHITECTURE.md](ARCHITECTURE.md).
+## Summary
 
-## Sumário
+orbit-core is a modular core for telemetry (security + ops) analytics:
 
-Orbit Core é um core modular de busca/analytics para telemetria de segurança e operações.
-Este RFC propõe uma arquitetura monorepo que mantém **contracts + engine + storage**
-independentes do **API + UI**, permitindo troca de backend de storage futuramente (ClickHouse).
+- Stable HTTP API (health, ingest, query)
+- Postgres storage (JSONB) with a canonical schema for metrics + events
+- Observability UI (charts, event feed, dashboards)
+- Deterministic connectors (no AI) for Nagios, Wazuh, Fortigate (via Wazuh), and n8n
 
-## Objetivos (MVP)
+## Non-goals (MVP)
 
-- HTTP API estável com health, ingestão e query
-- Storage em Postgres (JSONB) com schema canônico para métricas e eventos
-- Query engine dedicado (OrbitQL) — evita SQL raw exposto
-- UI de observabilidade com gráficos, feed de eventos e dashboards
-- Conectores determinísticos (sem IA) para Nagios, Wazuh, Fortigate, n8n
+- ClickHouse (planned for a future version)
 
-## Não-objetivos (MVP)
-
-- Multi-tenant AuthZ/AuthN completo
-- Streaming queries
-- ClickHouse (previsto para versão futura)
-
-## Layout do Monorepo
+## Repository layout
 
 ```
-packages/
-  core-contracts/   # tipos compartilhados + contratos HTTP (Zod)
-  engine/           # OrbitQL — tipos e compilador de queries
-  storage-pg/       # schema Postgres + migrations + helpers
-  api/              # Express: rotas, auth, wiring
-  ui/               # Vite + React
-  nagios-shipper/   # Shipper TypeScript alternativo para Nagios
-connectors/
-  nagios/           # Python: ship_metrics.py, ship_events.py
-  wazuh/            # Python: ship_events.py, ship_events_opensearch.py
-  fortigate/        # Integração via Wazuh syslog
-  n8n/              # Python: ship_events.py + orbit_error_reporter.json
+orbit-core/
+  packages/
+    core-contracts/
+    engine/
+    storage-pg/
+    api/
+    ui/
+  connectors/
+    nagios/
+    wazuh/
+    fortigate/        # integration via Wazuh syslog
+    n8n/
+  docs/
+  site/
+  studio/
 ```
 
-## Interfaces-chave
+## Data model
 
-### Contracts (`@orbit/core-contracts`)
+### Metrics
 
-- `OrbitQlQuery` = `TimeseriesQuery | TimeseriesMultiQuery | EventsQuery | EventCountQuery`
-- `DashboardSpec` / `WidgetSpec` — specs de dashboards persistidos
-- `QueryRequest` / `QueryResponse`
-- `HealthResponse`
+Timeseries points:
 
-### Engine (`@orbit/engine`)
+- `asset_id` (e.g. `host:vm002`)
+- `namespace` (e.g. `nagios`)
+- `metric` (e.g. `load1`)
+- `value` (double)
+- `dimensions` (JSONB)
 
-- Input: `QueryRequest`
-- Output: `QueryPlan`
+### Events
 
-```ts
-interface QueryPlan {
-  target: 'postgres' | 'clickhouse';
-  statement: string;
-  params: unknown[];
-}
-```
+Normalized event record:
 
-### Storage (Postgres) (`@orbit/storage-pg`)
+- `ts` (timestamp)
+- `asset_id`
+- `namespace`
+- `kind`
+- `severity`
+- `title`
+- `message`
+- `attributes` (JSONB)
+- `fingerprint` (deduplication)
 
-- Migrations em `migrations/*.sql`
-- Schema canônico: `assets`, `metric_points`, `orbit_events`, `dashboards`, rollup tables
+## API
 
-## Modelo de dados
+### Ingest
 
-### Métricas
+- `POST /api/v1/ingest/metrics`
+- `POST /api/v1/ingest/events`
 
-```sql
-metric_points (
-  ts         timestamptz,
-  asset_id   text,      -- ex: "host:servidor1"
-  namespace  text,      -- ex: "nagios"
-  metric     text,      -- ex: "load1"
-  value      double precision,
-  dimensions jsonb      -- ex: {"service": "CPU Load"}
-)
-```
+### Query
 
-### Eventos
+- `POST /api/v1/query` with OrbitQL
 
-```sql
-orbit_events (
-  ts          timestamptz,
-  asset_id    text,
-  namespace   text,      -- "wazuh", "nagios", "n8n", etc.
-  kind        text,      -- ex: "authentication_failed", "state_change"
-  severity    text,      -- "info" | "low" | "medium" | "high" | "critical"
-  title       text,
-  message     text,
-  fingerprint text,      -- deduplicação
-  attributes  jsonb      -- campos originais da fonte
-)
-```
+### Catalog
 
-### Dashboards
+- `GET /api/v1/catalog/*`
 
-```sql
-dashboards (
-  id         text PRIMARY KEY,
-  spec       jsonb NOT NULL,   -- DashboardSpec completo
-  created_at timestamptz,
-  updated_at timestamptz
-)
-```
+### AI (optional)
 
-## Responsabilidades da API
+- AI proxy endpoint that uses the live catalog as context
+- outputs a strict DashboardSpec validated server-side
 
-- Validar payloads (Zod)
-- Selecionar tabela automaticamente (RAW vs rollup) baseado no range da query
-- Proxy para Anthropic API com catálogo do banco como contexto (AI agent)
-- Autenticação por `X-Api-Key` ou BasicAuth
+### Authentication
 
-## Opção ClickHouse (Futuro)
+- `X-Api-Key` (recommended)
+- BasicAuth (legacy / edge)
 
-- Adicionar `@orbit/storage-ch`
-- Engine escolhe o target baseado no dataset, features da query, retenção e custo
+## Security considerations
 
-## Considerações de segurança
-
-- SQL injection: OrbitQL compila para SQL parametrizado — sem SQL raw exposto
-- AI agent: chave Anthropic passa nos headers do cliente (nunca armazenada no servidor)
-- `ORBIT_API_KEY` obrigatório em produção
-
-## Observabilidade
-
-- HTTP logging via `pino-http`
-- Métricas internas em `/api/v1/metrics` (JSON) e `/api/v1/metrics/prom` (Prometheus)
+- `ORBIT_API_KEY` should be required in production
+- keep secrets server-side
+- safe limits (payload size, query limits, bounded group-bys)
+- internal metrics via `/api/v1/metrics` (JSON) and `/api/v1/metrics/prom` (Prometheus)

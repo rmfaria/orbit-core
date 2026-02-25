@@ -220,7 +220,7 @@ python3 /opt/orbit-core/connectors/nagios/ship_events.py
 
 ## Troubleshooting
 
-- **401/403 from orbit-core**: API Key incorreta ou não definida; verificar `ORBIT_API_KEY`.
+- **401/403 from orbit-core**: API key is incorrect or missing; verify `ORBIT_API_KEY`.
 - **No metrics**: perfdata files not enabled or empty; check `nagios.cfg` and file paths.
 - **No events**: JSONL spool not being written; confirm `write_hard_event.py` is configured as global event handler and Nagios restarted. Check Nagios logs for command errors.
 - **File rotation**: both shippers detect file truncation by comparing last known position with current file length and will restart from 0.
