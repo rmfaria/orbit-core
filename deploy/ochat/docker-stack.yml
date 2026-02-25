@@ -1,0 +1,54 @@
+version: "3.7"
+
+services:
+  app:
+    image: node:22-alpine
+    command: ["node", "/app/dist/index.js"]
+    environment:
+      - PORT=18800
+      - BASE_PATH=/ochat
+      - NODE_ENV=production
+      - HOME=/root
+      - OPENCLAW_BIN=node /usr/lib/node_modules/openclaw/openclaw.mjs
+    volumes:
+      - /opt/ochat:/app:ro
+      - /opt/ochat/node_modules:/app/node_modules:ro
+      - /usr/lib/node_modules/openclaw:/usr/lib/node_modules/openclaw:ro
+      - /root/.openclaw:/root/.openclaw:rw
+    networks:
+      - Portn8n
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - traefik.enable=true
+
+        # ── router ──────────────────────────────────────────────────────────
+        - traefik.http.routers.ochat.rule=Host(`prod.nesecurity.com.br`) && (Path(`/ochat`) || PathPrefix(`/ochat/`))
+        - traefik.http.routers.ochat.entrypoints=websecure
+        - traefik.http.routers.ochat.tls=true
+        - traefik.http.routers.ochat.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.ochat.middlewares=ochat-auth,ochat-slash,ochat-strip
+        - traefik.http.routers.ochat.priority=70
+
+        # ── redirect /ochat → /ochat/ ────────────────────────────────────
+        - traefik.http.middlewares.ochat-slash.redirectregex.regex=^https?://([^/]+)/ochat$$
+        - traefik.http.middlewares.ochat-slash.redirectregex.replacement=https://$$1/ochat/
+        - traefik.http.middlewares.ochat-slash.redirectregex.permanent=true
+
+        # ── strip /ochat prefix before sending to app ────────────────────
+        - traefik.http.middlewares.ochat-strip.stripprefix.prefixes=/ochat
+
+        # ── basic auth (user: admin) ─────────────────────────────────────
+        - traefik.http.middlewares.ochat-auth.basicauth.users=${OCHAT_BASICAUTH}
+        - traefik.http.middlewares.ochat-auth.basicauth.realm=OpenClaw Chat
+
+        # ── service ──────────────────────────────────────────────────────
+        - traefik.http.services.ochat.loadbalancer.server.port=18800
+
+networks:
+  Portn8n:
+    external: true
+    name: Portn8n
