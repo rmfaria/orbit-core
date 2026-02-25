@@ -20,7 +20,7 @@ type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'home' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'admin';
+type Tab        = 'home' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'admin';
 
 type CorrelationRow = {
   event_key:    string;
@@ -542,6 +542,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {navTabBtn('events',       'Eventos')}
         {navTabBtn('metrics',      'Métricas')}
         {navTabBtn('correlations', 'Correlações')}
+        {navTabBtn('alerts',       '🔔 Alertas')}
         {navTabBtn('dashboards',   '⊞ Dashboards')}
       </nav>
 
@@ -3563,6 +3564,416 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
   );
 }
 
+// ─── ALERTS TAB ───────────────────────────────────────────────────────────────
+
+type AlertChannel = { id: string; name: string; kind: string; created_at: string };
+type AlertRule = {
+  id: number; name: string; enabled: boolean;
+  asset_id: string | null; namespace: string | null; metric: string | null;
+  condition: any; severity: string; channels: string[];
+  state: string; fired_at: string | null; last_value: number | null;
+  silence_until: string | null; created_at: string;
+};
+type AlertNotif = { id: number; rule_id: number; rule_name: string; channel_id: string; event: string; ok: boolean; error: string | null; sent_at: string };
+
+function AlertsTab({ assets }: { assets: AssetOpt[] }) {
+  const [subtab, setSubtab]       = React.useState<'rules' | 'channels' | 'history'>('rules');
+  const [rules, setRules]         = React.useState<AlertRule[]>([]);
+  const [channels, setChannels]   = React.useState<AlertChannel[]>([]);
+  const [history, setHistory]     = React.useState<AlertNotif[]>([]);
+  const [loading, setLoading]     = React.useState(false);
+  const [err, setErr]             = React.useState<string | null>(null);
+  const [toast, setToast]         = React.useState<{ msg: string; ok: boolean } | null>(null);
+
+  // — new rule form —
+  const [showRuleForm, setShowRuleForm] = React.useState(false);
+  const [rf, setRf] = React.useState({
+    name: '', asset_id: '', namespace: '', metric: '',
+    condKind: 'threshold' as 'threshold' | 'absence',
+    op: '>' as string, condValue: '', windowMin: '5', agg: 'avg',
+    severity: 'medium', selectedChannels: [] as string[],
+  });
+
+  // — new channel form —
+  const [showChForm, setShowChForm]   = React.useState(false);
+  const [cf, setCf] = React.useState({
+    id: '', name: '', kind: 'webhook' as 'webhook' | 'telegram',
+    url: '', headers: '', bot_token: '', chat_id: '',
+  });
+
+  function showToast(msg: string, ok: boolean) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 4000);
+  }
+
+  async function loadRules() {
+    setLoading(true); setErr(null);
+    try {
+      const r = await fetch('api/v1/alerts/rules', { headers: apiGetHeaders() });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error);
+      setRules(j.rules);
+    } catch (e: any) { setErr(String(e)); } finally { setLoading(false); }
+  }
+
+  async function loadChannels() {
+    try {
+      const r = await fetch('api/v1/alerts/channels', { headers: apiGetHeaders() });
+      const j = await r.json();
+      if (j.ok) setChannels(j.channels);
+    } catch {}
+  }
+
+  async function loadHistory() {
+    try {
+      const r = await fetch('api/v1/alerts/history', { headers: apiGetHeaders() });
+      const j = await r.json();
+      if (j.ok) setHistory(j.notifications);
+    } catch {}
+  }
+
+  React.useEffect(() => {
+    loadRules();
+    loadChannels();
+    loadHistory();
+  }, []);
+
+  async function toggleRule(rule: AlertRule) {
+    await fetch(`api/v1/alerts/rules/${rule.id}`, {
+      method: 'PATCH', headers: apiHeaders(),
+      body: JSON.stringify({ enabled: !rule.enabled }),
+    });
+    loadRules();
+  }
+
+  async function silenceRule(rule: AlertRule) {
+    const until = new Date(Date.now() + 3600_000).toISOString();
+    await fetch(`api/v1/alerts/rules/${rule.id}`, {
+      method: 'PATCH', headers: apiHeaders(),
+      body: JSON.stringify({ silence_until: until }),
+    });
+    showToast('Regra silenciada por 1h', true);
+    loadRules();
+  }
+
+  async function deleteRule(id: number) {
+    if (!confirm('Remover esta regra?')) return;
+    await fetch(`api/v1/alerts/rules/${id}`, { method: 'DELETE', headers: apiGetHeaders() });
+    loadRules();
+  }
+
+  async function saveRule() {
+    const condition = rf.condKind === 'threshold'
+      ? { kind: 'threshold', op: rf.op, value: parseFloat(rf.condValue), window_min: parseInt(rf.windowMin), agg: rf.agg }
+      : { kind: 'absence', window_min: parseInt(rf.windowMin) };
+    const body: any = {
+      name: rf.name, enabled: true, condition,
+      severity: rf.severity, channels: rf.selectedChannels,
+    };
+    if (rf.asset_id)  body.asset_id  = rf.asset_id;
+    if (rf.namespace) body.namespace = rf.namespace;
+    if (rf.metric)    body.metric    = rf.metric;
+
+    const r = await fetch('api/v1/alerts/rules', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
+    const j = await r.json();
+    if (!j.ok) { showToast('Erro: ' + JSON.stringify(j.error), false); return; }
+    showToast('Regra criada!', true);
+    setShowRuleForm(false);
+    setRf({ name: '', asset_id: '', namespace: '', metric: '', condKind: 'threshold', op: '>', condValue: '', windowMin: '5', agg: 'avg', severity: 'medium', selectedChannels: [] });
+    loadRules();
+  }
+
+  async function deleteChannel(id: string) {
+    if (!confirm('Remover este canal?')) return;
+    await fetch(`api/v1/alerts/channels/${id}`, { method: 'DELETE', headers: apiGetHeaders() });
+    loadChannels();
+  }
+
+  async function testChannel(id: string) {
+    const r = await fetch(`api/v1/alerts/channels/${id}/test`, { method: 'POST', headers: apiHeaders() });
+    const j = await r.json();
+    showToast(j.ok ? '✓ Notificação enviada com sucesso' : '✗ Erro: ' + j.error, j.ok);
+  }
+
+  async function saveChannel() {
+    const config = cf.kind === 'webhook'
+      ? { url: cf.url, ...(cf.headers.trim() ? { headers: JSON.parse(cf.headers) } : {}) }
+      : { bot_token: cf.bot_token, chat_id: cf.chat_id };
+    const body = { id: cf.id, name: cf.name, kind: cf.kind, config };
+    const r = await fetch('api/v1/alerts/channels', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
+    const j = await r.json();
+    if (!j.ok) { showToast('Erro: ' + JSON.stringify(j.error), false); return; }
+    showToast('Canal salvo!', true);
+    setShowChForm(false);
+    setCf({ id: '', name: '', kind: 'webhook', url: '', headers: '', bot_token: '', chat_id: '' });
+    loadChannels();
+  }
+
+  function conditionText(rule: AlertRule) {
+    const c = rule.condition;
+    if (c.kind === 'threshold') return `${c.agg ?? 'avg'} ${c.op} ${c.value} (${c.window_min}min)`;
+    if (c.kind === 'absence')   return `ausência ${c.window_min}min`;
+    return JSON.stringify(c);
+  }
+
+  function stateBadge(rule: AlertRule) {
+    const silenced = rule.silence_until && new Date(rule.silence_until) > new Date();
+    if (!rule.enabled) return <span style={{ background: '#1e293b', color: '#64748b', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>DESATIV.</span>;
+    if (silenced)      return <span style={{ background: '#1c1c1c', color: '#94a3b8', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>SILENC.</span>;
+    if (rule.state === 'firing') return <span style={{ background: '#450a0a', color: '#f87171', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>FIRING</span>;
+    return <span style={{ background: '#052e16', color: '#4ade80', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>OK</span>;
+  }
+
+  const subtabBtn = (t: 'rules' | 'channels' | 'history', label: string) => (
+    <button onClick={() => setSubtab(t)} style={{
+      background: subtab === t ? 'rgba(85,243,255,0.15)' : 'transparent',
+      border: subtab === t ? '1px solid rgba(85,243,255,0.4)' : '1px solid transparent',
+      borderRadius: 8, color: subtab === t ? '#55f3ff' : '#94a3b8',
+      padding: '6px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+    }}>{label}</button>
+  );
+
+  return (
+    <div>
+      {toast && (
+        <div style={{ position: 'fixed', top: 18, right: 24, zIndex: 9999, padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, background: toast.ok ? '#052e16' : '#450a0a', color: toast.ok ? '#4ade80' : '#f87171', border: `1px solid ${toast.ok ? '#4ade80' : '#f87171'}`, boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+          {toast.msg}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+        {subtabBtn('rules',    '📋 Regras')}
+        {subtabBtn('channels', '📡 Canais')}
+        {subtabBtn('history',  '📜 Histórico')}
+      </div>
+
+      {/* ── RULES ─────────────────────────────────────────────────────────── */}
+      {subtab === 'rules' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>{rules.length} regra(s)</span>
+            <button onClick={() => setShowRuleForm(x => !x)} style={{ ...S.btn, padding: '7px 16px', fontSize: 13 }}>
+              {showRuleForm ? '✕ Cancelar' : '+ Nova Regra'}
+            </button>
+          </div>
+
+          {showRuleForm && (
+            <div style={{ ...S.card, marginBottom: 16, border: '1px solid rgba(85,243,255,0.25)' }}>
+              <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 12, fontSize: 14 }}>Nova Regra de Alerta</div>
+              <div style={{ ...S.grid4, marginBottom: 10 }}>
+                <label style={S.label}>Nome<input style={S.input} value={rf.name} onChange={e => setRf(p => ({ ...p, name: e.target.value }))} placeholder="Ex: CPU alta" /></label>
+                <label style={S.label}>Asset<input style={S.input} value={rf.asset_id} onChange={e => setRf(p => ({ ...p, asset_id: e.target.value }))} placeholder="host:portn8n (vazio=todos)" /></label>
+                <label style={S.label}>Namespace<input style={S.input} value={rf.namespace} onChange={e => setRf(p => ({ ...p, namespace: e.target.value }))} placeholder="nagios (vazio=todos)" /></label>
+                <label style={S.label}>Métrica<input style={S.input} value={rf.metric} onChange={e => setRf(p => ({ ...p, metric: e.target.value }))} placeholder="cpu (vazio=todos)" /></label>
+              </div>
+              <div style={{ ...S.grid4, marginBottom: 10 }}>
+                <label style={S.label}>Tipo de condição
+                  <select style={S.select} value={rf.condKind} onChange={e => setRf(p => ({ ...p, condKind: e.target.value as any }))}>
+                    <option value="threshold">Threshold (valor)</option>
+                    <option value="absence">Ausência de dados</option>
+                  </select>
+                </label>
+                {rf.condKind === 'threshold' && <>
+                  <label style={S.label}>Operador
+                    <select style={S.select} value={rf.op} onChange={e => setRf(p => ({ ...p, op: e.target.value }))}>
+                      {['>', '>=', '<', '<='].map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </label>
+                  <label style={S.label}>Valor<input style={S.input} type="number" value={rf.condValue} onChange={e => setRf(p => ({ ...p, condValue: e.target.value }))} placeholder="80" /></label>
+                  <label style={S.label}>Agregação
+                    <select style={S.select} value={rf.agg} onChange={e => setRf(p => ({ ...p, agg: e.target.value }))}>
+                      <option value="avg">avg</option>
+                      <option value="max">max</option>
+                    </select>
+                  </label>
+                </>}
+              </div>
+              <div style={{ ...S.grid4, marginBottom: 12 }}>
+                <label style={S.label}>Janela (min)<input style={S.input} type="number" value={rf.windowMin} onChange={e => setRf(p => ({ ...p, windowMin: e.target.value }))} placeholder="5" /></label>
+                <label style={S.label}>Severidade
+                  <select style={S.select} value={rf.severity} onChange={e => setRf(p => ({ ...p, severity: e.target.value }))}>
+                    {['info','low','medium','high','critical'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label style={{ ...S.label, gridColumn: 'span 2' }}>Canais
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                    {channels.length === 0 && <span style={{ color: '#64748b', fontSize: 12 }}>Nenhum canal cadastrado</span>}
+                    {channels.map(ch => (
+                      <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={rf.selectedChannels.includes(ch.id)}
+                          onChange={e => setRf(p => ({ ...p, selectedChannels: e.target.checked ? [...p.selectedChannels, ch.id] : p.selectedChannels.filter(x => x !== ch.id) }))} />
+                        {ch.name} <span style={{ color: '#64748b' }}>({ch.kind})</span>
+                      </label>
+                    ))}
+                  </div>
+                </label>
+              </div>
+              <button onClick={saveRule} style={{ ...S.btn, padding: '8px 20px' }}>Salvar Regra</button>
+            </div>
+          )}
+
+          {err && <div style={S.err}>{err}</div>}
+          {loading && <div style={{ color: '#94a3b8', fontSize: 13, padding: 12 }}>Carregando…</div>}
+
+          <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
+            <table style={S.table}>
+              <thead>
+                <tr>{['Nome','Alvo','Condição','Sev','Estado','Último valor','Canais','Ações'].map(h =>
+                  <th key={h} style={S.th}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {rules.length === 0 && !loading && (
+                  <tr><td colSpan={8} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
+                    Nenhuma regra configurada. Crie a primeira acima.
+                  </td></tr>
+                )}
+                {rules.map(rule => (
+                  <tr key={rule.id} style={{ background: rule.state === 'firing' ? 'rgba(248,113,113,0.04)' : 'transparent' }}>
+                    <td style={S.td}><span style={{ fontWeight: 600, color: '#e9eeff' }}>{rule.name}</span></td>
+                    <td style={{ ...S.td, fontSize: 11, color: '#94a3b8' }}>
+                      {[rule.asset_id, rule.namespace, rule.metric].filter(Boolean).join(' / ') || '— todos —'}
+                    </td>
+                    <td style={{ ...S.td, fontSize: 11, fontFamily: 'monospace', color: '#7dd3fc' }}>{conditionText(rule)}</td>
+                    <td style={S.td}><SevBadge sev={rule.severity} /></td>
+                    <td style={S.td}>{stateBadge(rule)}</td>
+                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>
+                      {rule.last_value !== null ? rule.last_value!.toFixed(2) : '—'}
+                    </td>
+                    <td style={{ ...S.td, fontSize: 11, color: '#64748b' }}>{rule.channels.join(', ') || '—'}</td>
+                    <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
+                      <button onClick={() => toggleRule(rule)} style={{ ...S.btnSm, marginRight: 4, color: rule.enabled ? '#4ade80' : '#64748b' }} title={rule.enabled ? 'Desativar' : 'Ativar'}>
+                        {rule.enabled ? '●' : '○'}
+                      </button>
+                      <button onClick={() => silenceRule(rule)} style={{ ...S.btnSm, marginRight: 4 }} title="Silenciar 1h">🔕</button>
+                      <button onClick={() => deleteRule(rule.id)} style={{ ...S.btnSm, color: '#f87171' }} title="Remover">✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── CHANNELS ──────────────────────────────────────────────────────── */}
+      {subtab === 'channels' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>{channels.length} canal(is)</span>
+            <button onClick={() => setShowChForm(x => !x)} style={{ ...S.btn, padding: '7px 16px', fontSize: 13 }}>
+              {showChForm ? '✕ Cancelar' : '+ Novo Canal'}
+            </button>
+          </div>
+
+          {showChForm && (
+            <div style={{ ...S.card, marginBottom: 16, border: '1px solid rgba(85,243,255,0.25)' }}>
+              <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 12, fontSize: 14 }}>Novo Canal de Notificação</div>
+              <div style={{ ...S.grid4, marginBottom: 10 }}>
+                <label style={S.label}>ID (slug)<input style={S.input} value={cf.id} onChange={e => setCf(p => ({ ...p, id: e.target.value }))} placeholder="telegram-ops" /></label>
+                <label style={S.label}>Nome<input style={S.input} value={cf.name} onChange={e => setCf(p => ({ ...p, name: e.target.value }))} placeholder="Telegram NOC" /></label>
+                <label style={S.label}>Tipo
+                  <select style={S.select} value={cf.kind} onChange={e => setCf(p => ({ ...p, kind: e.target.value as any }))}>
+                    <option value="webhook">Webhook</option>
+                    <option value="telegram">Telegram</option>
+                  </select>
+                </label>
+              </div>
+              {cf.kind === 'webhook' && (
+                <div style={{ ...S.grid2, marginBottom: 10 }}>
+                  <label style={S.label}>URL<input style={S.input} value={cf.url} onChange={e => setCf(p => ({ ...p, url: e.target.value }))} placeholder="https://hooks.example.com/..." /></label>
+                  <label style={S.label}>Headers (JSON opcional)<textarea style={{ ...S.input, height: 60, resize: 'vertical' }} value={cf.headers} onChange={e => setCf(p => ({ ...p, headers: e.target.value }))} placeholder='{"Authorization":"Bearer ..."}'  /></label>
+                </div>
+              )}
+              {cf.kind === 'telegram' && (
+                <div style={{ ...S.grid2, marginBottom: 10 }}>
+                  <label style={S.label}>Bot Token<input style={S.input} value={cf.bot_token} onChange={e => setCf(p => ({ ...p, bot_token: e.target.value }))} placeholder="1234567890:AAH..." /></label>
+                  <label style={S.label}>Chat ID<input style={S.input} value={cf.chat_id} onChange={e => setCf(p => ({ ...p, chat_id: e.target.value }))} placeholder="-1001234567890" /></label>
+                </div>
+              )}
+              <button onClick={saveChannel} style={{ ...S.btn, padding: '8px 20px' }}>Salvar Canal</button>
+            </div>
+          )}
+
+          <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
+            <table style={S.table}>
+              <thead>
+                <tr>{['ID','Nome','Tipo','Criado em','Ações'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {channels.length === 0 && (
+                  <tr><td colSpan={5} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
+                    Nenhum canal configurado. Crie o primeiro acima.
+                  </td></tr>
+                )}
+                {channels.map(ch => (
+                  <tr key={ch.id}>
+                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{ch.id}</td>
+                    <td style={S.td}>{ch.name}</td>
+                    <td style={S.td}>
+                      <span style={{ background: ch.kind === 'telegram' ? '#172554' : '#1c1917', color: ch.kind === 'telegram' ? '#60a5fa' : '#fdba74', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
+                        {ch.kind.toUpperCase()}
+                      </span>
+                    </td>
+                    <td style={{ ...S.td, fontSize: 12, color: '#64748b' }}>{new Date(ch.created_at).toLocaleString('pt-BR')}</td>
+                    <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
+                      <button onClick={() => testChannel(ch.id)} style={{ ...S.btnSm, marginRight: 6, color: '#55f3ff' }}>Testar</button>
+                      <button onClick={() => deleteChannel(ch.id)} style={{ ...S.btnSm, color: '#f87171' }}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── HISTORY ───────────────────────────────────────────────────────── */}
+      {subtab === 'history' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>Últimas {history.length} notificação(ões)</span>
+            <button onClick={loadHistory} style={{ ...S.btnSm }}>↻ Atualizar</button>
+          </div>
+          <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
+            <table style={S.table}>
+              <thead>
+                <tr>{['Hora','Regra','Canal','Evento','Status','Erro'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {history.length === 0 && (
+                  <tr><td colSpan={6} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
+                    Nenhuma notificação enviada ainda.
+                  </td></tr>
+                )}
+                {history.map(n => (
+                  <tr key={n.id}>
+                    <td style={{ ...S.td, fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>{new Date(n.sent_at).toLocaleString('pt-BR')}</td>
+                    <td style={S.td}>{n.rule_name ?? n.rule_id}</td>
+                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{n.channel_id}</td>
+                    <td style={S.td}>
+                      <span style={{ color: n.event === 'firing' ? '#f87171' : '#4ade80', fontWeight: 700, fontSize: 12 }}>
+                        {n.event === 'firing' ? '🚨 FIRING' : '✅ RESOLVED'}
+                      </span>
+                    </td>
+                    <td style={S.td}>
+                      <span style={{ color: n.ok ? '#4ade80' : '#f87171', fontWeight: 700, fontSize: 12 }}>
+                        {n.ok ? '✓ OK' : '✗ ERRO'}
+                      </span>
+                    </td>
+                    <td style={{ ...S.td, fontSize: 11, color: '#f87171', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {n.error ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
 
 class ErrorBoundary extends React.Component<
@@ -3628,6 +4039,7 @@ export function App() {
         {tab === 'events'        && <EventsTab      key="events"        assets={assets} />}
         {tab === 'metrics'       && <MetricsTab     assets={assets} />}
         {tab === 'correlations'  && <CorrelationsTab assets={assets} />}
+        {tab === 'alerts'        && <AlertsTab assets={assets} />}
         {tab === 'admin'         && <AdminTab setTab={setTab} />}
       </div>
     </div>

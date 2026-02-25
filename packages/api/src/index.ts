@@ -23,9 +23,11 @@ import { metricsHandler, metricsMiddleware } from './metrics.js';
 import { metricsPromHandler } from './metrics_prom.js';
 import { dashboardsRouter } from './routes/dashboards.js';
 import { aiRouter } from './routes/ai.js';
+import { alertsRouter } from './routes/alerts.js';
 import { correlationsHandler } from './routes/correlations.js';
 import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
+import { startAlertWorker } from './alerting/worker.js';
 import { pool } from './db.js';
 
 // Wrap async Express handlers so their rejected promises reach the error handler.
@@ -84,6 +86,9 @@ app.post('/api/v1/ingest/events', a(ingestEventsHandler));
 app.use('/api/v1', dashboardsRouter(pool));
 app.use('/api/v1', aiRouter(pool));
 
+// alerts — rules, channels, history
+app.use('/api/v1', alertsRouter(pool));
+
 // correlations
 app.get('/api/v1/correlations', a(correlationsHandler));
 
@@ -105,9 +110,11 @@ const server = app.listen(env.PORT, () => {
 // Start background workers if DB is available.
 let stopRollups:   (() => void) | undefined;
 let stopCorrelate: (() => void) | undefined;
+let stopAlerts:    (() => void) | undefined;
 if (pool) {
   stopRollups   = startRollupWorker(pool);
   stopCorrelate = startCorrelateWorker(pool);
+  stopAlerts    = startAlertWorker(pool);
 }
 
 // Graceful shutdown.
@@ -115,6 +122,7 @@ function shutdown(signal: string) {
   logger.info({ signal }, 'shutting down');
   stopRollups?.();
   stopCorrelate?.();
+  stopAlerts?.();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }
