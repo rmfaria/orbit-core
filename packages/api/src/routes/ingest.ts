@@ -105,7 +105,15 @@ export async function ingestEventsHandler(req: Request, res: Response) {
     for (const ev of body.events) {
       await client.query(
         `insert into orbit_events(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         on conflict (fingerprint) where fingerprint is not null
+         do update set
+           ts         = excluded.ts,
+           severity   = excluded.severity,
+           title      = excluded.title,
+           message    = excluded.message,
+           attributes = excluded.attributes,
+           ingested_at = now()`,
         [ev.ts, ev.asset_id, ev.namespace, ev.kind, ev.severity, ev.title, ev.message ?? null, ev.fingerprint ?? null, (ev.attributes ?? {})]
       );
     }
