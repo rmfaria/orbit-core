@@ -1,5 +1,7 @@
 # Contributing
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 ## Dev setup
 
 - Node 22+
@@ -10,10 +12,10 @@ pnpm install
 pnpm dev
 ```
 
-## Ordem de build
+## Build order
 
-O pacote `core-contracts` deve ser compilado **antes** de `api` e `ui`, pois ambos
-dependem dos tipos gerados em `dist/`.
+The `core-contracts` package must be built **before** `api` and `ui`, because both
+depend on the generated types in `dist/`.
 
 ```bash
 pnpm --filter @orbit/core-contracts build
@@ -21,37 +23,37 @@ pnpm --filter @orbit/api build
 pnpm --filter @orbit/ui build
 ```
 
-O `deploy.sh` garante essa ordem automaticamente.
+`deploy.sh` enforces this order automatically.
 
-## Convenções do repositório
+## Repository conventions
 
-- **Conectores / schedulers:** sem IA, determinísticos (shell/python + cron).
-  Nunca use LLMs em conectores — eles precisam ser seguros para cron 24/7.
-- **Commits:** seguir conventional commits (`feat:`, `fix:`, `docs:`, `chore:`).
-- **Secrets:** nunca committar `.env`, chaves, senhas ou IPs internos. Use `.env.example`.
-- **PRs pequenos e revisáveis** — preferível a PRs grandes.
+- **Connectors / schedulers:** no AI, deterministic (shell/python + cron).
+  Do not use LLMs in connectors — they must be safe for 24/7 cron execution.
+- **Commits:** use Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`).
+- **Secrets:** never commit `.env`, keys, passwords, or internal IPs. Use `.env.example`.
+- Prefer **small, reviewable PRs**.
 
 ## Migrations
 
-Migrations SQL ficam em `packages/storage-pg/migrations/`.
+SQL migrations live in `packages/storage-pg/migrations/`.
 
-- **Add-only** — nunca editar uma migration já publicada
-- Prefixo numérico: `000X_*.sql` (ex: `0009_nova_feature.sql`)
-- Usar `IF NOT EXISTS` / `IF EXISTS` para tornar idempotentes
-- Migrations são aplicadas em ordem alfabética pelo `deploy.sh`
+- **Add-only** — never edit a migration that has been published
+- Numeric prefix: `000X_*.sql` (e.g. `0009_new_feature.sql`)
+- Use `IF NOT EXISTS` / `IF EXISTS` to keep migrations idempotent
+- Migrations are applied in lexicographic order by `deploy.sh`
 
-## Conectores
+## Connectors
 
-Ver [docs/connectors.md](docs/connectors.md) e os arquivos `README.md` / `INSTALL.md`
-em cada pasta `connectors/<fonte>/`.
+See [`docs/connectors.md`](docs/connectors.md) and the `README.md` / `INSTALL.md` files
+in each `connectors/<source>/` directory.
 
-Padrões obrigatórios:
-1. Determinístico / sem IA
-2. State file com `fcntl.flock` (byte-offset ou ISO timestamp)
+Required standards:
+1. Deterministic / no AI
+2. State file with `fcntl.flock` (byte-offset or ISO timestamp cursor)
 3. Batch ingest via `POST /api/v1/ingest/events`
-4. Fingerprint para deduplicação
-5. Autenticação via `ORBIT_API_KEY` (header `X-Api-Key`)
-6. `BATCH_SIZE` ≤ 100 para eventos com payload grande (ex: Wazuh)
+4. Fingerprint-based deduplication
+5. Auth via `ORBIT_API_KEY` (`X-Api-Key` header)
+6. Keep `BATCH_SIZE` ≤ 100 for large payload events (e.g. Wazuh)
 
 ## Testes
 
