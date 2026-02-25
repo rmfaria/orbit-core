@@ -32,7 +32,7 @@ export function compileQuery(req: QueryRequest, opts: CompileOptions): QueryPlan
   // MVP placeholder:
   // - if language=sql, trust-but-verify (in future: allowlisted SQL)
   // - if language=orbitql, compile to SQL
-  const statement = req.query;
+  const statement = typeof req.query === 'string' ? req.query : JSON.stringify(req.query);
   return {
     target: opts.target,
     statement,
