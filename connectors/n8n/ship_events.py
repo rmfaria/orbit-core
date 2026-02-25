@@ -141,8 +141,8 @@ def _to_error_event(ex: dict) -> dict:
         "namespace":   "n8n",
         "kind":        "execution_error",
         "severity":    "high",
-        "title":       f"Workflow \"{wf_name}\" falhou (execução {exec_id})",
-        "message":     f"Execução {exec_id} do workflow \"{wf_name}\" terminou com status=error.",
+        "title":       f"Workflow \"{wf_name}\" failed (execution {exec_id})",
+        "message":     f"Execution {exec_id} for workflow \"{wf_name}\" ended with status=error.",
         "fingerprint": f"n8n:error:{exec_id}",
         "attributes": {
             "execution_id":  exec_id,
@@ -168,10 +168,10 @@ def _to_stuck_event(ex: dict, stuck_minutes: float) -> dict:
         "namespace":   "n8n",
         "kind":        "execution_stuck",
         "severity":    "medium",
-        "title":       f"Workflow \"{wf_name}\" travado há {int(stuck_minutes)}min (execução {exec_id})",
+        "title":       f"Workflow \"{wf_name}\" stuck for {int(stuck_minutes)}m (execution {exec_id})",
         "message":     (
-            f"Execução {exec_id} do workflow \"{wf_name}\" está rodando há "
-            f"{int(stuck_minutes)} minutos (limite: {STUCK_AFTER_MINUTES}m)."
+            f"Execution {exec_id} for workflow \"{wf_name}\" has been running for "
+            f"{int(stuck_minutes)} minutes (threshold: {STUCK_AFTER_MINUTES}m)."
         ),
         "fingerprint": f"n8n:stuck:{exec_id}",
         "attributes": {
