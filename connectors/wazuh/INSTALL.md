@@ -1,5 +1,7 @@
 # Wazuh Connector — Installation Guide
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 This guide installs the Wazuh connector for orbit-core.
 
 You can run it in two modes:

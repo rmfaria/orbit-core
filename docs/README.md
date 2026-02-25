@@ -1,5 +1,7 @@
 # orbit-core Documentation
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 This directory is the canonical documentation for orbit-core.
 
 ## Start here

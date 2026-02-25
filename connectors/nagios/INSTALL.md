@@ -1,5 +1,7 @@
 # Nagios Connector — Installation (Debian/Ubuntu `nagios4`)
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 This guide installs the **Python Nagios Connector** for orbit-core.
 
 It ships:

@@ -1,5 +1,7 @@
 # Fortigate (via Wazuh) — Installation Guide
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 Fortigate does not have a standalone connector.
 Integration uses the existing Wazuh pipeline:
 

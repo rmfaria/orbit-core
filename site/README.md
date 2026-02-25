@@ -1,5 +1,7 @@
 # orbit-core.org (static site)
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 Pasta com a landing page estática do **orbit-core** — sem framework, HTML/CSS puro.
 
 ## Rodar localmente

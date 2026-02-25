@@ -1,5 +1,7 @@
 # Fortigate (via Wazuh) — Connector Notes (orbit-core)
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 Fortigate does not have a standalone connector.
 Integration is done through **Wazuh syslog forwarding**:
 

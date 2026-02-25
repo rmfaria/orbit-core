@@ -1,5 +1,7 @@
 # n8n Connector — Installation Guide
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 This guide installs both n8n connector modes for orbit-core:
 
 | Mode | What you install | Coverage |

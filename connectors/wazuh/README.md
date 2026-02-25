@@ -1,5 +1,7 @@
 # Wazuh Connector (orbit-core)
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 Two modes — choose based on your deployment:
 
 | Mode | Script | When to use |

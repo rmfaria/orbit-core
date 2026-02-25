@@ -1,5 +1,7 @@
 # n8n Connector (orbit-core)
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 Two modes — choose based on your needs:
 
 | Mode | File | When to use |

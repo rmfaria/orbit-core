@@ -1,5 +1,7 @@
 # @orbit/api
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 Servidor Express para o Orbit Core — API REST completa para ingestão, query,
 catálogo, dashboards e AI agent.
 

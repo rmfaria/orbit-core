@@ -1,5 +1,7 @@
 # @orbit/nagios-shipper
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 Shipper TypeScript determinístico (**sem IA**) que lê dados do **Nagios** e envia
 para o **orbit-core**. Alternativa ao conector Python em `connectors/nagios/`.
 

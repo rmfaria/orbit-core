@@ -1,5 +1,7 @@
 # orbit-core
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 API-first telemetry core for **metrics + events**, backed by **Postgres**.
 
 orbit-core ingests signals from Nagios, Wazuh, Fortigate (via Wazuh) and n8n through deterministic, cron-friendly connectors, and exposes an observability UI with dashboards, live event feeds, EPS charts and an optional AI-assisted dashboard builder.

@@ -1,5 +1,7 @@
 # Nagios Connector (orbit-core)
 
+**Creator:** Rodrigo Menchio <rodrigomenchio@gmail.com>
+
 This connector ships **Nagios perfdata metrics** and **HARD state-change events** into orbit-core.
 
 ## What it ships
