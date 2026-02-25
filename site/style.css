@@ -88,9 +88,8 @@ a:hover{text-decoration:underline}
 .header__inner{display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 0}
 
 .brand{display:flex; align-items:center; gap:12px; min-width: 220px}
-.brand__mark{
+.brand__logo{
   width:34px; height:34px; border-radius:12px;
-  background: conic-gradient(from 210deg, rgba(85,243,255,.85), rgba(155,124,255,.88), rgba(255,93,214,.78), rgba(85,243,255,.85));
   box-shadow: 0 18px 45px rgba(85,243,255,.12);
 }
 .brand__name{font-weight:800; letter-spacing:.2px}
