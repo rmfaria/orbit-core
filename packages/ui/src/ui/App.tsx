@@ -2621,10 +2621,16 @@ function DashWidgetMulti({ widget, from, to, assets }: { widget: WidgetSpec; fro
       // Simplified format: build series from available assets
       const ns     = (wq.namespace as string) ?? '';
       const metric = (wq.metric    as string) ?? '';
+      // Guard: if namespace or metric are empty, nothing to query
+      if (!ns || !metric) { setIsEmpty(true); setLoading(false); return; }
+      const filterAsset = wq.asset_id as string | undefined;
+      const pool = filterAsset
+        ? assets.filter(a => a.asset_id === filterAsset)
+        : assets.slice(0, 20);
       q = {
         kind: 'timeseries_multi',
         from, to,
-        series: assets.slice(0, 20).map(a => ({
+        series: pool.map(a => ({
           asset_id:  a.asset_id,
           namespace: ns,
           metric,
@@ -2863,7 +2869,7 @@ type BuildWidget = {
   title: string;
   kind: string;
   namespace: string;
-  metric: string;
+  metric: string;       // for timeseries_multi: comma-separated metrics
   assetId: string;
   severities: string;
   kindFilter: string;
@@ -2895,7 +2901,17 @@ function buildWidgetToSpec(w: BuildWidget): WidgetSpec {
     if (w.severities) query.severities = w.severities.split(',').map(s => s.trim()).filter(Boolean);
     if (w.kindFilter) query.kinds      = [w.kindFilter];
   } else if (w.kind === 'timeseries_multi') {
-    query = { kind: 'timeseries_multi', namespace: w.namespace, metric: w.metric, group_by: ['asset_id'] };
+    const metrics = w.metric.split(',').map(m => m.trim()).filter(Boolean);
+    if (w.assetId && w.namespace && metrics.length > 0) {
+      // Single asset, one or more metrics → series format (e.g. load1, load5, load15)
+      query = {
+        kind: 'timeseries_multi',
+        series: metrics.map(m => ({ asset_id: w.assetId, namespace: w.namespace, metric: m, label: m })),
+      };
+    } else {
+      // Multi-asset: all assets, same namespace/metric (first metric only)
+      query = { kind: 'timeseries_multi', namespace: w.namespace, metric: metrics[0] ?? w.metric, group_by: ['asset_id'] };
+    }
   } else if (w.kind === 'gauge') {
     query = { kind: 'timeseries', namespace: w.namespace, metric: w.metric, min: w.gaugeMin, max: w.gaugeMax };
     if (w.assetId) query.asset_id = w.assetId;
@@ -3315,6 +3331,10 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
 
   function addWidget() {
     if (!newTitle.trim()) return;
+    const needsMetric = ['timeseries', 'timeseries_multi', 'kpi', 'gauge'].includes(newKind);
+    const needsNs     = ['timeseries', 'timeseries_multi', 'kpi', 'gauge', 'eps', 'events'].includes(newKind);
+    if (needsNs     && !newNs.trim())     return;
+    if (needsMetric && !newMetric.trim()) return;
     const w: BuildWidget = {
       id:         `w-${Date.now()}`,
       title:      newTitle.trim(),
@@ -3439,13 +3459,22 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
           </label>
           {(newKind === 'timeseries' || newKind === 'timeseries_multi' || newKind === 'kpi' || newKind === 'gauge') && (
             <label style={S.label}>
-              Métrica
-              <select value={newMetric} onChange={e => setNewMetric(e.target.value)} style={S.select}>
-                <option value="">— selecione —</option>
-                {filteredMetrics.map(m => (
-                  <option key={`${m.namespace}:${m.metric}`} value={m.metric}>{m.metric}</option>
-                ))}
-              </select>
+              {newKind === 'timeseries_multi' ? 'Métricas (vírgula)' : 'Métrica'}
+              {newKind === 'timeseries_multi' ? (
+                <input
+                  value={newMetric}
+                  onChange={e => setNewMetric(e.target.value)}
+                  placeholder="ex: load1, load5, load15"
+                  style={{ ...S.input, width: 200 }}
+                />
+              ) : (
+                <select value={newMetric} onChange={e => setNewMetric(e.target.value)} style={S.select}>
+                  <option value="">— selecione —</option>
+                  {filteredMetrics.map(m => (
+                    <option key={`${m.namespace}:${m.metric}`} value={m.metric}>{m.metric}</option>
+                  ))}
+                </select>
+              )}
             </label>
           )}
           {newKind === 'gauge' && (
@@ -3460,9 +3489,9 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
               </label>
             </>
           )}
-          {(newKind === 'timeseries' || newKind === 'events' || newKind === 'gauge') && (
+          {(newKind === 'timeseries' || newKind === 'timeseries_multi' || newKind === 'events' || newKind === 'gauge') && (
             <label style={S.label}>
-              Asset
+              Asset {newKind === 'timeseries_multi' ? '(opcional)' : ''}
               <select value={newAsset} onChange={e => setNewAsset(e.target.value)} style={S.select}>
                 <option value="">— todos —</option>
                 {(newKind === 'events' && newNs
