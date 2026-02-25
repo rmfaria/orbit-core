@@ -10,7 +10,7 @@ import cors from 'cors';
 import pino from 'pino';
 import { pinoHttp } from 'pino-http';
 import { ZodError } from 'zod';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 
 import { loadEnv } from './env.js';
@@ -58,7 +58,7 @@ const limiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req.headers['x-api-key'] as string) || req.ip || 'anon',
+  keyGenerator: (req) => (req.headers['x-api-key'] as string) || ipKeyGenerator(req.ip ?? 'anon'),
 });
 app.use('/api/v1', limiter);
 
