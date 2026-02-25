@@ -48,6 +48,22 @@ body::before{
   animation: drift 18s linear infinite;
   z-index:0;
 }
+
+/* subtle grid (SpaceX-ish) */
+body::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(to right, rgba(140,160,255,.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(140,160,255,.06) 1px, transparent 1px);
+  background-size: 92px 92px;
+  mask-image: radial-gradient(60% 55% at 50% 40%, rgba(0,0,0,.90) 0%, rgba(0,0,0,.35) 55%, transparent 100%);
+  opacity:.35;
+  z-index:0;
+}
+
 @keyframes drift{from{transform:translateY(0)} to{transform:translateY(-40px)}}
 
 body > *{position:relative; z-index:1}
@@ -80,9 +96,23 @@ a:hover{text-decoration:underline}
 .brand__name{font-weight:800; letter-spacing:.2px}
 .brand__tag{font-size:12px; color:var(--muted2)}
 
-.nav{display:flex; gap:14px; flex-wrap:wrap; justify-content:center}
-.nav a{font-size:13px; color: rgba(233,238,255,.82); padding:6px 8px; border-radius:10px}
+.nav{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+.nav a{font-size:12px; color: rgba(233,238,255,.82); padding:7px 10px; border-radius:999px; letter-spacing:.10em; text-transform:uppercase}
 .nav a:hover{background: rgba(39,54,89,.30); text-decoration:none}
+
+.navToggle{display:none; appearance:none; border:1px solid var(--stroke2); background: rgba(15,26,51,.28); border-radius:12px; padding:10px 10px; cursor:pointer}
+.navToggle:hover{border-color: rgba(85,243,255,.45)}
+.navToggle__bar{display:block; width:18px; height:2px; background: rgba(233,238,255,.86); margin:4px 0; border-radius:999px}
+
+.mobileNav{position:fixed; inset:0; background: rgba(3,5,14,.72); backdrop-filter: blur(14px); z-index:200}
+.mobileNav__inner{max-width:520px; margin:10px auto; border-radius: 18px; background: rgba(8,12,28,.72); border:1px solid var(--stroke); box-shadow: var(--shadow); padding:14px}
+.mobileNav__top{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:4px 4px 10px}
+.mobileNav__title{font-weight:900; letter-spacing:.18em; text-transform:uppercase; font-size:12px; color: rgba(233,238,255,.78)}
+.mobileNav__close{appearance:none; border:1px solid var(--stroke2); background: rgba(15,26,51,.28); color: rgba(233,238,255,.90); border-radius: 12px; padding:8px 10px; cursor:pointer; font-weight:800; font-size:12px}
+.mobileNav__links{display:grid; gap:8px; padding:6px 4px 12px}
+.mobileNav__links a{padding:12px 12px; border-radius: 14px; border:1px solid var(--stroke2); background: rgba(15,26,51,.20); font-weight:800}
+.mobileNav__links a:hover{text-decoration:none; border-color: rgba(85,243,255,.35)}
+.mobileNav__cta{display:flex; gap:10px; padding:4px}
 
 .header__cta{display:flex; gap:10px; align-items:center}
 
@@ -231,6 +261,8 @@ pre{margin:0; padding:14px 14px 16px; overflow:auto; font-size:13px; line-height
 
 @media (max-width: 560px){
   .nav{display:none}
+  .navToggle{display:inline-flex}
+  .header__cta{display:none}
   h1{font-size:34px}
   .hero__meta{grid-template-columns:1fr}
   .cards{grid-template-columns:1fr}

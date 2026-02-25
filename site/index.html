@@ -38,6 +38,12 @@
         <a href="#contributing">Contributing</a>
       </nav>
 
+      <button class="navToggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobileNav">
+        <span class="navToggle__bar"></span>
+        <span class="navToggle__bar"></span>
+        <span class="navToggle__bar"></span>
+      </button>
+
       <div class="header__cta">
         <a class="btn btn--ghost" href="#quickstart">Quickstart</a>
         <a class="btn btn--primary" href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">GitHub</a>
@@ -45,16 +51,37 @@
     </div>
   </header>
 
+  <div class="mobileNav" id="mobileNav" hidden>
+    <div class="mobileNav__inner">
+      <div class="mobileNav__top">
+        <div class="mobileNav__title">Menu</div>
+        <button class="mobileNav__close" type="button" aria-label="Close menu">Close</button>
+      </div>
+      <div class="mobileNav__links" aria-label="Mobile">
+        <a href="#why">Why</a>
+        <a href="#how">How</a>
+        <a href="#quickstart">Quickstart</a>
+        <a href="#connectors">Connectors</a>
+        <a href="#roadmap">Roadmap</a>
+        <a href="#contributing">Contributing</a>
+      </div>
+      <div class="mobileNav__cta">
+        <a class="btn btn--primary" href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">GitHub</a>
+        <a class="btn btn--ghost" href="#quickstart">Quickstart</a>
+      </div>
+    </div>
+  </div>
+
   <main id="main">
     <section class="hero">
       <div class="container hero__grid">
         <div class="hero__copy">
           <div class="pill">Apache-2.0 • Postgres-first • Subpath-friendly</div>
-          <h1>API-first telemetry core for <span class="grad">security & ops signals</span>.</h1>
+          <h1>API-first telemetry core for <span class="grad">metrics + events</span>.</h1>
           <p class="lead">
-            orbit-core ingests <strong>metrics</strong> and <strong>events</strong> from multiple sources (Nagios, Wazuh, n8n, Fortigate via Wazuh),
-            stores them in <strong>Postgres</strong> with <strong>rollups + retention</strong>, and exposes a stable HTTP API
-            for <strong>timeseries</strong>, <strong>events</strong> and <strong>multi-series group-by</strong> queries.
+            orbit-core is a small, predictable core that unifies <strong>timeseries metrics</strong> and <strong>operational/security events</strong>
+            behind a stable API. Connectors stay <strong>deterministic (no-AI)</strong>; AI (if enabled) is <strong>assistive only</strong>
+            for authoring dashboards as validated specs.
           </p>
 
           <div class="hero__buttons">
@@ -73,8 +100,8 @@
               <div class="kpi__v">/api/v1/query</div>
             </div>
             <div class="kpi">
-              <div class="kpi__k">Metrics</div>
-              <div class="kpi__v">/api/v1/metrics/prom</div>
+              <div class="kpi__k">Catalog</div>
+              <div class="kpi__v">/api/v1/catalog/*</div>
             </div>
           </div>
         </div>
@@ -100,9 +127,9 @@
       <div class="container">
         <h2>Why orbit-core</h2>
         <p class="muted">
-          Most monitoring stacks drift into hard-to-maintain pipelines: metrics in one place, events in another,
-          dashboards glued to brittle queries, and unbounded dimensions that explode cardinality.
-          orbit-core is built to stay fast and predictable.
+          Most monitoring stacks drift into brittle pipelines: metrics in one place, events in another,
+          dashboards glued to ad-hoc queries, and unbounded dimensions that explode cardinality.
+          orbit-core is built to stay fast, predictable, and easy to operate.
         </p>
 
         <div class="cards">
@@ -111,17 +138,36 @@
             <p>Store both telemetry types in one canonical core and query them through a stable API.</p>
           </article>
           <article class="card">
+            <h3>Deterministic connectors</h3>
+            <p>No-AI shippers you can run from cron 24/7 with state files and bounded batches.</p>
+          </article>
+          <article class="card">
             <h3>Rollups + retention</h3>
-            <p>Plain Postgres with scheduled rollups. Target: <span class="mono">180 days</span> retained (configurable).</p>
+            <p>Plain Postgres with rollups and retention (defaults to <span class="mono">180d</span> on 1h rollups).</p>
           </article>
           <article class="card">
-            <h3>Performance-first queries</h3>
-            <p>Auto-bucket, safe limits and a source-table selection strategy (raw vs rollups).</p>
+            <h3>Bounded queries</h3>
+            <p>Auto-bucket + Top‑N group-by to avoid runaway query cost and series explosions.</p>
           </article>
-          <article class="card">
-            <h3>Cardinality control</h3>
-            <p>Top‑N limiting for group-by dimensions to prevent runaway series explosions.</p>
-          </article>
+        </div>
+
+        <div class="split" style="margin-top:18px;">
+          <div class="split__col">
+            <h3>What it is</h3>
+            <ul class="list">
+              <li>An API-first storage + query core for <span class="mono">metrics</span> and <span class="mono">events</span>.</li>
+              <li>A connector pattern: deterministic ingestion with deduplication and auditability.</li>
+              <li>Dashboards as a validated spec (portable, versionable, reviewable).</li>
+            </ul>
+          </div>
+          <div class="split__col">
+            <h3>What it is not</h3>
+            <ul class="list">
+              <li>Not a full SIEM replacement.</li>
+              <li>Not “AIOps magic” running production pipelines.</li>
+              <li>Not unbounded SQL / infinite-cardinality by default.</li>
+            </ul>
+          </div>
         </div>
       </div>
     </section>
@@ -304,12 +350,18 @@ pnpm dev
 
     <section id="roadmap" class="section section--alt">
       <div class="container">
-        <h2>Roadmap</h2>
+        <div class="hgroup">
+          <h2>Roadmap</h2>
+          <p class="muted">Keep the core small. Grow capabilities where it compounds.</p>
+        </div>
+
         <div class="cards">
-          <article class="card"><h3>Event-metric correlation</h3><p>Automatically detect which metrics spiked when a Wazuh or Nagios alert fired. Surface correlated anomalies in the UI.</p></article>
-          <article class="card"><h3>Dashboard builder</h3><p>Guided, dropdown-driven dashboards/widgets powered by catalog/tags.</p></article>
-          <article class="card"><h3>Observability upgrades</h3><p>Route latency histograms, pg pool stats, richer internal metrics.</p></article>
-          <article class="card"><h3>Storage adapters (optional)</h3><p>ClickHouse adapter for higher volumes (keep Postgres as default).</p></article>
+          <article class="card"><h3>Correlation (events ↔ metrics)</h3><p>Explain what changed when an alert fired. Surface top correlated metrics and time windows.</p></article>
+          <article class="card"><h3>Catalog-driven authoring</h3><p>Dashboard builder powered by catalog/tags with strict server-side spec validation.</p></article>
+          <article class="card"><h3>Ops-grade auth clarity</h3><p>Single, predictable auth story (API key first; edge BasicAuth optional) across all routes.</p></article>
+          <article class="card"><h3>Reporting + sharing</h3><p>Scheduled exports (PDF/JSON) and shareable dashboard links with safe defaults.</p></article>
+          <article class="card"><h3>Observability upgrades</h3><p>Better internal metrics: route latency histograms, DB pool stats, ingest counters.</p></article>
+          <article class="card"><h3>Storage adapters (optional)</h3><p>ClickHouse adapter for higher volumes while keeping Postgres as the default path.</p></article>
         </div>
       </div>
     </section>
