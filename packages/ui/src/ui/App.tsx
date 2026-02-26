@@ -1796,10 +1796,13 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
       {/* Top panel: brand + status pills */}
       <div className="orbit-panel">
         <div className="orbit-panel-head">
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 20, letterSpacing: '.4px' }}>◎ Orbit Core</div>
-            <div style={{ color: 'rgba(233,238,255,.65)', fontSize: 12, marginTop: 4 }}>
-              Dashboard espacial • métricas contínuas (Nagios/Wazuh) • <a href="#" onClick={(e) => { e.preventDefault(); setTab('src-nagios'); }} style={{ color: '#55f3ff', textDecoration: 'none' }}>fontes</a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img src="/orbitcore-logo.svg" alt="orbit-core" width={38} height={38} style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 20, letterSpacing: '.4px' }}>orbit-core</div>
+              <div style={{ color: 'rgba(233,238,255,.65)', fontSize: 12, marginTop: 3 }}>
+                métricas · eventos · alertas · <a href="#" onClick={(e) => { e.preventDefault(); setTab('src-nagios'); }} style={{ color: '#55f3ff', textDecoration: 'none' }}>fontes</a>
+              </div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
