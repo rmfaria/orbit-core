@@ -4,6 +4,10 @@
  * Created by Rodrigo Menchio <rodrigomenchio@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  *
+ * Sprint 2: POST /api/v1/connectors/generate — AI-powered spec generation.
+ *   Accepts a sample payload + source hint, calls Anthropic, validates the
+ *   returned DSL spec, and saves it as a draft connector.
+ *
  * Sprint 1: connector_specs CRUD + universal raw ingest endpoint.
  *
  * POST /api/v1/ingest/raw/:source_id   — accept any JSON payload, map to
@@ -177,6 +181,18 @@ const PatchConnectorSchema = z.object({
   type:              z.enum(['metric', 'event']).optional(),
 });
 
+const GenerateSchema = z.object({
+  // Connector identity — auto-generated from source_type+timestamp if omitted
+  id:          z.string().min(1).regex(/^[a-z0-9-]+$/).optional(),
+  source_id:   z.string().min(1).optional(),
+  // Hints for the AI
+  source_type: z.string().min(1).optional(),   // e.g. "nagios", "wazuh", "fortigate"
+  type:        z.enum(['metric', 'event']).optional(), // inferred by AI if absent
+  description: z.string().optional(),
+  // Required: a representative sample of the raw payload
+  payload:     z.union([z.record(z.unknown()), z.array(z.unknown())]),
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function ensureAssets(pool: Pool, assetIds: string[]) {
@@ -209,6 +225,131 @@ export function connectorsRouter(pool?: Pool | null): Router {
        ORDER BY created_at DESC`
     );
     return res.json({ ok: true, connectors: rows });
+  });
+
+  // ── AI-generate spec from sample payload ─────────────────────────────────
+  //
+  // POST /api/v1/connectors/generate
+  //
+  // Headers: X-Ai-Key (Anthropic API key), X-Ai-Model (e.g. claude-sonnet-4-6)
+  // Body:    { payload, source_type?, type?, id?, source_id?, description? }
+  //
+  // Calls Claude to generate a DSL spec from the sample payload,
+  // validates it, and saves it as a draft connector (auto=true).
+
+  r.post('/connectors/generate', async (req, res) => {
+    const aiKey   = req.headers['x-ai-key']   as string | undefined;
+    const aiModel = req.headers['x-ai-model'] as string | undefined;
+
+    if (!aiKey)   return res.status(400).json({ ok: false, error: 'Missing X-Ai-Key header' });
+    if (!aiModel) return res.status(400).json({ ok: false, error: 'Missing X-Ai-Model header' });
+
+    const bodyParsed = GenerateSchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      return res.status(400).json({ ok: false, error: bodyParsed.error.errors });
+    }
+    const d = bodyParsed.data;
+
+    const sourceType = d.source_type ?? 'custom';
+    const slug       = sourceType.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const connId     = d.id        ?? `${slug}-${Date.now()}`;
+    const sourceId   = d.source_id ?? connId;
+
+    // ── Call Anthropic ───────────────────────────────────────────────────────
+    let anthropicRes: Response;
+    try {
+      anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key':         aiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type':      'application/json',
+        },
+        body: JSON.stringify({
+          model:      aiModel,
+          max_tokens: 2048,
+          system:     buildGenerateSystemPrompt(),
+          messages:   [{
+            role:    'user',
+            content: buildGenerateUserMessage(sourceType, d.type, d.payload),
+          }],
+        }),
+      });
+    } catch (err: unknown) {
+      return res.status(502).json({ ok: false, error: 'Failed to reach Anthropic API', detail: String(err) });
+    }
+
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text().catch(() => '');
+      return res.status(502).json({
+        ok: false,
+        error: `Anthropic API error: ${anthropicRes.status}`,
+        detail: errText.slice(0, 500),
+      });
+    }
+
+    const anthropicJson = await anthropicRes.json() as { content?: Array<{ text: string }> };
+    const rawText = anthropicJson?.content?.[0]?.text ?? '';
+
+    // Strip markdown fences if the model wrapped in ```json ... ```
+    const jsonText = rawText
+      .replace(/^```(?:json)?\s*/m, '')
+      .replace(/\s*```\s*$/m, '')
+      .trim();
+
+    let specRaw: unknown;
+    try {
+      specRaw = JSON.parse(jsonText);
+    } catch {
+      return res.status(502).json({
+        ok: false,
+        error: 'AI returned invalid JSON',
+        raw: rawText.slice(0, 1000),
+      });
+    }
+
+    // Validate against DSL schema
+    const specParsed = SpecSchema.safeParse(specRaw);
+    if (!specParsed.success) {
+      return res.status(502).json({
+        ok: false,
+        error: 'AI returned invalid connector spec',
+        issues: specParsed.error.issues,
+        raw:    specRaw,
+      });
+    }
+
+    const spec     = specParsed.data;
+    const connType = spec.type;
+
+    // Save to DB as auto-generated draft
+    if (pool) {
+      try {
+        await pool.query(
+          `INSERT INTO connector_specs
+             (id, source_id, mode, type, spec, status, auto, description)
+           VALUES ($1,$2,'push',$3,$4,'draft',true,$5)
+           ON CONFLICT (id) DO UPDATE SET
+             spec = EXCLUDED.spec, type = EXCLUDED.type,
+             auto = true, description = EXCLUDED.description, updated_at = now()`,
+          [connId, sourceId, connType, JSON.stringify(spec),
+           d.description ?? `Auto-generated connector for ${sourceType}`]
+        );
+      } catch (e) {
+        return res.status(500).json({ ok: false, error: 'Failed to save connector', detail: String(e) });
+      }
+    }
+
+    return res.status(201).json({
+      ok:        true,
+      id:        connId,
+      source_id: sourceId,
+      type:      connType,
+      status:    'draft',
+      auto:      true,
+      spec,
+      next_step: `Review the spec, then POST /api/v1/connectors/${connId}/approve to activate.`,
+    });
   });
 
   // ── Get spec ──────────────────────────────────────────────────────────────
@@ -448,6 +589,144 @@ export function connectorsRouter(pool?: Pool | null): Router {
   });
 
   return r;
+}
+
+// ── AI prompt builders ────────────────────────────────────────────────────────
+
+function buildGenerateSystemPrompt(): string {
+  return `\
+You are an orbit-core Connector Spec Builder AI.
+
+Your job: analyze a sample JSON payload from a data source and output a valid
+DSL mapping spec that transforms it into orbit-core's canonical schema.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## OUTPUT FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Return ONLY a single JSON object — no markdown, no explanation, nothing else.
+
+{
+  "type":        "metric" | "event",
+  "items_path":  "path.to.array",    // OPTIONAL — path to the items array inside root
+  "mappings": {
+    "<target_field>": {
+      "path":      "$.some.field",   // dot/bracket path in each item
+      "value":     "static",         // static literal (overrides path)
+      "transform": "number",         // optional post-transform
+      "default":   "unknown"         // fallback if path is missing or null
+    }
+  }
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## REQUIRED MAPPINGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For type="metric" (numeric time series):
+  ts        — timestamp string in ISO 8601 with timezone (REQUIRED)
+  asset_id  — unique identifier for the host/device/service (REQUIRED)
+  namespace — data source category, e.g. "nagios", "snmp", "aws" (REQUIRED)
+  metric    — metric name, e.g. "cpu_load", "mem_free_bytes" (REQUIRED)
+  value     — the numeric measurement (REQUIRED)
+  unit      — unit of measure e.g. "%" "MB" "ms" (optional)
+
+For type="event" (security/operational events):
+  ts          — timestamp string in ISO 8601 with timezone (REQUIRED)
+  asset_id    — unique identifier for the affected host/device (REQUIRED)
+  namespace   — data source category, e.g. "wazuh", "fortigate" (REQUIRED)
+  kind        — event category or rule name (REQUIRED)
+  severity    — one of: info | low | medium | high | critical (REQUIRED)
+  title       — brief human-readable description (REQUIRED)
+  message     — full log line or detailed description (optional)
+  fingerprint — deduplication key, e.g. alert ID (optional)
+  attributes  — any extra fields as a sub-object (optional)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## PATH SYNTAX
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  "$.field"              — top-level field
+  "$.parent.child"       — nested field
+  "$.list[0].value"      — first element of an array
+  "parent.child"         — same as "$.parent.child"
+
+items_path rules:
+  - Set items_path when the records array is nested inside the root object
+    e.g. root = { "data": { "metrics": [...] } } → items_path = "data.metrics"
+  - Omit items_path when root IS the array  [ {...}, {...} ]
+  - Omit items_path when root is a single record (not an array)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## AVAILABLE TRANSFORMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  number      → cast to Number (always use for "value" field)
+  string      → cast to String
+  boolean     → cast to Boolean
+  round       → Math.round(Number(v))
+  abs         → Math.abs(Number(v))
+  iso8601     → convert Unix timestamp (seconds if <1e12, ms otherwise)
+                or any date string to ISO 8601 UTC string
+                USE THIS when ts is a Unix integer or non-ISO date string
+  severity_map → maps numeric (0=info,1=low,2=medium,3=high,4=critical)
+                 or text (warning→medium, error→high, alert→high, emergency→critical)
+                 to orbit severity. USE THIS when severity is numeric or non-standard.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## DECISION GUIDE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prefer type="metric" when payload contains numeric measurements over time.
+Prefer type="event"  when payload describes alerts, logs, or incidents.
+
+For ts:
+  - Integer field          → add transform: "iso8601"
+  - ISO 8601 string        → no transform
+  - Non-standard date str  → add transform: "iso8601"
+
+For asset_id: choose the most specific host/device identifier
+  (hostname, device_id, agent.name, host, src_ip of the monitored asset)
+
+For namespace: use the source_type hint. If source_type is "custom",
+  infer from the payload structure or key names.
+
+For severity (events): if numeric → transform: "severity_map"
+  if text matching (warning/error/alert/low/medium/high/critical) → transform: "severity_map"
+  if already orbit-compatible (info/low/medium/high/critical) → no transform, use "default": "medium"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## STRICT RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Return ONLY the JSON object — no markdown, no text before or after
+2. Always include transform: "number" for the "value" field in metric specs
+3. Always map ts to an ISO 8601 string — use transform: "iso8601" for Unix ints
+4. For namespace, prefer a static "value" over a dynamic path when
+   the source type is known and consistent
+5. Include "default" for optional fields that may be missing in some payloads
+6. Do NOT invent field names — only use paths that exist in the sample payload`;
+}
+
+function buildGenerateUserMessage(
+  sourceType: string,
+  typeHint:   'metric' | 'event' | undefined,
+  payload:    unknown,
+): string {
+  const payloadStr = JSON.stringify(payload, null, 2);
+  const truncated  = payloadStr.length > 8000
+    ? payloadStr.slice(0, 8000) + '\n... (truncated)'
+    : payloadStr;
+
+  return [
+    `Source type: ${sourceType}`,
+    typeHint ? `Target type: ${typeHint}` : 'Target type: infer from payload',
+    '',
+    'Sample payload:',
+    truncated,
+    '',
+    'Generate the DSL spec.',
+  ].join('\n');
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
