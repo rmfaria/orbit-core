@@ -4040,12 +4040,20 @@ function ConnectorsTab() {
   const [runs, setRuns]             = React.useState<ConnectorRun[]>([]);
   const [runsLoading, setRunsLoading] = React.useState(false);
 
-  // ── Test panel ──
+  // ── Test panel (dry-run, pull) ──
   const [testId, setTestId]           = React.useState<string | null>(null);
   const [testPayload, setTestPayload] = React.useState('');
   const [testLoading, setTestLoading] = React.useState(false);
   const [testResult, setTestResult]   = React.useState<any>(null);
   const [testErr, setTestErr]         = React.useState<string | null>(null);
+
+  // ── Push panel (real ingest, push connectors) ──
+  const [pushId, setPushId]           = React.useState<string | null>(null);
+  const [pushPayload, setPushPayload] = React.useState('');
+  const [pushLoading, setPushLoading] = React.useState(false);
+  const [pushResult, setPushResult]   = React.useState<any>(null);
+  const [pushErr, setPushErr]         = React.useState<string | null>(null);
+  const [pushCopied, setPushCopied]   = React.useState(false);
 
   // ── Create form ──
   const [cf, setCf] = React.useState({
@@ -4127,6 +4135,38 @@ function ConnectorsTab() {
       if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
       setTestResult(j);
     } catch (e: any) { setTestErr(String(e)); } finally { setTestLoading(false); }
+  }
+
+  function togglePush(c: Connector) {
+    if (pushId === c.id) { setPushId(null); setPushResult(null); setPushErr(null); return; }
+    setPushId(c.id); setPushPayload(''); setPushResult(null); setPushErr(null); setPushCopied(false);
+  }
+
+  async function runPush(c: Connector) {
+    if (!pushPayload.trim()) { setPushErr('Informe o payload JSON'); return; }
+    let payloadObj: unknown;
+    try { payloadObj = JSON.parse(pushPayload); } catch { setPushErr('JSON inválido'); return; }
+    setPushLoading(true); setPushResult(null); setPushErr(null);
+    try {
+      const r = await fetch(`api/v1/ingest/raw/${encodeURIComponent(c.source_id)}`, {
+        method: 'POST', headers: apiHeaders(), body: JSON.stringify(payloadObj),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+      setPushResult(j);
+    } catch (e: any) { setPushErr(String(e)); } finally { setPushLoading(false); }
+  }
+
+  function curlExample(c: Connector): string {
+    const base = `${window.location.origin}/orbit-core`;
+    const key  = localStorage.getItem('orbit_api_key') ?? 'YOUR_API_KEY';
+    const body = pushPayload.trim() || '{"your": "payload"}';
+    return [
+      `curl -s -X POST '${base}/api/v1/ingest/raw/${c.source_id}' \\`,
+      `  -H 'Content-Type: application/json' \\`,
+      key !== 'YOUR_API_KEY' ? `  -H 'X-Api-Key: ${key}' \\` : `  -H 'X-Api-Key: YOUR_API_KEY' \\`,
+      `  -d '${body}'`,
+    ].join('\n');
   }
 
   async function create() {
@@ -4228,6 +4268,7 @@ function ConnectorsTab() {
                   <div style={{ color: '#475569', fontSize: 11, marginTop: 2 }}>
                     source: <code style={{ color: '#7dd3fc' }}>{c.source_id}</code>
                     {c.mode === 'pull' && c.pull_url && <> · pull: <code style={{ color: '#a78bfa' }}>{c.pull_url}</code> ({c.pull_interval_min}min)</>}
+                    {c.mode === 'push' && <> · webhook: <code style={{ color: '#34d399' }}>/api/v1/ingest/raw/{c.source_id}</code></>}
                   </div>
                 </div>
                 {/* Actions */}
@@ -4237,6 +4278,9 @@ function ConnectorsTab() {
                   )}
                   {c.status === 'approved' && (
                     <button onClick={() => disable(c.id)} style={{ ...S.btnSm, color: '#94a3b8' }} title="Desativar">⊘ Desativar</button>
+                  )}
+                  {c.mode === 'push' && (
+                    <button onClick={() => togglePush(c)} style={{ ...S.btnSm, color: '#34d399', borderColor: 'rgba(52,211,153,0.30)', background: pushId === c.id ? 'rgba(52,211,153,0.10)' : 'transparent' }} title="Enviar payload">📤 Push</button>
                   )}
                   <button onClick={() => toggleTest(c)} style={{ ...S.btnSm, color: '#fbbf24', borderColor: 'rgba(251,191,36,0.30)', background: testId === c.id ? 'rgba(251,191,36,0.10)' : 'transparent' }} title="Testar">⚡ Testar</button>
                   <button onClick={() => del(c.id)} style={{ ...S.btnSm, color: '#f87171', borderColor: 'rgba(248,113,113,0.30)' }} title="Remover">🗑</button>
@@ -4282,6 +4326,46 @@ function ConnectorsTab() {
                         })}
                       </tbody>
                     </table>
+                  )}
+                </div>
+              )}
+
+              {/* Push panel */}
+              {pushId === c.id && (
+                <div style={{ borderTop: '1px solid rgba(52,211,153,0.15)', padding: '12px 16px', background: 'rgba(4,7,19,0.4)' }}>
+                  <div style={{ color: '#34d399', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>📤 Push — ingestão real</div>
+                  {/* Webhook URL row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' as const }}>
+                    <code style={{ fontSize: 11, color: '#94a3b8', background: 'rgba(15,23,42,0.6)', padding: '4px 8px', borderRadius: 6, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                      POST {window.location.origin}/orbit-core/api/v1/ingest/raw/{c.source_id}
+                    </code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(curlExample(c)); setPushCopied(true); setTimeout(() => setPushCopied(false), 2000); }}
+                      style={{ ...S.btnSm, color: pushCopied ? '#4ade80' : '#34d399', borderColor: 'rgba(52,211,153,0.30)', flexShrink: 0, fontSize: 11 }}
+                    >{pushCopied ? '✓ Copiado' : '📋 Copiar curl'}</button>
+                  </div>
+                  <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>
+                    Payload enviado será mapeado pelo spec e gravado no banco. O connector precisa estar <strong style={{ color: '#4ade80' }}>aprovado</strong>.
+                  </div>
+                  <textarea
+                    style={{ ...S.input, width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, resize: 'vertical' as const, boxSizing: 'border-box' as const, marginBottom: 8 }}
+                    value={pushPayload} onChange={e => setPushPayload(e.target.value)}
+                    placeholder={'{\n  "your": "raw payload here"\n}'}
+                  />
+                  {pushErr && <div style={{ ...S.err, marginBottom: 8, fontSize: 11 }}>✗ {pushErr}</div>}
+                  <button onClick={() => runPush(c)} disabled={pushLoading} style={{ ...S.btnSm, color: '#34d399', borderColor: 'rgba(52,211,153,0.35)' }}>
+                    {pushLoading ? '⏳ Enviando…' : '📤 Enviar e Ingestar'}
+                  </button>
+                  {pushResult && (
+                    <div style={{ marginTop: 10, display: 'flex', gap: 16, fontSize: 12, flexWrap: 'wrap' as const }}>
+                      <span style={{ color: '#4ade80', fontWeight: 700 }}>✓ ingestados: {pushResult.ingested ?? pushResult.inserted ?? 0}</span>
+                      {(pushResult.skipped ?? 0) > 0 && <span style={{ color: '#f87171' }}>✗ pulados: {pushResult.skipped}</span>}
+                      {pushResult.errors?.length > 0 && (
+                        <div style={{ color: '#f87171', fontSize: 11, width: '100%' }}>
+                          {pushResult.errors.slice(0, 3).map((e: string, i: number) => <div key={i}>{e}</div>)}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
