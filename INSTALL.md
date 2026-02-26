@@ -17,10 +17,11 @@ serves a live dashboard — all backed by a single PostgreSQL database.
    - [Wazuh](#wazuh-connector)
    - [n8n](#n8n-connector)
    - [Fortigate](#fortigate-connector)
-6. [Operations](#operations)
-7. [Production Hardening](#production-hardening)
-8. [Docker Swarm (Advanced)](#docker-swarm-advanced)
-9. [Troubleshooting](#troubleshooting)
+6. [AI Connector Framework](#ai-connector-framework)
+7. [Operations](#operations)
+8. [Production Hardening](#production-hardening)
+9. [Docker Swarm (Advanced)](#docker-swarm-advanced)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -42,7 +43,7 @@ serves a live dashboard — all backed by a single PostgreSQL database.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/orbit-core.git
+git clone https://github.com/rmfaria/orbit-core.git
 cd orbit-core
 
 # 2. Create your environment file
@@ -334,6 +335,153 @@ end
 
 **Step 3 — Use the Wazuh connector** (Mode A or B) — Fortigate alerts arrive with
 `namespace=wazuh`, `kind=fortigate` and are surfaced as the Fortigate source in the UI.
+
+---
+
+## AI Connector Framework
+
+Available since v1.1.0. Create custom pull/push connectors that map any JSON payload
+to orbit-core's canonical schema — manually or with AI assistance.
+
+### Concepts
+
+| Term | Description |
+|------|-------------|
+| **Connector spec** | A DSL mapping that describes how to transform a source payload into metrics or events |
+| **push mode** | An external system POSTs to `/api/v1/ingest/raw/:source_id`; orbit-core applies the spec |
+| **pull mode** | orbit-core fetches a remote URL on a configurable interval and applies the spec |
+| **Status** | `draft` → `approved` → `disabled`. Only `approved` connectors process data |
+
+### Creating a connector manually
+
+```bash
+curl -s -X POST http://localhost/orbit-core/api/v1/connectors \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: YOUR_KEY" \
+  -d '{
+    "id":        "my-api",
+    "source_id": "my-api",
+    "mode":      "pull",
+    "type":      "metric",
+    "pull_url":  "http://my-service/metrics",
+    "pull_interval_min": 1,
+    "spec": {
+      "type": "metric",
+      "items_path": "data",
+      "mappings": {
+        "ts":        { "path": "$.timestamp", "transform": "iso8601" },
+        "asset_id":  { "path": "$.host" },
+        "namespace": { "value": "my-api" },
+        "metric":    { "path": "$.metric" },
+        "value":     { "path": "$.value", "transform": "number" }
+      }
+    }
+  }'
+# → {"ok":true,"id":"my-api"}
+```
+
+Approve it to start ingesting:
+
+```bash
+curl -s -X POST http://localhost/orbit-core/api/v1/connectors/my-api/approve \
+  -H "X-Api-Key: YOUR_KEY"
+```
+
+### Generating a spec with AI
+
+Send a sample payload to the generate endpoint; Claude analyzes its structure and
+produces a ready-to-use DSL spec automatically:
+
+```bash
+curl -s -X POST http://localhost/orbit-core/api/v1/connectors/generate \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: YOUR_KEY" \
+  -H "X-Ai-Key: sk-ant-YOUR_ANTHROPIC_KEY" \
+  -H "X-Ai-Model: claude-sonnet-4-6" \
+  -d '{
+    "source_type": "prometheus",
+    "payload": {
+      "status": "success",
+      "data": {
+        "result": [
+          { "metric": { "instance": "host1", "__name__": "cpu_usage" }, "value": [1700000000, "72.4"] }
+        ]
+      }
+    }
+  }'
+# → {"ok":true,"id":"prometheus-...","status":"draft","spec":{...}}
+```
+
+Review the returned spec, then approve:
+
+```bash
+curl -s -X POST http://localhost/orbit-core/api/v1/connectors/<id>/approve \
+  -H "X-Api-Key: YOUR_KEY"
+```
+
+### Pull connector authentication
+
+Three authentication modes are supported for pull connectors:
+
+```bash
+# Bearer token
+curl -s -X PATCH http://localhost/orbit-core/api/v1/connectors/<id> \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: YOUR_KEY" \
+  -d '{"auth": {"kind": "bearer", "token": "sk-..."}}'
+
+# HTTP Basic auth
+curl -s -X PATCH http://localhost/orbit-core/api/v1/connectors/<id> \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: YOUR_KEY" \
+  -d '{"auth": {"kind": "basic", "user": "admin", "pass": "secret"}}'
+
+# Custom header
+curl -s -X PATCH http://localhost/orbit-core/api/v1/connectors/<id> \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: YOUR_KEY" \
+  -d '{"auth": {"kind": "header", "name": "X-Api-Key", "value": "abc123"}}'
+```
+
+### Dry-run test
+
+Test a connector spec against a payload without writing anything to the database:
+
+```bash
+# Provide a payload explicitly
+curl -s -X POST http://localhost/orbit-core/api/v1/connectors/<id>/test \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: YOUR_KEY" \
+  -d '{"payload": {"host": "server-01", "cpu": 72.4, "ts": 1700000000}}'
+
+# For pull connectors — omit payload to auto-fetch from pull_url
+curl -s -X POST http://localhost/orbit-core/api/v1/connectors/<id>/test \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: YOUR_KEY" \
+  -d '{}'
+# → {"ok":true,"type":"metric","source":"fetched","valid":5,"skipped":0,"mapped":[...]}
+```
+
+### DSL spec reference
+
+| Field | Description |
+|-------|-------------|
+| `type` | `"metric"` or `"event"` |
+| `items_path` | Dot-separated path to the items array inside the root (`"data.results"`). Omit if root is the array or a single object. |
+| `mappings` | Object mapping target fields to their source definitions |
+
+Each mapping entry supports:
+
+| Key | Description |
+|-----|-------------|
+| `path` | JSONPath-like dot/bracket expression (`"$.host"`, `"$.list[0].value"`) |
+| `value` | Static literal (overrides `path`) |
+| `transform` | `number`, `string`, `boolean`, `round`, `abs`, `iso8601`, `severity_map` |
+| `default` | Fallback value when `path` resolves to `undefined` or `null` |
+
+**Required fields for `type="metric"`:** `ts`, `asset_id`, `namespace`, `metric`, `value`
+
+**Required fields for `type="event"`:** `ts`, `asset_id`, `namespace`, `kind`, `severity`, `title`
 
 ---
 
