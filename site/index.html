@@ -4,17 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>orbit-core — API-first telemetry core (OSS)</title>
-  <meta name="description" content="orbit-core is an API-first telemetry + events core backed by Postgres. Ingest security & ops signals (Nagios/Wazuh), query timeseries/events with performance-first defaults, retention + rollups." />
+  <meta name="description" content="orbit-core is an API-first telemetry + events core backed by Postgres. Ingest security & ops signals (Nagios/Wazuh), correlate anomalies, fire alerts via webhook or Telegram, and query timeseries/events with performance-first defaults." />
 
   <!-- OpenGraph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="orbit-core — API-first telemetry core (OSS)" />
-  <meta property="og:description" content="Ingest metrics + events, query with performance-first defaults, store in Postgres with rollups and retention. Open source (Apache-2.0)." />
+  <meta property="og:description" content="Ingest metrics + events, correlate anomalies, fire alerts via webhook or Telegram. Docker-ready, Postgres-backed, open source (Apache-2.0)." />
   <meta property="og:url" content="https://orbit-core.org" />
 
   <meta name="theme-color" content="#0b1220" />
 
-  <!-- Icons -->
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
   <link rel="icon" href="./assets/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
@@ -27,7 +26,6 @@
     window.dataLayer = window.dataLayer || [];
     function gtag(){dataLayer.push(arguments);}
     gtag('js', new Date());
-
     gtag('config', 'G-NHBFB72V58');
   </script>
 </head>
@@ -47,6 +45,7 @@
       <nav class="nav" aria-label="Primary">
         <a href="#why">Why</a>
         <a href="#how">How</a>
+        <a href="#whats-new">What's New</a>
         <a href="#quickstart">Quickstart</a>
         <a href="#connectors">Connectors</a>
         <a href="#roadmap">Roadmap</a>
@@ -75,6 +74,7 @@
       <div class="mobileNav__links" aria-label="Mobile">
         <a href="#why">Why</a>
         <a href="#how">How</a>
+        <a href="#whats-new">What's New</a>
         <a href="#quickstart">Quickstart</a>
         <a href="#connectors">Connectors</a>
         <a href="#roadmap">Roadmap</a>
@@ -88,20 +88,22 @@
   </div>
 
   <main id="main">
+
+    <!-- ── Hero ──────────────────────────────────────────────────────────── -->
     <section class="hero">
       <div class="container hero__grid">
         <div class="hero__copy">
-          <div class="pill">Apache-2.0 • Postgres-first • Subpath-friendly</div>
+          <div class="pill">Apache-2.0 • Postgres-first • Docker-ready • Alerts</div>
           <h1>API-first telemetry core for <span class="grad">metrics + events</span>.</h1>
           <p class="lead">
-            orbit-core is a small, predictable core that unifies <strong>timeseries metrics</strong> and <strong>operational/security events</strong>
-            behind a stable API. Connectors stay <strong>deterministic (no-AI)</strong>; AI (if enabled) is <strong>assistive only</strong>
-            for authoring dashboards as validated specs.
+            orbit-core unifies <strong>timeseries metrics</strong> and <strong>operational/security events</strong>
+            behind a stable API. Correlate anomalies automatically, fire <strong>alerts via webhook or Telegram</strong>,
+            and deploy in minutes with a single <span class="mono">docker compose up -d</span>.
           </p>
 
           <div class="hero__buttons">
             <a class="btn btn--primary" href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">View on GitHub</a>
-            <a class="btn btn--ghost" href="#quickstart">Run locally</a>
+            <a class="btn btn--ghost" href="#quickstart">Run in Docker</a>
             <a class="btn btn--ghost" href="#how">Architecture</a>
           </div>
 
@@ -115,15 +117,15 @@
               <div class="kpi__v">/api/v1/query</div>
             </div>
             <div class="kpi">
-              <div class="kpi__k">Catalog</div>
-              <div class="kpi__v">/api/v1/catalog/*</div>
+              <div class="kpi__k">Alerts</div>
+              <div class="kpi__v">/api/v1/alerts/*</div>
             </div>
           </div>
         </div>
 
         <div class="hero__panel" role="img" aria-label="Architecture preview">
           <div class="panel__title">At a glance</div>
-          <div class="panel__sub">Sources → Connectors → API → Postgres → UI/Clients</div>
+          <div class="panel__sub">Sources → Connectors → API → Postgres → UI / Alerts</div>
 
           <a href="./assets/orbit-core-architecture.png" target="_blank" rel="noreferrer" class="diagramLink" aria-label="Open the full architecture diagram">
             <img class="diagramImg" src="./assets/orbit-core-architecture.png" alt="orbit-core architecture diagram" loading="lazy" />
@@ -132,18 +134,19 @@
           <div class="panel__foot">
             <span class="mono">Performance-first defaults</span>
             <span class="sep">•</span>
-            <span class="mono">Downsample + Top‑N group-by</span>
+            <span class="mono">Webhook + Telegram alerts</span>
           </div>
         </div>
       </div>
     </section>
 
+    <!-- ── Why ───────────────────────────────────────────────────────────── -->
     <section id="why" class="section">
       <div class="container">
         <h2>Why orbit-core</h2>
         <p class="muted">
           Most monitoring stacks drift into brittle pipelines: metrics in one place, events in another,
-          dashboards glued to ad-hoc queries, and unbounded dimensions that explode cardinality.
+          alerts that never reach anyone, and dashboards glued to ad-hoc queries.
           orbit-core is built to stay fast, predictable, and easy to operate.
         </p>
 
@@ -153,16 +156,32 @@
             <p>Store both telemetry types in one canonical core and query them through a stable API.</p>
           </article>
           <article class="card">
+            <h3>Alerts — webhook &amp; Telegram</h3>
+            <p>Configurable threshold and absence rules evaluated every 60 s. Fire on <span class="mono">firing</span> and auto-resolve on <span class="mono">resolved</span>.</p>
+          </article>
+          <article class="card">
+            <h3>Auto-correlation</h3>
+            <p>Background worker links metric anomalies (z-score + relative change) to concurrent events automatically.</p>
+          </article>
+          <article class="card">
+            <h3>Docker-ready</h3>
+            <p>Self-contained <span class="mono">docker compose up -d</span> — no Node.js needed on the host. Migrations run automatically on first boot.</p>
+          </article>
+          <article class="card">
             <h3>Deterministic connectors</h3>
-            <p>No-AI shippers you can run from cron 24/7 with state files and bounded batches.</p>
+            <p>No-AI shippers you can run from cron 24/7 with state files, fingerprint deduplication and bounded batches.</p>
           </article>
           <article class="card">
             <h3>Rollups + retention</h3>
-            <p>Plain Postgres with rollups and retention (defaults to <span class="mono">180d</span> on 1h rollups).</p>
+            <p>Plain Postgres with automatic rollups. Defaults: raw <span class="mono">14d</span>, 5 m rollup <span class="mono">90d</span>, 1 h rollup <span class="mono">180d</span>.</p>
           </article>
           <article class="card">
             <h3>Bounded queries</h3>
-            <p>Auto-bucket + Top‑N group-by to avoid runaway query cost and series explosions.</p>
+            <p>Auto-bucket + Top-N group-by to avoid runaway query cost and cardinality explosions.</p>
+          </article>
+          <article class="card">
+            <h3>AI-assisted dashboards</h3>
+            <p>Optional Claude-powered builder generates validated DashboardSpec from natural language. AI is assistive only, never in automated pipelines.</p>
           </article>
         </div>
 
@@ -172,6 +191,7 @@
             <ul class="list">
               <li>An API-first storage + query core for <span class="mono">metrics</span> and <span class="mono">events</span>.</li>
               <li>A connector pattern: deterministic ingestion with deduplication and auditability.</li>
+              <li>An alert engine: configurable rules evaluated every 60 s, dispatching to channels.</li>
               <li>Dashboards as a validated spec (portable, versionable, reviewable).</li>
             </ul>
           </div>
@@ -179,34 +199,40 @@
             <h3>What it is not</h3>
             <ul class="list">
               <li>Not a full SIEM replacement.</li>
-              <li>Not “AIOps magic” running production pipelines.</li>
+              <li>Not "AIOps magic" running production pipelines.</li>
               <li>Not unbounded SQL / infinite-cardinality by default.</li>
+              <li>Not a PagerDuty replacement (yet).</li>
             </ul>
           </div>
         </div>
       </div>
     </section>
 
+    <!-- ── How it works ───────────────────────────────────────────────────── -->
     <section id="how" class="section section--alt">
       <div class="container">
         <h2>How it works</h2>
         <p class="muted">
           Connectors ship deterministic batches to ingest endpoints. The API validates, stores and serves queries.
-          Deploy behind TLS + auth and it works behind subpaths.
+          Three background workers handle rollups, anomaly correlation and alert evaluation continuously.
         </p>
 
         <div class="split">
           <div class="split__col">
             <h3>Core endpoints</h3>
             <ul class="list">
-              <li><span class="mono">GET /api/v1/health</span> — build + health</li>
-              <li><span class="mono">GET /api/v1/metrics</span> — JSON metrics</li>
-              <li><span class="mono">GET /api/v1/metrics/prom</span> — Prometheus exporter</li>
+              <li><span class="mono">GET  /api/v1/health</span> — build + DB status</li>
+              <li><span class="mono">GET  /api/v1/metrics/prom</span> — Prometheus exporter</li>
               <li><span class="mono">POST /api/v1/ingest/metrics</span> — MetricPoints</li>
-              <li><span class="mono">POST /api/v1/ingest/events</span> — Events</li>
-              <li><span class="mono">POST /api/v1/query</span> — orbitql query</li>
-              <li><span class="mono">GET /api/v1/catalog/*</span> — assets/metrics/dimensions</li>
-              <li><span class="mono">POST /api/v1/dashboards/validate</span> — validate DashboardSpec (builders)</li>
+              <li><span class="mono">POST /api/v1/ingest/events</span> — Events (fingerprint dedup)</li>
+              <li><span class="mono">POST /api/v1/query</span> — OrbitQL time-series query</li>
+              <li><span class="mono">GET  /api/v1/catalog/*</span> — assets / metrics / dimensions</li>
+              <li><span class="mono">GET  /api/v1/correlations</span> — anomaly ↔ event links</li>
+              <li><span class="mono">*    /api/v1/alerts/rules</span> — CRUD alert rules</li>
+              <li><span class="mono">*    /api/v1/alerts/channels</span> — webhook + Telegram channels</li>
+              <li><span class="mono">GET  /api/v1/alerts/history</span> — notification log</li>
+              <li><span class="mono">*    /api/v1/dashboards</span> — CRUD dashboards (JSON spec)</li>
+              <li><span class="mono">POST /api/v1/ai/dashboard</span> — AI-assisted generation</li>
             </ul>
           </div>
 
@@ -233,123 +259,247 @@
               </div>
             </div>
 
+            <h3 style="margin-top:16px;">Background workers</h3>
+            <div class="callout">
+              <div class="callout__row">
+                <span class="mono">rollup</span>
+                <span class="muted">5 m + 1 h aggregation + retention</span>
+              </div>
+              <div class="callout__row">
+                <span class="mono">correlate</span>
+                <span class="muted">anomaly detection (z-score)</span>
+              </div>
+              <div class="callout__row">
+                <span class="mono">alerts</span>
+                <span class="muted">rule evaluation every 60 s</span>
+              </div>
+            </div>
+
             <div class="small muted" style="margin-top:12px;">
-              Want details? See <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">docs/ARCHITECTURE.md</a>.
+              See <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">docs/ARCHITECTURE.md</a> for full details.
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section id="quickstart" class="section">
+    <!-- ── What's New ─────────────────────────────────────────────────────── -->
+    <section id="whats-new" class="section">
+      <div class="container">
+        <div class="hgroup">
+          <h2>What's New</h2>
+          <span class="pill" style="font-size:11px;">Recently shipped</span>
+        </div>
+        <p class="muted">Features shipped in the latest release cycle.</p>
+
+        <div class="cards" style="grid-template-columns: repeat(3,1fr);">
+          <article class="card">
+            <div class="card__k">🔔 Alerts</div>
+            <h3>Webhook &amp; Telegram notifications</h3>
+            <p>
+              Configurable alert rules (threshold + absence conditions). Evaluated every 60 s.
+              Notifications dispatched on <span class="mono">firing</span> and <span class="mono">resolved</span> transitions
+              via generic webhook or Telegram Bot API. Silence, enable/disable and full history included.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card__k">🐳 Docker</div>
+            <h3>Self-contained Docker setup</h3>
+            <p>
+              Multi-stage <span class="mono">Dockerfile</span> + <span class="mono">docker-compose.yml</span>.
+              Migrations run automatically on first boot via a one-shot <span class="mono">migrate</span> service.
+              No Node.js or pnpm required on the host — deploy from a fresh machine in minutes.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card__k">🔗 Correlations</div>
+            <h3>Anomaly auto-correlation</h3>
+            <p>
+              Background worker detects metric spikes (z-score + relative change) and links them
+              to concurrent events. Results surfaced in the Correlations tab and
+              via <span class="mono">GET /api/v1/correlations</span>.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card__k">🧹 Deduplication</div>
+            <h3>Event fingerprint dedup</h3>
+            <p>
+              Ingest uses <span class="mono">ON CONFLICT (fingerprint) DO UPDATE</span> — connectors can
+              re-ship the same event safely without creating duplicates. Unique partial index
+              enforces integrity at the database level.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card__k">⚡ Reliability</div>
+            <h3>Rate limiting &amp; connection pooling</h3>
+            <p>
+              300 req/min per API key or IP with IPv6 support. Postgres pool with idle, connection
+              and statement timeouts. <span class="mono">X-Request-ID</span> on every request for log correlation.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card__k">📊 Dashboards</div>
+            <h3>AI-assisted dashboard builder</h3>
+            <p>
+              Claude-powered assistant generates <span class="mono">DashboardSpec</span> from natural language.
+              Specs are validated server-side before saving — AI is assistive, the schema is the contract.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Quickstart ─────────────────────────────────────────────────────── -->
+    <section id="quickstart" class="section section--alt">
       <div class="container">
         <div class="hgroup">
           <h2>Quickstart</h2>
-          <p class="muted">Local dev in a few minutes (excluding Postgres image pull).</p>
+          <p class="muted">Up and running in under 5 minutes. Requires Docker ≥ 24 and Docker Compose ≥ 2.20.</p>
         </div>
 
         <div class="code">
           <div class="code__bar">
-            <div class="code__title">Terminal</div>
+            <div class="code__title">Docker (recommended)</div>
             <button class="copy" data-copy="#quickstart-code" aria-label="Copy quickstart commands">Copy</button>
           </div>
-          <pre class="mono" id="quickstart-code"><code>git clone https://github.com/rmfaria/orbit-core
+          <pre class="mono" id="quickstart-code"><code># 1. Clone
+git clone https://github.com/rmfaria/orbit-core
 cd orbit-core
 
-pnpm install
+# 2. Configure
+cp .env.example .env
+# Set a random API key:
+#   sed -i '' "s/ORBIT_API_KEY=/ORBIT_API_KEY=$(openssl rand -hex 32)/" .env
 
-# Postgres (optional)
-docker compose -f scripts/dev-postgres.docker-compose.yml up -d
-export DATABASE_URL='postgres://postgres:postgres@localhost:5432/orbit'
+# 3. Build images (~3 min on first run)
+docker compose build
 
-pnpm dev
+# 4. Start stack  (postgres → migrations → api → ui)
+docker compose up -d
 
-# API: http://localhost:3000/api/v1/health
-# UI:  http://localhost:5173</code></pre>
+# 5. Verify
+curl http://localhost/orbit-core/api/v1/health
+# → {"ok":true,"db":"ok","workers":["rollup","correlate","alerts"]}
+
+# Open the UI:  http://localhost/orbit-core/</code></pre>
         </div>
 
         <div class="grid2" style="margin-top:16px;">
           <div class="card">
-            <h3>Production note</h3>
-            <p>
-              Keep secrets server-side. Put orbit-core behind a reverse proxy with TLS and auth.
-              You can also enable an application API key (see <span class="mono">ORBIT_API_KEY</span>). Subpath deployments are supported.
-            </p>
+            <h3>What just started</h3>
+            <ul class="list">
+              <li><strong>postgres</strong> — PostgreSQL 16 with a persistent named volume</li>
+              <li><strong>migrate</strong> — applies all 11 migrations, then exits (0)</li>
+              <li><strong>api</strong> — Express API with 3 background workers</li>
+              <li><strong>ui</strong> — nginx serving the React SPA + proxying <span class="mono">/orbit-core/api/</span></li>
+            </ul>
           </div>
           <div class="card">
-            <h3>Observability</h3>
-            <p>
-              JSON metrics: <span class="mono">/api/v1/metrics</span><br>
-              Prometheus exporter: <span class="mono">/api/v1/metrics/prom</span>
-            </p>
+            <h3>Configure your first alert</h3>
+            <pre class="mono" style="font-size:12px; background:rgba(7,11,20,.5); border-radius:10px; padding:10px; margin:0;"><code># Create a Telegram channel
+curl -X POST localhost/orbit-core/api/v1/alerts/channels \
+  -H "Content-Type: application/json" \
+  -d '{"id":"tg","name":"Ops","kind":"telegram",
+  "config":{"bot_token":"TOKEN","chat_id":"CHATID"}}'
+
+# Create a threshold rule (cpu > 85 avg 5 min)
+curl -X POST localhost/orbit-core/api/v1/alerts/rules \
+  -H "Content-Type: application/json" \
+  -d '{"name":"CPU high","namespace":"nagios",
+  "metric":"cpu","channels":["tg"],
+  "condition":{"kind":"threshold","op":">",
+    "value":85,"window_min":5,"agg":"avg"}}'</code></pre>
+          </div>
+        </div>
+
+        <div class="grid2" style="margin-top:12px;">
+          <div class="card">
+            <h3>Development mode</h3>
+            <p style="margin-bottom:10px;">Need hot-reload? Run API and UI natively (requires Node.js ≥ 22 and pnpm):</p>
+            <pre class="mono" style="font-size:12px; background:rgba(7,11,20,.5); border-radius:10px; padding:10px; margin:0;"><code>pnpm install
+export DATABASE_URL='postgres://postgres:postgres@localhost:5432/orbit'
+pnpm api:dev   # port 3000
+pnpm ui:dev    # port 5173</code></pre>
+          </div>
+          <div class="card">
+            <h3>Production hardening</h3>
+            <ul class="list">
+              <li>Set <span class="mono">ORBIT_API_KEY</span> to a strong random secret.</li>
+              <li>Change <span class="mono">POSTGRES_PASSWORD</span> from the default.</li>
+              <li>Put a TLS reverse proxy (nginx / Caddy) in front on port 443.</li>
+              <li>See <a href="https://github.com/rmfaria/orbit-core/blob/main/INSTALL.md" target="_blank" rel="noreferrer">INSTALL.md</a> for the full guide including Docker Swarm.</li>
+            </ul>
           </div>
         </div>
       </div>
     </section>
 
-    <section id="connectors" class="section section--alt">
+    <!-- ── Connectors ─────────────────────────────────────────────────────── -->
+    <section id="connectors" class="section">
       <div class="container">
         <h2>Connectors</h2>
-        <p class="muted">Connectors are deterministic, cron-friendly and no-AI.</p>
+        <p class="muted">Connectors are deterministic, cron-friendly and no-AI. They run on monitored servers — not inside the orbit-core stack.</p>
 
         <div class="cards">
           <article class="card">
             <div class="card__k">Primary</div>
-            <h3>Nagios Connector (Python)</h3>
-            <p>Ships perfdata and HARD state changes (metrics + events).</p>
+            <h3>Nagios (Python)</h3>
+            <p>Ships perfdata as metrics and HARD state changes as events. Global event handler + cron pollers with byte-offset state.</p>
             <p class="small">
-              Install: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/nagios/INSTALL.md" target="_blank" rel="noreferrer">connectors/nagios/INSTALL.md</a>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/nagios/INSTALL.md" target="_blank" rel="noreferrer">connectors/nagios/INSTALL.md</a>
             </p>
           </article>
 
           <article class="card">
             <div class="card__k">Ready</div>
-            <h3>Wazuh Connector (Python)</h3>
-            <p>Ships Wazuh alerts from <code>alerts.json</code> into orbit-core events (severity mapping + state cursor).</p>
+            <h3>Wazuh (Python)</h3>
+            <p>Ships Wazuh alerts from <span class="mono">alerts.json</span> or OpenSearch API. Rule level → severity mapping + timestamp cursor.</p>
             <p class="small">
-              Install: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/INSTALL.md" target="_blank" rel="noreferrer">connectors/wazuh/INSTALL.md</a>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/INSTALL.md" target="_blank" rel="noreferrer">connectors/wazuh/INSTALL.md</a>
             </p>
           </article>
 
           <article class="card">
             <div class="card__k">Ready</div>
-            <h3>n8n Connector (Python + workflow)</h3>
-            <p>Ships n8n execution errors + stuck runs (polling API) and optional realtime Error Trigger workflow.</p>
+            <h3>n8n (Python + workflow)</h3>
+            <p>Ships execution errors and stuck runs. Polling mode via REST API + optional realtime Error Trigger workflow.</p>
             <p class="small">
-              Install: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/n8n/INSTALL.md" target="_blank" rel="noreferrer">connectors/n8n/INSTALL.md</a>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/n8n/INSTALL.md" target="_blank" rel="noreferrer">connectors/n8n/INSTALL.md</a>
             </p>
           </article>
 
           <article class="card">
             <div class="card__k">Via Wazuh</div>
             <h3>Fortigate (syslog → Wazuh)</h3>
-            <p>Fortigate logs flow through Wazuh and are surfaced as <span class="mono">namespace=wazuh</span> + <span class="mono">kind=fortigate</span>.</p>
+            <p>Fortigate sends syslogs (UDP/TCP 514) to Wazuh. Events arrive as <span class="mono">namespace=wazuh, kind=fortigate</span> and are surfaced separately in the UI.</p>
             <p class="small">
-              Install: <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/fortigate/INSTALL.md" target="_blank" rel="noreferrer">connectors/fortigate/INSTALL.md</a>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/fortigate/INSTALL.md" target="_blank" rel="noreferrer">connectors/fortigate/INSTALL.md</a>
             </p>
           </article>
+        </div>
 
-          <article class="card">
-            <div class="card__k">Optional</div>
-            <h3>Nagios shipper (TypeScript)</h3>
-            <p>Monorepo-integrated shipper package (use if you prefer TS toolchains).</p>
-            <p class="small">
-              Docs: <a href="https://github.com/rmfaria/orbit-core/tree/main/packages/nagios-shipper" target="_blank" rel="noreferrer">packages/nagios-shipper</a>
-            </p>
-          </article>
+        <div class="callout" style="margin-top:14px;">
+          <div class="callout__note">
+            <strong>Connector contract:</strong> any system that can do a
+            <span class="mono">POST /api/v1/ingest/metrics</span> or
+            <span class="mono">POST /api/v1/ingest/events</span> with a JSON payload and an
+            <span class="mono">X-Api-Key</span> header is a connector. No SDK required.
+          </div>
         </div>
       </div>
     </section>
 
-    <section class="section" id="security">
+    <!-- ── Security ───────────────────────────────────────────────────────── -->
+    <section class="section section--alt" id="security">
       <div class="container">
         <h2>Security</h2>
         <div class="split">
           <div class="split__col">
             <ul class="list">
-              <li>No secrets in the browser (server-side only).</li>
-              <li>Prefer TLS + auth in front of the API.</li>
-              <li>Use safe limits and avoid unbounded queries.</li>
+              <li>No secrets in the browser — API key lives in <span class="mono">localStorage</span>, never baked into built assets.</li>
+              <li>Prefer TLS + <span class="mono">ORBIT_API_KEY</span> in front of the API in any network-exposed deployment.</li>
+              <li>Rate limiting (300 req/min per key/IP, IPv6-safe) on all non-health endpoints.</li>
+              <li>Zod schema validation on all ingest and alert payloads — malformed input is rejected at the boundary.</li>
             </ul>
           </div>
           <div class="split__col">
@@ -363,25 +513,74 @@ pnpm dev
       </div>
     </section>
 
-    <section id="roadmap" class="section section--alt">
+    <!-- ── Roadmap ─────────────────────────────────────────────────────────── -->
+    <section id="roadmap" class="section">
       <div class="container">
         <div class="hgroup">
           <h2>Roadmap</h2>
           <p class="muted">Keep the core small. Grow capabilities where it compounds.</p>
         </div>
 
+        <div class="cards" style="margin-bottom:14px;">
+          <article class="card" style="border-color:rgba(74,222,128,.25); background:rgba(5,46,22,.22);">
+            <div class="card__k" style="color:#4ade80;">✓ Shipped</div>
+            <h3>Alerting (webhook + Telegram)</h3>
+            <p>Threshold + absence rules, 60 s evaluation loop, <span class="mono">firing/resolved</span> transitions, silence support, notification history.</p>
+          </article>
+          <article class="card" style="border-color:rgba(74,222,128,.25); background:rgba(5,46,22,.22);">
+            <div class="card__k" style="color:#4ade80;">✓ Shipped</div>
+            <h3>Auto-correlation</h3>
+            <p>Z-score + relative change detection linking metric anomalies to concurrent events in a background worker.</p>
+          </article>
+          <article class="card" style="border-color:rgba(74,222,128,.25); background:rgba(5,46,22,.22);">
+            <div class="card__k" style="color:#4ade80;">✓ Shipped</div>
+            <h3>Docker standalone</h3>
+            <p>Multi-stage Dockerfile + docker-compose.yml. One command to deploy, migrations run automatically on first boot.</p>
+          </article>
+          <article class="card" style="border-color:rgba(74,222,128,.25); background:rgba(5,46,22,.22);">
+            <div class="card__k" style="color:#4ade80;">✓ Shipped</div>
+            <h3>AI-assisted dashboards</h3>
+            <p>Claude-powered DashboardSpec generation with server-side schema validation. Specs are portable JSON.</p>
+          </article>
+        </div>
+
         <div class="cards">
-          <article class="card"><h3>Correlation (events ↔ metrics)</h3><p>Explain what changed when an alert fired. Surface top correlated metrics and time windows.</p></article>
-          <article class="card"><h3>Catalog-driven authoring</h3><p>Dashboard builder powered by catalog/tags with strict server-side spec validation.</p></article>
-          <article class="card"><h3>Ops-grade auth clarity</h3><p>Single, predictable auth story (API key first; edge BasicAuth optional) across all routes.</p></article>
-          <article class="card"><h3>Reporting + sharing</h3><p>Scheduled exports (PDF/JSON) and shareable dashboard links with safe defaults.</p></article>
-          <article class="card"><h3>Observability upgrades</h3><p>Better internal metrics: route latency histograms, DB pool stats, ingest counters.</p></article>
-          <article class="card"><h3>Storage adapters (optional)</h3><p>ClickHouse adapter for higher volumes while keeping Postgres as the default path.</p></article>
+          <article class="card">
+            <div class="card__k">Next</div>
+            <h3>TimescaleDB adapter</h3>
+            <p>Optional TimescaleDB backend for higher-volume deployments. Postgres stays the default — no forced migration.</p>
+          </article>
+          <article class="card">
+            <div class="card__k">Next</div>
+            <h3>Dashboard templates</h3>
+            <p>Connector-specific starter dashboards (Nagios overview, Wazuh security, n8n health) installable in one click.</p>
+          </article>
+          <article class="card">
+            <div class="card__k">Planned</div>
+            <h3>Alert escalation policies</h3>
+            <p>Multi-stage escalation: notify on-call first → escalate to manager after N minutes → page fallback channel.</p>
+          </article>
+          <article class="card">
+            <div class="card__k">Planned</div>
+            <h3>More connectors</h3>
+            <p>Zabbix, Prometheus remote-write, SNMP traps, CloudWatch and generic syslog (RFC 5424) receivers.</p>
+          </article>
+          <article class="card">
+            <div class="card__k">Planned</div>
+            <h3>Scheduled reports</h3>
+            <p>Weekly/monthly PDF + JSON exports of dashboards and alert history, delivered by email or webhook.</p>
+          </article>
+          <article class="card">
+            <div class="card__k">Planned</div>
+            <h3>Multi-tenancy</h3>
+            <p>Organisation-level isolation with per-tenant API keys, asset namespacing and role-based access control.</p>
+          </article>
         </div>
       </div>
     </section>
 
-    <section id="contributing" class="section">
+    <!-- ── Contributing ───────────────────────────────────────────────────── -->
+    <section id="contributing" class="section section--alt">
       <div class="container">
         <h2>Contributing</h2>
         <p class="muted">
@@ -402,8 +601,9 @@ pnpm dev
             <h3>Project stance</h3>
             <ul class="list">
               <li>Operational scheduled flows remain deterministic (no-AI).</li>
-              <li>Performance-first defaults, safe limits.</li>
-              <li>API-first contracts, UI is optional.</li>
+              <li>Performance-first defaults, safe limits everywhere.</li>
+              <li>API-first contracts — the UI is optional.</li>
+              <li>Postgres as default; optional adapters for scale.</li>
             </ul>
           </div>
         </div>
@@ -411,6 +611,7 @@ pnpm dev
         <div class="cta">
           <a class="btn btn--primary" href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">Star on GitHub</a>
           <a class="btn btn--ghost" href="https://github.com/rmfaria/orbit-core/issues/new/choose" target="_blank" rel="noreferrer">Open an issue</a>
+          <a class="btn btn--ghost" href="https://github.com/rmfaria/orbit-core/blob/main/INSTALL.md" target="_blank" rel="noreferrer">Installation guide</a>
         </div>
       </div>
     </section>
@@ -425,6 +626,7 @@ pnpm dev
       </div>
       <div class="footer__links">
         <a href="https://github.com/rmfaria/orbit-core" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/rmfaria/orbit-core/blob/main/INSTALL.md" target="_blank" rel="noreferrer">Install</a>
         <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">Architecture</a>
         <a href="https://github.com/rmfaria/orbit-core/blob/main/docs/connectors.md" target="_blank" rel="noreferrer">Connectors</a>
       </div>
