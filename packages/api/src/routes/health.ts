@@ -31,7 +31,7 @@ export async function healthHandler(_req: Request, res: Response<HealthResponse 
     version: b.version,
     time: new Date().toISOString(),
     db,
-    workers: pool ? ['rollup', 'correlate'] : [],
+    workers: pool ? ['rollup', 'correlate', 'alerts', 'connectors'] : [],
     build: {
       git: b.git,
       time: b.buildTime,

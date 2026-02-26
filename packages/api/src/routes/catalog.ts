@@ -15,7 +15,7 @@ const AssetsQuerySchema = z.object({
 });
 
 export async function catalogAssetsHandler(req: Request, res: Response) {
-  if (!pool) return res.status(500).json({ error: 'DATABASE_URL not configured' });
+  if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
   const { q, limit } = AssetsQuerySchema.parse(req.query);
   const lim = limit ?? 100;
@@ -50,7 +50,7 @@ const MetricsQuerySchema = z.object({
 });
 
 export async function catalogMetricsHandler(req: Request, res: Response) {
-  if (!pool) return res.status(500).json({ error: 'DATABASE_URL not configured' });
+  if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
   const { asset_id, limit, namespace } = MetricsQuerySchema.parse(req.query);
   const lim = limit ?? 500;
@@ -90,7 +90,7 @@ interface EventNsCatalog {
 }
 
 export async function catalogEventsHandler(req: Request, res: Response) {
-  if (!pool) return res.status(500).json({ error: 'DATABASE_URL not configured' });
+  if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
   try {
     const [nsRes, kindRes, agentRes, sevRes] = await Promise.all([
@@ -127,8 +127,9 @@ export async function catalogEventsHandler(req: Request, res: Response) {
     for (const row of sevRes.rows)   { nsMap.get(row.namespace)?.severities.push(row.severity); }
 
     return res.json({ ok: true, namespaces: Array.from(nsMap.values()) });
-  } catch {
-    return res.json({ ok: true, namespaces: [] });
+  } catch (err) {
+    console.error('[catalog] catalogEventsHandler error:', err);
+    return res.status(500).json({ ok: false, error: 'failed to load events catalog' });
   }
 }
 
@@ -147,7 +148,7 @@ const DimensionsQuerySchema = z.object({
 });
 
 export async function catalogDimensionsHandler(req: Request, res: Response) {
-  if (!pool) return res.status(500).json({ error: 'DATABASE_URL not configured' });
+  if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
   const q = DimensionsQuerySchema.parse(req.query);
   const lookbackDays = q.lookback_days ?? 30;

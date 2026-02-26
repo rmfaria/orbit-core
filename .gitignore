@@ -15,3 +15,6 @@ pnpm-debug.log*
 packages/**/dist
 packages/**/.vite
 packages/**/build
+docs/*.pdf
+docs/*.html
+packages/nagios-shipper/

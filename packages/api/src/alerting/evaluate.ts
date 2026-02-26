@@ -2,11 +2,15 @@ import type { Pool } from 'pg';
 
 export type ConditionResult = { firing: boolean; value: number | null };
 
+type AbsenceCondition  = { kind: 'absence';   window_min: number };
+type ThresholdCondition = { kind: 'threshold'; agg?: 'avg' | 'max'; window_min: number; op: '>' | '>=' | '<' | '<='; value: number };
+export type AlertCondition = AbsenceCondition | ThresholdCondition;
+
 export async function evaluate(pool: Pool, rule: {
   asset_id:  string | null;
   namespace: string | null;
   metric:    string | null;
-  condition: any;
+  condition: AlertCondition;
 }): Promise<ConditionResult> {
   const { condition, asset_id, namespace, metric } = rule;
 

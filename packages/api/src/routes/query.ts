@@ -120,7 +120,8 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
     return 3600;
   };
 
-  const chooseSource = (fromIso: string, toIso: string): { table: string; bucket_sec: number | null } => {
+  type SourceTable = 'metric_points' | 'metric_rollup_5m' | 'metric_rollup_1h';
+  const chooseSource = (fromIso: string, toIso: string): { table: SourceTable; bucket_sec: number | null } => {
     const from = Date.parse(fromIso);
     const to = Date.parse(toIso);
     const sec = Math.max(0, Math.floor((to - from) / 1000));
@@ -196,7 +197,7 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
             effective_bucket_sec: effectiveBucket,
             effective_limit: limit,
             mode: 'bucketed',
-            source_table: src.table as any
+            source_table: src.table
           }
         });
       }
@@ -239,7 +240,7 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
             effective_bucket_sec: effectiveBucket,
             effective_limit: limit,
             mode: 'bucketed',
-            source_table: src.table as any
+            source_table: src.table
           }
         });
       }
@@ -288,7 +289,7 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
           effective_bucket_sec: src.bucket_sec ?? undefined,
           effective_limit: limit,
           mode: 'bucketed',
-          source_table: src.table as any
+          source_table: src.table
         }
       });
     }
@@ -411,7 +412,7 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
           `;
 
       const rankRes = await pool.query(rankSql, rankParams);
-      topValues = rankRes.rows.map((r: any) => r.dimension).filter((v: any) => typeof v === 'string' && v.length);
+      topValues = rankRes.rows.map((r: { dimension: string | null }) => r.dimension).filter((v): v is string => typeof v === 'string' && v.length > 0);
       if (!topValues.length) topValues = null;
     }
 
@@ -518,7 +519,7 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
         effective_bucket_sec: effectiveBucket ?? undefined,
         effective_limit: limit,
         mode: useBucket ? 'bucketed' : 'raw',
-        source_table: src.table as any
+        source_table: src.table
       }
     });
   }

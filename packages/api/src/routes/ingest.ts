@@ -9,6 +9,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { IngestEventsRequest, IngestMetricsRequest } from '@orbit/core-contracts';
 import { pool } from '../db.js';
+import { ensureAssets } from '../connectors/ingest.js';
 
 const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const isoTs = z.string().regex(ISO8601_RE, 'ts must be ISO 8601 with timezone (e.g. 2024-01-01T00:00:00Z)');
@@ -43,34 +44,11 @@ const IngestEventsSchema = z.object({
   events: z.array(EventSchema).max(5000)
 });
 
-async function ensureAssets(assetIds: string[]) {
-  if (!pool) throw new Error('DATABASE_URL not configured');
-  const uniq = Array.from(new Set(assetIds)).filter(Boolean);
-  if (!uniq.length) return;
-
-  // Insert minimal assets if missing
-  // type/name are unknown at ingest time; connectors should upsert full assets separately.
-  const values: any[] = [];
-  const rowsSql = uniq
-    .map((id, i) => {
-      values.push(id);
-      return `($${i + 1}, 'custom', $${i + 1})`;
-    })
-    .join(',');
-
-  await pool.query(
-    `insert into assets(asset_id, type, name)
-     values ${rowsSql}
-     on conflict (asset_id) do nothing`,
-    values
-  );
-}
-
 export async function ingestMetricsHandler(req: Request, res: Response) {
   const body: IngestMetricsRequest = IngestMetricsSchema.parse(req.body);
-  if (!pool) return res.status(500).json({ error: 'DATABASE_URL not configured' });
+  if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
-  await ensureAssets(body.metrics.map(m => m.asset_id));
+  await ensureAssets(pool, body.metrics.map(m => m.asset_id));
 
   const client = await pool.connect();
   try {
@@ -95,9 +73,9 @@ export async function ingestMetricsHandler(req: Request, res: Response) {
 
 export async function ingestEventsHandler(req: Request, res: Response) {
   const body: IngestEventsRequest = IngestEventsSchema.parse(req.body);
-  if (!pool) return res.status(500).json({ error: 'DATABASE_URL not configured' });
+  if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
-  await ensureAssets(body.events.map(e => e.asset_id));
+  await ensureAssets(pool, body.events.map(e => e.asset_id));
 
   const client = await pool.connect();
   try {

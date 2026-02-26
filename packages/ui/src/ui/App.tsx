@@ -117,30 +117,63 @@ function apiGetHeaders(): HeadersInit {
 
 // ─── canvas chart ─────────────────────────────────────────────────────────────
 
-function drawChart(canvas: HTMLCanvasElement, rows: Row[]) {
+interface CanvasCtx {
+  ctx: CanvasRenderingContext2D;
+  w: number; h: number;
+  padL: number; padR: number; padT: number; padB: number;
+  x0: number; x1: number; y0: number; y1: number;
+}
+
+function setupCanvas(canvas: HTMLCanvasElement): CanvasCtx | null {
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  // We draw in CSS pixel coordinates (ctx is scaled in the resize step).
+  if (!ctx) return null;
   const dpr = window.devicePixelRatio || 1;
   const w = Math.max(1, Math.floor(canvas.width / dpr));
   const h = Math.max(1, Math.floor(canvas.height / dpr));
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#0b1220';
   ctx.fillRect(0, 0, w, h);
-
   const padL = 56, padR = 16, padT = 16, padB = 32;
+  return { ctx, w, h, padL, padR, padT, padB, x0: padL, x1: w - padR, y0: padT, y1: h - padB };
+}
 
+function drawGrid(cc: CanvasCtx) {
+  const { ctx, w, h, padL, padR, padT, padB } = cc;
   ctx.strokeStyle = 'rgba(255,255,255,0.07)';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const y = padT + ((h - padT - padB) * i) / 4;
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
   }
+}
+
+function drawAxisLabels(cc: CanvasCtx, vmin: number, vmax: number, timestamps: string[]) {
+  const { ctx, h, x0, x1, y0, y1 } = cc;
+  const fmtV = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(2);
+  const fmt = (ts: string) => {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '11px system-ui';
+  ctx.fillText(fmtV(vmax), 4, y0 + 12);
+  ctx.fillText(fmtV((vmin + vmax) / 2), 4, (y0 + y1) / 2 + 4);
+  ctx.fillText(fmtV(vmin), 4, y1);
+  ctx.fillText(fmt(timestamps[0]), x0, h - 10);
+  if (timestamps.length > 2) ctx.fillText(fmt(timestamps[Math.floor(timestamps.length / 2)]), (x0 + x1) / 2 - 16, h - 10);
+  ctx.fillText(fmt(timestamps[timestamps.length - 1]), x1 - 36, h - 10);
+}
+
+function drawChart(canvas: HTMLCanvasElement, rows: Row[]) {
+  const cc = setupCanvas(canvas);
+  if (!cc) return;
+  const { ctx, x0, x1, y0, y1 } = cc;
+  drawGrid(cc);
 
   if (!rows.length) {
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.font = '14px system-ui';
-    ctx.fillText('No data', padL + 8, padT + 28);
+    ctx.fillText('No data', cc.padL + 8, cc.padT + 28);
     return;
   }
 
@@ -148,7 +181,6 @@ function drawChart(canvas: HTMLCanvasElement, rows: Row[]) {
   let vmin = Math.min(...vals), vmax = Math.max(...vals);
   if (vmin === vmax) { vmin -= 1; vmax += 1; }
 
-  const x0 = padL, x1 = w - padR, y0 = padT, y1 = h - padB;
   const toX = (i: number) => x0 + ((x1 - x0) * i) / Math.max(1, rows.length - 1);
   const toY = (v: number) => y1 - ((y1 - y0) * (v - vmin)) / (vmax - vmin);
 
@@ -174,48 +206,19 @@ function drawChart(canvas: HTMLCanvasElement, rows: Row[]) {
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Y labels
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.font = '11px system-ui';
-  const fmtV = (v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v.toFixed(2);
-  ctx.fillText(fmtV(vmax), 4, y0 + 12);
-  ctx.fillText(fmtV((vmin + vmax) / 2), 4, (y0 + y1) / 2 + 4);
-  ctx.fillText(fmtV(vmin), 4, y1);
-
-  // X labels (first / mid / last)
-  const fmt = (ts: string) => {
-    const d = new Date(ts);
-    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-  };
-  ctx.fillText(fmt(rows[0].ts), x0, h - 10);
-  if (rows.length > 2) ctx.fillText(fmt(rows[Math.floor(rows.length / 2)].ts), (x0 + x1) / 2 - 16, h - 10);
-  ctx.fillText(fmt(rows[rows.length - 1].ts), x1 - 36, h - 10);
+  drawAxisLabels(cc, vmin, vmax, rows.map(r => r.ts));
 }
 
 function drawMultiChart(canvas: HTMLCanvasElement, rows: MultiRow[]) {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  // We draw in CSS pixel coordinates (ctx is scaled in the resize step).
-  const dpr = window.devicePixelRatio || 1;
-  const w = Math.max(1, Math.floor(canvas.width / dpr));
-  const h = Math.max(1, Math.floor(canvas.height / dpr));
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = '#0b1220';
-  ctx.fillRect(0, 0, w, h);
-
-  const padL = 56, padR = 16, padT = 16, padB = 32;
-
-  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = padT + ((h - padT - padB) * i) / 4;
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
-  }
+  const cc = setupCanvas(canvas);
+  if (!cc) return;
+  const { ctx, w, x0, x1, y0, y1, padR, padT } = cc;
+  drawGrid(cc);
 
   if (!rows.length) {
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.font = '14px system-ui';
-    ctx.fillText('No data', padL + 8, padT + 28);
+    ctx.fillText('No data', cc.padL + 8, cc.padT + 28);
     return;
   }
 
@@ -225,7 +228,6 @@ function drawMultiChart(canvas: HTMLCanvasElement, rows: MultiRow[]) {
     arr.push({ ts: r.ts, value: r.value });
     bySeries.set(r.series, arr);
   }
-  // sort each series by ts
   for (const [k, arr] of bySeries) {
     arr.sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
     bySeries.set(k, arr);
@@ -236,31 +238,26 @@ function drawMultiChart(canvas: HTMLCanvasElement, rows: MultiRow[]) {
   let vmin = Math.min(...allVals), vmax = Math.max(...allVals);
   if (vmin === vmax) { vmin -= 1; vmax += 1; }
 
-  // build a global timeline (unique timestamps)
   const tsSet = new Set<string>();
   for (const arr of bySeries.values()) for (const p of arr) tsSet.add(p.ts);
   const tsList = Array.from(tsSet).sort((a, b) => Date.parse(a) - Date.parse(b));
 
-  const x0 = padL, x1 = w - padR, y0 = padT, y1 = h - padB;
   const toX = (i: number) => x0 + ((x1 - x0) * i) / Math.max(1, tsList.length - 1);
   const toY = (v: number) => y1 - ((y1 - y0) * (v - vmin)) / (vmax - vmin);
 
   const palette = ['#55f3ff', '#9b7cff', '#60a5fa', '#fbbf24', '#a3e635', '#fb7185'];
   const keys = Array.from(bySeries.keys());
 
-  // draw lines
   keys.forEach((seriesKey, idx) => {
     const color = palette[idx % palette.length];
     const points = bySeries.get(seriesKey)!;
     const map = new Map(points.map(p => [p.ts, p.value] as const));
-
     ctx.beginPath();
     let started = false;
     tsList.forEach((ts, i) => {
       const v = map.get(ts);
       if (v === undefined || v === null) return;
-      const x = toX(i);
-      const y = toY(v);
+      const x = toX(i), y = toY(v);
       if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     });
     ctx.strokeStyle = color;
@@ -268,22 +265,7 @@ function drawMultiChart(canvas: HTMLCanvasElement, rows: MultiRow[]) {
     ctx.stroke();
   });
 
-  // Y labels
-  ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.font = '11px system-ui';
-  const fmtV = (v: number) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v.toFixed(2);
-  ctx.fillText(fmtV(vmax), 4, y0 + 12);
-  ctx.fillText(fmtV((vmin + vmax) / 2), 4, (y0 + y1) / 2 + 4);
-  ctx.fillText(fmtV(vmin), 4, y1);
-
-  // X labels (first / mid / last)
-  const fmt = (ts: string) => {
-    const d = new Date(ts);
-    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-  };
-  ctx.fillText(fmt(tsList[0]), x0, h - 10);
-  if (tsList.length > 2) ctx.fillText(fmt(tsList[Math.floor(tsList.length / 2)]), (x0 + x1) / 2 - 16, h - 10);
-  ctx.fillText(fmt(tsList[tsList.length - 1]), x1 - 36, h - 10);
+  drawAxisLabels(cc, vmin, vmax, tsList);
 
   // Legend (top-right)
   ctx.font = '11px system-ui';
@@ -1546,7 +1528,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
         if (!addNs && opts.length) setAddNs(opts[0].namespace);
         if (!addMetric && opts.length) setAddMetric(opts[0].metric);
       })
-      .catch(() => {});
+      .catch(e => console.error("[orbit]", e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId]);
 
@@ -2707,7 +2689,7 @@ function DashWidgetEvents({ widget, from, to }: { widget: WidgetSpec; from: stri
     fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ query: q }) })
       .then(r => r.json())
       .then(j => setEvents(j?.result?.rows ?? []))
-      .catch(() => {})
+      .catch(e => console.error("[orbit]", e))
       .finally(() => setLoading(false));
   }, [widget.id, from, to]);
 
@@ -2739,7 +2721,7 @@ function DashWidgetKpi({ widget, from, to, assets }: { widget: WidgetSpec; from:
         const rows: Row[] = j?.result?.rows ?? [];
         setValue(rows.length ? rows[rows.length - 1].value : null);
       })
-      .catch(() => {})
+      .catch(e => console.error("[orbit]", e))
       .finally(() => setLoading(false));
   }, [widget.id, from, to, assets]);
 
@@ -2825,7 +2807,7 @@ function DashWidgetGauge({ widget, from, to, assets }: { widget: WidgetSpec; fro
         (chart.data.datasets[0] as any).backgroundColor = [color, 'rgba(140,160,255,.08)'];
         chart.update('none');
       })
-      .catch(() => {})
+      .catch(e => console.error("[orbit]", e))
       .finally(() => setLoading(false));
   }, [widget.id, from, to, assets]);
 
@@ -2952,7 +2934,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
     fetch('api/v1/dashboards', { headers: apiGetHeaders() })
       .then(r => r.json())
       .then(j => setDashboards(j?.dashboards ?? []))
-      .catch(() => {})
+      .catch(e => console.error("[orbit]", e))
       .finally(() => setLoading(false));
   }
 
@@ -2995,7 +2977,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
     fetch(`api/v1/dashboards/${first.id}`, { headers: apiGetHeaders() })
       .then(r => r.json())
       .then(j => { setViewSpec(j.spec); setMode('view'); })
-      .catch(() => {});
+      .catch(e => console.error("[orbit]", e));
   }
 
   function stopRotation() {
@@ -3013,7 +2995,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
     fetch(`api/v1/dashboards/${d.id}`, { headers: apiGetHeaders() })
       .then(r => r.json())
       .then(j => setViewSpec(j.spec))
-      .catch(() => {});
+      .catch(e => console.error("[orbit]", e));
   }, [rotIdx, rotating]);
 
   async function openView(id: string) {
@@ -3246,7 +3228,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
     fetch('api/v1/catalog/events', { headers: apiGetHeaders() })
       .then(r => r.json())
       .then(j => setEventCatalog((j?.namespaces ?? []) as EventNsCatalog[]))
-      .catch(() => {});
+      .catch(e => console.error("[orbit]", e));
 
     // Metrics catalog — ALL assets (batched in parallel)
     if (assets.length) {
@@ -4587,7 +4569,7 @@ export function App() {
     fetch('api/v1/catalog/assets?limit=500', { headers: apiGetHeaders() })
       .then((r) => { if (r.status === 401) { setNeedsKey(true); return null; } return r.json(); })
       .then((j) => { if (j) { setNeedsKey(false); setAssets((j?.assets ?? []).map((a: any) => ({ asset_id: a.asset_id, name: a.name ?? a.asset_id }))); } })
-      .catch(() => {});
+      .catch(e => console.error("[orbit]", e));
   }, [tab]);
 
   return (
