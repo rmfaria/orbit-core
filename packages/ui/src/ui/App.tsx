@@ -20,7 +20,7 @@ type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'home' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'admin';
+type Tab        = 'home' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'connectors' | 'admin';
 
 type CorrelationRow = {
   event_key:    string;
@@ -543,6 +543,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {navTabBtn('metrics',      'Métricas')}
         {navTabBtn('correlations', 'Correlações')}
         {navTabBtn('alerts',       '🔔 Alertas')}
+        {navTabBtn('connectors',   '🔌 Connectors')}
         {navTabBtn('dashboards',   '⊞ Dashboards')}
       </nav>
 
@@ -3974,6 +3975,424 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   );
 }
 
+// ─── CONNECTORS TAB ───────────────────────────────────────────────────────────
+
+type Connector = {
+  id: string; source_id: string; mode: 'push' | 'pull'; type: 'metric' | 'event';
+  spec: object; status: 'draft' | 'approved' | 'disabled'; auto: boolean;
+  description: string | null; pull_url: string | null; pull_interval_min: number;
+  created_at: string; updated_at: string;
+};
+type ConnectorRun = {
+  id: string; source_id: string; started_at: string; finished_at: string | null;
+  status: 'ok' | 'error'; ingested: number; raw_size: number | null; error: string | null;
+};
+
+const SPEC_TEMPLATE_METRIC = `{
+  "type": "metric",
+  "items_path": "data.items",
+  "mappings": {
+    "ts":        { "path": "$.timestamp", "transform": "iso8601" },
+    "asset_id":  { "path": "$.host", "default": "unknown" },
+    "namespace": { "value": "my-source" },
+    "metric":    { "path": "$.metric_name" },
+    "value":     { "path": "$.value", "transform": "number" },
+    "unit":      { "path": "$.unit" }
+  }
+}`;
+
+const SPEC_TEMPLATE_EVENT = `{
+  "type": "event",
+  "items_path": "alerts",
+  "mappings": {
+    "ts":          { "path": "$.timestamp" },
+    "asset_id":    { "path": "$.host" },
+    "namespace":   { "value": "my-source" },
+    "kind":        { "path": "$.rule.name" },
+    "severity":    { "path": "$.level", "transform": "severity_map" },
+    "title":       { "path": "$.rule.name" },
+    "message":     { "path": "$.full_log" },
+    "fingerprint": { "path": "$.id" }
+  }
+}`;
+
+function statusBadge(status: string) {
+  const cfg: Record<string, { bg: string; fg: string; label: string }> = {
+    approved: { bg: '#052e16', fg: '#4ade80', label: 'APROVADO' },
+    draft:    { bg: '#451a03', fg: '#fbbf24', label: 'DRAFT' },
+    disabled: { bg: '#1e293b', fg: '#64748b', label: 'DESATIV.' },
+  };
+  const c = cfg[status] ?? cfg.draft;
+  return <span style={{ background: c.bg, color: c.fg, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{c.label}</span>;
+}
+
+function modeBadge(mode: string) {
+  return <span style={{ background: mode === 'pull' ? '#1e1040' : '#0c1a3a', color: mode === 'pull' ? '#a78bfa' : '#38bdf8', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{mode.toUpperCase()}</span>;
+}
+
+function ConnectorsTab() {
+  const [subtab, setSubtab] = React.useState<'list' | 'create' | 'ai'>('list');
+  const [connectors, setConnectors] = React.useState<Connector[]>([]);
+  const [loading, setLoading]       = React.useState(false);
+  const [err, setErr]               = React.useState<string | null>(null);
+  const [toast, setToast]           = React.useState<{ msg: string; ok: boolean } | null>(null);
+  const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  const [runs, setRuns]             = React.useState<ConnectorRun[]>([]);
+  const [runsLoading, setRunsLoading] = React.useState(false);
+
+  // ── Create form ──
+  const [cf, setCf] = React.useState({
+    id: '', source_id: '', mode: 'push', type: 'metric', description: '',
+    pull_url: '', pull_interval_min: '5', spec: SPEC_TEMPLATE_METRIC,
+  });
+
+  // ── AI Generate form ──
+  const [af, setAf] = React.useState({
+    aiKey:      localStorage.getItem('orbit_ai_key') ?? '',
+    aiModel:    'claude-sonnet-4-6',
+    sourceType: '',
+    type:       '',
+    id:         '',
+    description: '',
+    payload:    '',
+  });
+  const [aiLoading, setAiLoading]   = React.useState(false);
+  const [aiResult, setAiResult]     = React.useState<{ id: string; source_id: string; spec: object; next_step: string } | null>(null);
+  const [aiErr, setAiErr]           = React.useState<string | null>(null);
+
+  function showToast(msg: string, ok: boolean) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 4000);
+  }
+
+  async function load() {
+    setLoading(true); setErr(null);
+    try {
+      const r = await fetch('api/v1/connectors', { headers: apiGetHeaders() });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error);
+      setConnectors(j.connectors);
+    } catch (e: any) { setErr(String(e)); } finally { setLoading(false); }
+  }
+
+  React.useEffect(() => { load(); }, []);
+
+  async function approve(id: string) {
+    await fetch(`api/v1/connectors/${id}/approve`, { method: 'POST', headers: apiHeaders() });
+    showToast('Connector aprovado!', true); load();
+  }
+  async function disable(id: string) {
+    await fetch(`api/v1/connectors/${id}/disable`, { method: 'POST', headers: apiHeaders() });
+    showToast('Connector desativado', true); load();
+  }
+  async function del(id: string) {
+    if (!confirm(`Remover connector "${id}"?`)) return;
+    await fetch(`api/v1/connectors/${id}`, { method: 'DELETE', headers: apiGetHeaders() });
+    showToast('Removido', true); load();
+  }
+
+  async function toggleRuns(conn: Connector) {
+    if (expandedId === conn.id) { setExpandedId(null); return; }
+    setExpandedId(conn.id); setRunsLoading(true);
+    try {
+      const r = await fetch(`api/v1/connectors/${conn.id}/runs`, { headers: apiGetHeaders() });
+      const j = await r.json();
+      setRuns(j.ok ? j.runs : []);
+    } catch { setRuns([]); } finally { setRunsLoading(false); }
+  }
+
+  async function create() {
+    let specObj: unknown;
+    try { specObj = JSON.parse(cf.spec); } catch { showToast('Spec JSON inválido', false); return; }
+    const body: any = {
+      id: cf.id, source_id: cf.source_id || cf.id, mode: cf.mode,
+      type: cf.type, spec: specObj,
+      pull_interval_min: parseInt(cf.pull_interval_min) || 5,
+    };
+    if (cf.description) body.description = cf.description;
+    if (cf.mode === 'pull' && cf.pull_url) body.pull_url = cf.pull_url;
+    const r = await fetch('api/v1/connectors', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
+    const j = await r.json();
+    if (!j.ok) { showToast('Erro: ' + JSON.stringify(j.error), false); return; }
+    showToast('Connector criado como draft!', true);
+    setCf({ id: '', source_id: '', mode: 'push', type: 'metric', description: '', pull_url: '', pull_interval_min: '5', spec: SPEC_TEMPLATE_METRIC });
+    setSubtab('list'); load();
+  }
+
+  async function aiGenerate() {
+    if (!af.aiKey) { setAiErr('Informe a API Key da Anthropic'); return; }
+    let payloadObj: unknown;
+    try { payloadObj = JSON.parse(af.payload); } catch { setAiErr('Payload JSON inválido'); return; }
+    localStorage.setItem('orbit_ai_key', af.aiKey);
+    setAiLoading(true); setAiErr(null); setAiResult(null);
+    try {
+      const body: any = { payload: payloadObj };
+      if (af.sourceType) body.source_type = af.sourceType;
+      if (af.type)       body.type        = af.type;
+      if (af.id)         body.id          = af.id;
+      if (af.description) body.description = af.description;
+      const r = await fetch('api/v1/connectors/generate', {
+        method: 'POST',
+        headers: { ...apiHeaders(), 'x-ai-key': af.aiKey, 'x-ai-model': af.aiModel },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+      setAiResult({ id: j.id, source_id: j.source_id, spec: j.spec, next_step: j.next_step });
+    } catch (e: any) { setAiErr(String(e)); } finally { setAiLoading(false); }
+  }
+
+  const subtabBtn = (t: 'list' | 'create' | 'ai', label: string) => (
+    <button onClick={() => setSubtab(t)} style={{
+      background: subtab === t ? 'rgba(85,243,255,0.15)' : 'transparent',
+      border: subtab === t ? '1px solid rgba(85,243,255,0.4)' : '1px solid transparent',
+      borderRadius: 8, color: subtab === t ? '#55f3ff' : '#94a3b8',
+      padding: '6px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+    }}>{label}</button>
+  );
+
+  return (
+    <div>
+      {toast && (
+        <div style={{ position: 'fixed', top: 18, right: 24, zIndex: 9999, padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, background: toast.ok ? '#052e16' : '#450a0a', color: toast.ok ? '#4ade80' : '#f87171', border: `1px solid ${toast.ok ? '#4ade80' : '#f87171'}`, boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* ── Subtab bar ── */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+        {subtabBtn('list',   '📋 Connectors')}
+        {subtabBtn('create', '+ Criar')}
+        {subtabBtn('ai',     '✨ Gerar com IA')}
+      </div>
+
+      {/* ── LIST ── */}
+      {subtab === 'list' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>{connectors.length} connector(s)</span>
+            <button onClick={load} style={{ ...S.btnSm, fontSize: 12 }}>↻ Atualizar</button>
+          </div>
+          {err && <div style={S.err}>{err}</div>}
+          {loading && <div style={{ color: '#94a3b8', fontSize: 13 }}>Carregando…</div>}
+          {!loading && connectors.length === 0 && (
+            <div style={{ ...S.card, textAlign: 'center', color: '#64748b', padding: 40 }}>
+              Nenhum connector. Crie um manualmente ou use <strong>✨ Gerar com IA</strong>.
+            </div>
+          )}
+          {connectors.map(c => (
+            <div key={c.id} style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
+              {/* Row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', flexWrap: 'wrap' as const }}>
+                {/* expand toggle */}
+                <button onClick={() => toggleRuns(c)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Ver runs">
+                  {expandedId === c.id ? '▼' : '▶'}
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
+                    <span style={{ fontWeight: 700, fontSize: 14, color: '#e9eeff' }}>{c.id}</span>
+                    {modeBadge(c.mode)}
+                    <span style={{ background: '#0f172a', color: '#94a3b8', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{c.type.toUpperCase()}</span>
+                    {statusBadge(c.status)}
+                    {c.auto && <span style={{ background: '#1a1540', color: '#c084fc', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>✨ AI</span>}
+                  </div>
+                  {c.description && <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>{c.description}</div>}
+                  <div style={{ color: '#475569', fontSize: 11, marginTop: 2 }}>
+                    source: <code style={{ color: '#7dd3fc' }}>{c.source_id}</code>
+                    {c.mode === 'pull' && c.pull_url && <> · pull: <code style={{ color: '#a78bfa' }}>{c.pull_url}</code> ({c.pull_interval_min}min)</>}
+                  </div>
+                </div>
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {(c.status === 'draft' || c.status === 'disabled') && (
+                    <button onClick={() => approve(c.id)} style={{ ...S.btnSm, color: '#4ade80', borderColor: 'rgba(74,222,128,0.35)' }} title="Aprovar">✓ Aprovar</button>
+                  )}
+                  {c.status === 'approved' && (
+                    <button onClick={() => disable(c.id)} style={{ ...S.btnSm, color: '#94a3b8' }} title="Desativar">⊘ Desativar</button>
+                  )}
+                  <button onClick={() => del(c.id)} style={{ ...S.btnSm, color: '#f87171', borderColor: 'rgba(248,113,113,0.30)' }} title="Remover">🗑</button>
+                </div>
+              </div>
+
+              {/* Runs panel */}
+              {expandedId === c.id && (
+                <div style={{ borderTop: '1px solid rgba(140,160,255,0.12)', padding: '12px 16px', background: 'rgba(4,7,19,0.4)' }}>
+                  <div style={{ color: '#55f3ff', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Histórico de Runs</div>
+                  {runsLoading && <div style={{ color: '#94a3b8', fontSize: 12 }}>Carregando…</div>}
+                  {!runsLoading && runs.length === 0 && <div style={{ color: '#475569', fontSize: 12 }}>Nenhum run registrado.</div>}
+                  {!runsLoading && runs.length > 0 && (
+                    <table style={{ ...S.table, fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th style={S.th}>Início</th>
+                          <th style={S.th}>Status</th>
+                          <th style={S.th}>Ingestados</th>
+                          <th style={S.th}>Raw Size</th>
+                          <th style={S.th}>Duração</th>
+                          <th style={S.th}>Erro</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {runs.map(r => {
+                          const dur = r.finished_at ? Math.round((new Date(r.finished_at).getTime() - new Date(r.started_at).getTime())) : null;
+                          return (
+                            <tr key={r.id}>
+                              <td style={S.td}>{fmtTs(r.started_at)}</td>
+                              <td style={S.td}>
+                                {r.status === 'ok'
+                                  ? <span style={{ color: '#4ade80', fontWeight: 700 }}>✓ ok</span>
+                                  : <span style={{ color: '#f87171', fontWeight: 700 }}>✗ erro</span>
+                                }
+                              </td>
+                              <td style={S.td}>{r.ingested}</td>
+                              <td style={S.td}>{r.raw_size ? `${r.raw_size}b` : '—'}</td>
+                              <td style={S.td}>{dur !== null ? `${dur}ms` : '—'}</td>
+                              <td style={{ ...S.td, color: '#f87171', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{r.error ?? '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── CREATE ── */}
+      {subtab === 'create' && (
+        <div style={{ ...S.card, border: '1px solid rgba(85,243,255,0.20)' }}>
+          <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 16, fontSize: 15 }}>Novo Connector</div>
+          <div style={{ ...S.grid2, marginBottom: 12 }}>
+            <label style={S.label}>ID (slug)
+              <input style={S.input} value={cf.id} onChange={e => setCf(p => ({ ...p, id: e.target.value }))} placeholder="nagios-perf" />
+            </label>
+            <label style={S.label}>Source ID
+              <input style={S.input} value={cf.source_id} onChange={e => setCf(p => ({ ...p, source_id: e.target.value }))} placeholder="igual ao ID se não informado" />
+            </label>
+          </div>
+          <div style={{ ...S.grid4, marginBottom: 12 }}>
+            <label style={S.label}>Modo
+              <select style={S.select} value={cf.mode} onChange={e => setCf(p => ({ ...p, mode: e.target.value }))}>
+                <option value="push">push</option>
+                <option value="pull">pull</option>
+              </select>
+            </label>
+            <label style={S.label}>Tipo
+              <select style={S.select} value={cf.type}
+                onChange={e => setCf(p => ({ ...p, type: e.target.value, spec: e.target.value === 'event' ? SPEC_TEMPLATE_EVENT : SPEC_TEMPLATE_METRIC }))}>
+                <option value="metric">metric</option>
+                <option value="event">event</option>
+              </select>
+            </label>
+            {cf.mode === 'pull' && <>
+              <label style={{ ...S.label, gridColumn: 'span 2' }}>Pull URL
+                <input style={S.input} value={cf.pull_url} onChange={e => setCf(p => ({ ...p, pull_url: e.target.value }))} placeholder="http://host/metrics" />
+              </label>
+            </>}
+          </div>
+          {cf.mode === 'pull' && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={S.label}>Intervalo de Pull (minutos)
+                <input style={{ ...S.input, width: 100 }} type="number" min={1} max={1440} value={cf.pull_interval_min}
+                  onChange={e => setCf(p => ({ ...p, pull_interval_min: e.target.value }))} />
+              </label>
+            </div>
+          )}
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>Descrição
+              <input style={S.input} value={cf.description} onChange={e => setCf(p => ({ ...p, description: e.target.value }))} placeholder="Opcional" />
+            </label>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ ...S.label, marginBottom: 4 }}>Spec DSL (JSON)</label>
+            <textarea style={{ ...S.input, width: '100%', minHeight: 220, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' as const, boxSizing: 'border-box' as const }}
+              value={cf.spec} onChange={e => setCf(p => ({ ...p, spec: e.target.value }))} />
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={create} style={S.btn}>Salvar como Draft</button>
+            <button onClick={() => setSubtab('list')} style={S.btnSm}>✕ Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── AI GENERATE ── */}
+      {subtab === 'ai' && (
+        <div style={{ ...S.card, border: '1px solid rgba(155,124,255,0.25)' }}>
+          <div style={{ fontWeight: 700, color: '#c084fc', marginBottom: 4, fontSize: 15 }}>✨ Gerar Connector com IA</div>
+          <div style={{ color: '#64748b', fontSize: 12, marginBottom: 16 }}>
+            Cole um payload de exemplo. O Claude irá analisar a estrutura e gerar o spec de mapeamento automaticamente.
+          </div>
+
+          <div style={{ ...S.grid2, marginBottom: 12 }}>
+            <label style={S.label}>API Key Anthropic
+              <input style={{ ...S.input, fontFamily: 'monospace' }} type="password" value={af.aiKey}
+                onChange={e => setAf(p => ({ ...p, aiKey: e.target.value }))} placeholder="sk-ant-..." />
+            </label>
+            <label style={S.label}>Modelo
+              <input style={S.input} value={af.aiModel} onChange={e => setAf(p => ({ ...p, aiModel: e.target.value }))} placeholder="claude-sonnet-4-6" />
+            </label>
+          </div>
+          <div style={{ ...S.grid4, marginBottom: 12 }}>
+            <label style={S.label}>Source Type (hint)
+              <input style={S.input} value={af.sourceType} onChange={e => setAf(p => ({ ...p, sourceType: e.target.value }))} placeholder="nagios, wazuh, snmp…" />
+            </label>
+            <label style={S.label}>Tipo (opcional)
+              <select style={S.select} value={af.type} onChange={e => setAf(p => ({ ...p, type: e.target.value }))}>
+                <option value="">IA infere</option>
+                <option value="metric">metric</option>
+                <option value="event">event</option>
+              </select>
+            </label>
+            <label style={S.label}>ID (opcional)
+              <input style={S.input} value={af.id} onChange={e => setAf(p => ({ ...p, id: e.target.value }))} placeholder="auto-gerado" />
+            </label>
+            <label style={S.label}>Descrição (opcional)
+              <input style={S.input} value={af.description} onChange={e => setAf(p => ({ ...p, description: e.target.value }))} />
+            </label>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ ...S.label, marginBottom: 4 }}>Payload de Exemplo (JSON)</label>
+            <textarea style={{ ...S.input, width: '100%', minHeight: 200, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' as const, boxSizing: 'border-box' as const }}
+              value={af.payload} onChange={e => setAf(p => ({ ...p, payload: e.target.value }))}
+              placeholder={'{\n  "host": "server-01",\n  "service": "cpu",\n  "value": 72.4,\n  "ts": 1740576000\n}'} />
+          </div>
+
+          {aiErr && <div style={{ ...S.err, marginBottom: 12 }}>✗ {aiErr}</div>}
+
+          <div style={{ display: 'flex', gap: 10, marginBottom: aiResult ? 20 : 0 }}>
+            <button onClick={aiGenerate} disabled={aiLoading} style={{ ...S.btn, background: 'linear-gradient(135deg, rgba(155,124,255,0.30), rgba(85,243,255,0.18))', borderColor: 'rgba(155,124,255,0.50)' }}>
+              {aiLoading ? '⏳ Gerando…' : '✨ Gerar Spec'}
+            </button>
+          </div>
+
+          {aiResult && (
+            <div style={{ marginTop: 20, borderTop: '1px solid rgba(155,124,255,0.20)', paddingTop: 16 }}>
+              <div style={{ color: '#c084fc', fontWeight: 700, marginBottom: 8, fontSize: 13 }}>✓ Spec gerado — ID: <code style={{ color: '#e9eeff' }}>{aiResult.id}</code></div>
+              <pre style={{ background: 'rgba(4,7,19,0.6)', border: '1px solid rgba(155,124,255,0.20)', borderRadius: 10, padding: 14, fontSize: 12, color: '#a5b4fc', overflowX: 'auto' as const, maxHeight: 300 }}>
+                {JSON.stringify(aiResult.spec, null, 2)}
+              </pre>
+              <div style={{ color: '#64748b', fontSize: 12, margin: '10px 0' }}>
+                {aiResult.next_step}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => { setSubtab('list'); load(); setAiResult(null); }} style={S.btn}>
+                  Ver na Lista
+                </button>
+                <button onClick={() => approve(aiResult.id)} style={{ ...S.btn, background: 'linear-gradient(135deg, rgba(74,222,128,0.25), rgba(74,222,128,0.15))', borderColor: 'rgba(74,222,128,0.40)', color: '#4ade80' }}>
+                  ✓ Aprovar Agora
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ERROR BOUNDARY ───────────────────────────────────────────────────────────
 
 class ErrorBoundary extends React.Component<
@@ -4040,6 +4459,7 @@ export function App() {
         {tab === 'metrics'       && <MetricsTab     assets={assets} />}
         {tab === 'correlations'  && <CorrelationsTab assets={assets} />}
         {tab === 'alerts'        && <AlertsTab assets={assets} />}
+        {tab === 'connectors'    && <ConnectorsTab />}
         {tab === 'admin'         && <AdminTab setTab={setTab} />}
       </div>
     </div>
