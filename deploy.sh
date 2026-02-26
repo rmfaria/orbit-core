@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO=/root/.openclaw/workspace/orbit-core
-PG_LOCAL="postgres://postgres:postgres@127.0.0.1:5432/orbit"
+PG_LOCAL="${DATABASE_URL:-postgres://postgres:${POSTGRES_PASSWORD:-postgres}@127.0.0.1:5432/orbit}"
 DOCKER_PG_CONTAINER=$(docker ps -qf name=openclaw_orbitcore_pg 2>/dev/null || true)
 DOCKER_SERVICE="openclaw_orbitcore_api"
 

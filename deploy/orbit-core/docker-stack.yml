@@ -12,7 +12,7 @@ services:
     command: ["node", "/app/packages/api/dist/index.js"]
     working_dir: /app/packages/api
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@orbitcore_pg:5432/orbit
+      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@orbitcore_pg:5432/orbit
       - ORBIT_API_KEY=${ORBIT_API_KEY}
       - PORT=3010
       - NODE_ENV=production
@@ -45,7 +45,7 @@ services:
           memory: 128M
       labels:
         - traefik.enable=true
-        - traefik.http.routers.orbitcore-api.rule=Host(`prod.nesecurity.com.br`) && (PathPrefix(`/orbit-core/api`) || PathPrefix(`/orbit-core/metrics`))
+        - traefik.http.routers.orbitcore-api.rule=Host(`${ORBIT_HOST}`) && (PathPrefix(`/orbit-core/api`) || PathPrefix(`/orbit-core/metrics`))
         - traefik.http.routers.orbitcore-api.entrypoints=websecure
         - traefik.http.routers.orbitcore-api.tls=true
         - traefik.http.routers.orbitcore-api.tls.certresolver=letsencryptresolver
@@ -86,7 +86,7 @@ services:
           memory: 32M
       labels:
         - traefik.enable=true
-        - traefik.http.routers.orbitcore-ui.rule=Host(`prod.nesecurity.com.br`) && (PathPrefix(`/orbit-core`) || PathPrefix(`/orbit-core/`))
+        - traefik.http.routers.orbitcore-ui.rule=Host(`${ORBIT_HOST}`) && (PathPrefix(`/orbit-core`) || PathPrefix(`/orbit-core/`))
         - traefik.http.routers.orbitcore-ui.entrypoints=websecure
         - traefik.http.routers.orbitcore-ui.tls=true
         - traefik.http.routers.orbitcore-ui.tls.certresolver=letsencryptresolver
@@ -103,7 +103,7 @@ services:
     environment:
       - POSTGRES_DB=orbit
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - orbitcore_pg:/var/lib/postgresql/data
     networks:

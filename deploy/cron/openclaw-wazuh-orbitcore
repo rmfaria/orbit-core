@@ -5,7 +5,7 @@
 */2 * * * * root \
   ORBIT_API_KEY=<ORBIT_API_KEY> \
   ORBIT_API=http://localhost:3000 \
-  OPENSEARCH_URL=https://sec-ne.nebrasil.com.br:9200 \
+  OPENSEARCH_URL=<YOUR_OPENSEARCH_URL> \
   OPENSEARCH_USER=admin \
   OPENSEARCH_PASS=<OPENSEARCH_PASS> \
   WAZUH_OS_INDEX_PATTERN=wazuh-alerts-4.x-* \

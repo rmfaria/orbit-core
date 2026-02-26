@@ -5,7 +5,7 @@
 * * * * * root \
   ORBIT_API_KEY=<ORBIT_API_KEY> \
   ORBIT_API=http://localhost:3000 \
-  N8N_URL=https://n8n.nesecurity.com.br \
+  N8N_URL=<YOUR_N8N_URL> \
   N8N_API_KEY=<N8N_API_KEY> \
   N8N_VERIFY_TLS=true \
   STUCK_AFTER_MINUTES=30 \
