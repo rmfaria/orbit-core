@@ -26,6 +26,7 @@ import { aiRouter } from './routes/ai.js';
 import { alertsRouter } from './routes/alerts.js';
 import { correlationsHandler } from './routes/correlations.js';
 import { connectorsRouter } from './routes/connectors.js';
+import { startConnectorWorker } from './connectors/worker.js';
 import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
 import { startAlertWorker } from './alerting/worker.js';
@@ -112,13 +113,15 @@ const server = app.listen(env.PORT, () => {
 });
 
 // Start background workers if DB is available.
-let stopRollups:   (() => void) | undefined;
-let stopCorrelate: (() => void) | undefined;
-let stopAlerts:    (() => void) | undefined;
+let stopRollups:     (() => void) | undefined;
+let stopCorrelate:   (() => void) | undefined;
+let stopAlerts:      (() => void) | undefined;
+let stopConnectors:  (() => void) | undefined;
 if (pool) {
-  stopRollups   = startRollupWorker(pool);
-  stopCorrelate = startCorrelateWorker(pool);
-  stopAlerts    = startAlertWorker(pool);
+  stopRollups     = startRollupWorker(pool);
+  stopCorrelate   = startCorrelateWorker(pool);
+  stopAlerts      = startAlertWorker(pool);
+  stopConnectors  = startConnectorWorker(pool);
 }
 
 // Graceful shutdown.
@@ -127,6 +130,7 @@ function shutdown(signal: string) {
   stopRollups?.();
   stopCorrelate?.();
   stopAlerts?.();
+  stopConnectors?.();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }
