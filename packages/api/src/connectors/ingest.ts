@@ -125,6 +125,45 @@ export async function ingestMapped(
   return result;
 }
 
+// ── Dry-run validation (no DB writes) ────────────────────────────────────────
+
+export interface ValidateResult {
+  valid:  number;
+  skipped: number;
+  errors: string[];
+  mapped: Record<string, unknown>[];
+}
+
+export function validateMapped(
+  connType: 'metric' | 'event',
+  items: Record<string, unknown>[],
+): ValidateResult {
+  const result: ValidateResult = { valid: 0, skipped: 0, errors: [], mapped: [] };
+
+  if (connType === 'metric') {
+    for (const item of items) {
+      const ok =
+        item.ts        && ISO8601_RE.test(String(item.ts)) &&
+        item.asset_id  && item.namespace && item.metric &&
+        item.value !== undefined && !isNaN(Number(item.value));
+      if (ok) { result.valid++; result.mapped.push(item); }
+      else    { result.skipped++; result.errors.push(`invalid metric: ${JSON.stringify(item)}`); }
+    }
+  } else {
+    for (const item of items) {
+      const ok =
+        item.ts        && ISO8601_RE.test(String(item.ts)) &&
+        item.asset_id  && item.namespace && item.kind &&
+        item.severity  && VALID_SEVERITIES.has(String(item.severity)) &&
+        item.title;
+      if (ok) { result.valid++; result.mapped.push(item); }
+      else    { result.skipped++; result.errors.push(`invalid event: ${JSON.stringify(item)}`); }
+    }
+  }
+
+  return result;
+}
+
 // ── Run log ───────────────────────────────────────────────────────────────────
 
 export async function logRun(

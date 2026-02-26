@@ -26,6 +26,15 @@ const FETCH_TIMEOUT_MS  = 30_000;   // max time to wait for a remote HTTP respon
 
 // ── Pull row type ─────────────────────────────────────────────────────────────
 
+interface AuthConfig {
+  kind:   'bearer' | 'basic' | 'header';
+  token?: string;   // bearer
+  user?:  string;   // basic
+  pass?:  string;   // basic
+  name?:  string;   // header
+  value?: string;   // header
+}
+
 interface PullSpec {
   id:                string;
   source_id:         string;
@@ -33,6 +42,7 @@ interface PullSpec {
   spec:              ConnectorSpec;
   pull_url:          string;
   pull_interval_min: number;
+  auth:              AuthConfig | null;
 }
 
 // ── Worker ────────────────────────────────────────────────────────────────────
@@ -59,7 +69,7 @@ export function startConnectorWorker(pool: Pool): () => void {
 
   async function tick(): Promise<void> {
     const { rows } = await pool.query<PullSpec>(
-      `SELECT id, source_id, type, spec, pull_url,
+      `SELECT id, source_id, type, spec, pull_url, auth,
               COALESCE(pull_interval_min, 5) AS pull_interval_min
        FROM connector_specs
        WHERE mode = 'pull'
@@ -119,14 +129,26 @@ async function executePull(pool: Pool, s: PullSpec): Promise<void> {
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
+    const fetchHeaders: Record<string, string> = {
+      'Accept':     'application/json',
+      'User-Agent': 'orbit-core-connector/1.0',
+    };
+    if (s.auth) {
+      if (s.auth.kind === 'bearer' && s.auth.token) {
+        fetchHeaders['Authorization'] = `Bearer ${s.auth.token}`;
+      } else if (s.auth.kind === 'basic' && s.auth.user) {
+        fetchHeaders['Authorization'] =
+          `Basic ${Buffer.from(`${s.auth.user}:${s.auth.pass ?? ''}`).toString('base64')}`;
+      } else if (s.auth.kind === 'header' && s.auth.name) {
+        fetchHeaders[s.auth.name] = s.auth.value ?? '';
+      }
+    }
+
     let response: Response;
     try {
       response = await fetch(s.pull_url, {
         signal:  controller.signal,
-        headers: {
-          'Accept':     'application/json',
-          'User-Agent': 'orbit-core-connector/1.0',
-        },
+        headers: fetchHeaders,
       });
     } finally {
       clearTimeout(timeout);

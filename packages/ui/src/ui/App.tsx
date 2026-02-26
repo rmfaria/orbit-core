@@ -4040,6 +4040,13 @@ function ConnectorsTab() {
   const [runs, setRuns]             = React.useState<ConnectorRun[]>([]);
   const [runsLoading, setRunsLoading] = React.useState(false);
 
+  // ── Test panel ──
+  const [testId, setTestId]           = React.useState<string | null>(null);
+  const [testPayload, setTestPayload] = React.useState('');
+  const [testLoading, setTestLoading] = React.useState(false);
+  const [testResult, setTestResult]   = React.useState<any>(null);
+  const [testErr, setTestErr]         = React.useState<string | null>(null);
+
   // ── Create form ──
   const [cf, setCf] = React.useState({
     id: '', source_id: '', mode: 'push', type: 'metric', description: '',
@@ -4099,6 +4106,27 @@ function ConnectorsTab() {
       const j = await r.json();
       setRuns(j.ok ? j.runs : []);
     } catch { setRuns([]); } finally { setRunsLoading(false); }
+  }
+
+  function toggleTest(c: Connector) {
+    if (testId === c.id) { setTestId(null); setTestResult(null); setTestErr(null); return; }
+    setTestId(c.id); setTestPayload(''); setTestResult(null); setTestErr(null);
+  }
+
+  async function runTest(c: Connector) {
+    setTestLoading(true); setTestResult(null); setTestErr(null);
+    try {
+      const body: any = {};
+      if (testPayload.trim()) {
+        try { body.payload = JSON.parse(testPayload); } catch { setTestErr('JSON inválido'); setTestLoading(false); return; }
+      }
+      const r = await fetch(`api/v1/connectors/${c.id}/test`, {
+        method: 'POST', headers: apiHeaders(), body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+      setTestResult(j);
+    } catch (e: any) { setTestErr(String(e)); } finally { setTestLoading(false); }
   }
 
   async function create() {
@@ -4210,6 +4238,7 @@ function ConnectorsTab() {
                   {c.status === 'approved' && (
                     <button onClick={() => disable(c.id)} style={{ ...S.btnSm, color: '#94a3b8' }} title="Desativar">⊘ Desativar</button>
                   )}
+                  <button onClick={() => toggleTest(c)} style={{ ...S.btnSm, color: '#fbbf24', borderColor: 'rgba(251,191,36,0.30)', background: testId === c.id ? 'rgba(251,191,36,0.10)' : 'transparent' }} title="Testar">⚡ Testar</button>
                   <button onClick={() => del(c.id)} style={{ ...S.btnSm, color: '#f87171', borderColor: 'rgba(248,113,113,0.30)' }} title="Remover">🗑</button>
                 </div>
               </div>
@@ -4253,6 +4282,47 @@ function ConnectorsTab() {
                         })}
                       </tbody>
                     </table>
+                  )}
+                </div>
+              )}
+
+              {/* Test panel */}
+              {testId === c.id && (
+                <div style={{ borderTop: '1px solid rgba(251,191,36,0.15)', padding: '12px 16px', background: 'rgba(4,7,19,0.4)' }}>
+                  <div style={{ color: '#fbbf24', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>⚡ Teste Dry-Run</div>
+                  <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>
+                    {c.mode === 'pull'
+                      ? <>Payload opcional — vazio fará fetch de <code style={{ color: '#a78bfa' }}>{c.pull_url ?? 'pull_url'}</code></>
+                      : 'Informe um payload JSON para simular o mapeamento sem gravar no banco.'}
+                  </div>
+                  <textarea
+                    style={{ ...S.input, width: '100%', minHeight: 90, fontFamily: 'monospace', fontSize: 11, resize: 'vertical' as const, boxSizing: 'border-box' as const, marginBottom: 8 }}
+                    value={testPayload} onChange={e => setTestPayload(e.target.value)}
+                    placeholder={c.mode === 'pull' ? '{ ... } — opcional' : '{ ... } — obrigatório'}
+                  />
+                  {testErr && <div style={{ ...S.err, marginBottom: 8, fontSize: 11 }}>✗ {testErr}</div>}
+                  <button onClick={() => runTest(c)} disabled={testLoading} style={{ ...S.btnSm, color: '#fbbf24', borderColor: 'rgba(251,191,36,0.35)' }}>
+                    {testLoading ? '⏳ Testando…' : '⚡ Executar Teste'}
+                  </button>
+                  {testResult && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ display: 'flex', gap: 16, marginBottom: 8, fontSize: 12, flexWrap: 'wrap' as const }}>
+                        <span style={{ color: '#4ade80' }}>✓ válidos: <strong>{testResult.valid}</strong></span>
+                        {testResult.skipped > 0 && <span style={{ color: '#f87171' }}>✗ inválidos: <strong>{testResult.skipped}</strong></span>}
+                        <span style={{ color: '#64748b' }}>fonte: <strong>{testResult.source}</strong></span>
+                        <span style={{ color: '#64748b' }}>tipo: <strong>{testResult.type}</strong></span>
+                      </div>
+                      {testResult.errors?.length > 0 && (
+                        <div style={{ color: '#f87171', fontSize: 11, marginBottom: 8 }}>
+                          {testResult.errors.slice(0, 3).map((e: string, i: number) => <div key={i}>{e}</div>)}
+                        </div>
+                      )}
+                      {testResult.mapped?.length > 0 && (
+                        <pre style={{ background: 'rgba(4,7,19,0.6)', border: '1px solid rgba(251,191,36,0.15)', borderRadius: 8, padding: 10, fontSize: 11, color: '#fef3c7', overflowX: 'auto' as const, maxHeight: 200, margin: 0 }}>
+                          {JSON.stringify(testResult.mapped[0], null, 2)}{testResult.mapped.length > 1 ? `\n… +${testResult.mapped.length - 1} mais` : ''}
+                        </pre>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

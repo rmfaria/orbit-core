@@ -38,7 +38,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Pool } from 'pg';
 import { applySpec, type FieldMapping, type ConnectorSpec } from '../connectors/dsl.js';
-import { ingestMapped, logRun } from '../connectors/ingest.js';
+import { ingestMapped, logRun, validateMapped } from '../connectors/ingest.js';
 
 // ── Zod Schemas ───────────────────────────────────────────────────────────────
 
@@ -55,6 +55,12 @@ const SpecSchema: z.ZodType<ConnectorSpec> = z.object({
   mappings:    z.record(FieldMappingSchema),
 });
 
+const AuthSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('bearer'), token: z.string().min(1) }),
+  z.object({ kind: z.literal('basic'),  user:  z.string().min(1), pass: z.string() }),
+  z.object({ kind: z.literal('header'), name:  z.string().min(1), value: z.string() }),
+]).nullable().optional();
+
 const CreateConnectorSchema = z.object({
   id:                z.string().min(1).regex(/^[a-z0-9-]+$/, 'id must be lowercase alphanumeric with dashes'),
   source_id:         z.string().min(1),
@@ -64,6 +70,7 @@ const CreateConnectorSchema = z.object({
   description:       z.string().optional(),
   pull_url:          z.string().url().optional(),
   pull_interval_min: z.number().int().min(1).max(1440).default(5),
+  auth:              AuthSchema,
 });
 
 const PatchConnectorSchema = z.object({
@@ -73,6 +80,7 @@ const PatchConnectorSchema = z.object({
   pull_interval_min: z.number().int().min(1).max(1440).optional(),
   mode:              z.enum(['push', 'pull']).optional(),
   type:              z.enum(['metric', 'event']).optional(),
+  auth:              AuthSchema,
 });
 
 const GenerateSchema = z.object({
@@ -239,7 +247,8 @@ export function connectorsRouter(pool?: Pool | null): Router {
       `SELECT * FROM connector_specs WHERE id = $1`, [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ ok: false, error: 'connector not found' });
-    return res.json({ ok: true, connector: rows[0] });
+    const row = { ...rows[0], auth: maskAuth(rows[0].auth) };
+    return res.json({ ok: true, connector: row });
   });
 
   // ── Create spec ───────────────────────────────────────────────────────────
@@ -251,10 +260,11 @@ export function connectorsRouter(pool?: Pool | null): Router {
     const d = parsed.data;
     await pool.query(
       `INSERT INTO connector_specs
-         (id, source_id, mode, type, spec, status, description, pull_url, pull_interval_min)
-       VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8)`,
+         (id, source_id, mode, type, spec, status, description, pull_url, pull_interval_min, auth)
+       VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9)`,
       [d.id, d.source_id, d.mode, d.type, JSON.stringify(d.spec),
-       d.description ?? null, d.pull_url ?? null, d.pull_interval_min]
+       d.description ?? null, d.pull_url ?? null, d.pull_interval_min,
+       d.auth ? JSON.stringify(d.auth) : null]
     );
     return res.status(201).json({ ok: true, id: d.id });
   });
@@ -277,6 +287,7 @@ export function connectorsRouter(pool?: Pool | null): Router {
     if (d.type              !== undefined) { sets.push(`type = $${i++}`);              vals.push(d.type); }
     if (d.pull_url          !== undefined) { sets.push(`pull_url = $${i++}`);          vals.push(d.pull_url); }
     if (d.pull_interval_min !== undefined) { sets.push(`pull_interval_min = $${i++}`); vals.push(d.pull_interval_min); }
+    if (d.auth              !== undefined) { sets.push(`auth = $${i++}`);              vals.push(d.auth ? JSON.stringify(d.auth) : null); }
 
     vals.push(req.params.id);
     const { rowCount } = await pool.query(
@@ -309,6 +320,87 @@ export function connectorsRouter(pool?: Pool | null): Router {
     );
     if (!rowCount) return res.status(404).json({ ok: false, error: 'connector not found' });
     return res.json({ ok: true });
+  });
+
+  // ── Dry-run test ──────────────────────────────────────────────────────────
+  //
+  // POST /api/v1/connectors/:id/test
+  //
+  // Body: { "payload": {...} }  — optional for pull connectors.
+  // If payload is omitted for a pull connector, fetches from pull_url using
+  // the stored auth credentials (same logic as the worker).
+  //
+  // Returns mapped items (first 10) + validation stats, without writing to DB.
+
+  r.post('/connectors/:id/test', async (req, res) => {
+    if (!pool) return res.status(503).json({ ok: false, error: 'no database' });
+
+    const { rows } = await pool.query(
+      `SELECT spec, type, mode, pull_url, auth FROM connector_specs WHERE id = $1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ ok: false, error: 'connector not found' });
+
+    const { spec: rawSpec, type: connType, mode, pull_url, auth } = rows[0];
+    const spec = rawSpec as ConnectorSpec;
+
+    let payload: unknown;
+    let source: 'provided' | 'fetched';
+
+    if (req.body?.payload !== undefined) {
+      payload = req.body.payload;
+      source  = 'provided';
+    } else if (mode === 'pull' && pull_url) {
+      // Fetch from pull_url using stored auth
+      const controller = new AbortController();
+      const timeout    = setTimeout(() => controller.abort(), 30_000);
+      try {
+        const fetchHeaders: Record<string, string> = {
+          'Accept':     'application/json',
+          'User-Agent': 'orbit-core-connector/1.0',
+        };
+        if (auth) {
+          if (auth.kind === 'bearer' && auth.token) {
+            fetchHeaders['Authorization'] = `Bearer ${auth.token}`;
+          } else if (auth.kind === 'basic' && auth.user) {
+            fetchHeaders['Authorization'] =
+              `Basic ${Buffer.from(`${auth.user}:${auth.pass ?? ''}`).toString('base64')}`;
+          } else if (auth.kind === 'header' && auth.name) {
+            fetchHeaders[auth.name] = auth.value ?? '';
+          }
+        }
+        const fetchRes = await fetch(pull_url, { signal: controller.signal, headers: fetchHeaders });
+        clearTimeout(timeout);
+        if (!fetchRes.ok) {
+          return res.status(502).json({ ok: false, error: `Fetch failed: HTTP ${fetchRes.status} ${fetchRes.statusText}` });
+        }
+        payload = await fetchRes.json() as unknown;
+        source  = 'fetched';
+      } catch (err: unknown) {
+        clearTimeout(timeout);
+        return res.status(502).json({ ok: false, error: `Fetch failed: ${String(err)}` });
+      }
+    } else {
+      return res.status(400).json({ ok: false, error: 'No payload provided and connector has no pull_url' });
+    }
+
+    let items: Record<string, unknown>[];
+    try {
+      items = applySpec(payload, spec);
+    } catch (e: unknown) {
+      return res.status(422).json({ ok: false, error: `DSL mapping failed: ${String(e)}` });
+    }
+
+    const { valid, skipped, errors, mapped } = validateMapped(connType as 'metric' | 'event', items);
+    return res.json({
+      ok:      true,
+      type:    connType,
+      source,
+      mapped:  mapped.slice(0, 10),
+      valid,
+      skipped,
+      ...(errors.length ? { errors: errors.slice(0, 20) } : {}),
+    });
   });
 
   // ── Delete spec ───────────────────────────────────────────────────────────
@@ -393,6 +485,17 @@ export function connectorsRouter(pool?: Pool | null): Router {
   });
 
   return r;
+}
+
+// ── Auth masking (never expose raw credentials in GET responses) ──────────────
+
+function maskAuth(auth: unknown): unknown {
+  if (!auth || typeof auth !== 'object') return auth;
+  const a = auth as Record<string, unknown>;
+  if (a.kind === 'bearer') return { kind: 'bearer', token: '***' };
+  if (a.kind === 'basic')  return { kind: 'basic', user: a.user, pass: '***' };
+  if (a.kind === 'header') return { kind: 'header', name: a.name, value: '***' };
+  return auth;
 }
 
 // ── AI prompt builders ────────────────────────────────────────────────────────
