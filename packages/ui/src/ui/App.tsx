@@ -2041,6 +2041,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const suriChart = React.useRef<Chart | null>(null);
   const extra1Chart = React.useRef<Chart | null>(null);
   const extra2Chart = React.useRef<Chart | null>(null);
+  const pulseAbortRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
     fetch('api/v1/health', { headers: apiGetHeaders() })
@@ -2074,121 +2075,97 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
 
   async function runPulse() {
     if (!assetId) return;
+
+    // Cancel any in-flight request from a previous pulse.
+    pulseAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    pulseAbortRef.current = ctrl;
+    const signal = ctrl.signal;
+
     setErr(null);
     try {
-      const qCpu = {
-        language: 'orbitql',
-        query: {
-          kind: 'timeseries_multi',
-          from,
-          to,
-          agg: 'avg',
+      const q = (query: object) => ({
+        method: 'POST' as const,
+        headers: apiHeaders(),
+        body: JSON.stringify({ language: 'orbitql', query }),
+        signal,
+      });
+
+      // LIMIT reasoning: backend auto-selects rollup table.
+      // Widest range is 24h → hourly rollup → 24 pts/series × 3 series = 72 rows max.
+      // 2000 is ample headroom for any zoom level.
+      const LIMIT = 2000;
+
+      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n'];
+
+      // Fire ALL queries in a single round-trip (metrics + events together).
+      const [rCpu, rDisk, rNet, rSuri, ...evResults] = await Promise.all([
+        fetch('api/v1/query', q({ kind: 'timeseries_multi', from, to, agg: 'avg', limit: LIMIT,
           series: [
-            { asset_id: assetId, namespace: 'nagios', metric: 'load1', dimensions: { service: 'CPU Load' }, label: 'load1' },
-            { asset_id: assetId, namespace: 'nagios', metric: 'load5', dimensions: { service: 'CPU Load' }, label: 'load5' },
+            { asset_id: assetId, namespace: 'nagios', metric: 'load1',  dimensions: { service: 'CPU Load' }, label: 'load1'  },
+            { asset_id: assetId, namespace: 'nagios', metric: 'load5',  dimensions: { service: 'CPU Load' }, label: 'load5'  },
             { asset_id: assetId, namespace: 'nagios', metric: 'load15', dimensions: { service: 'CPU Load' }, label: 'load15' },
           ],
-          limit: 12000,
-        }
-      };
-
-      const qDisk = {
-        language: 'orbitql',
-        query: {
-          kind: 'timeseries_multi',
-          from,
-          to,
-          agg: 'avg',
+        })).then(r => r.json()),
+        fetch('api/v1/query', q({ kind: 'timeseries_multi', from, to, agg: 'avg', limit: LIMIT,
           series: [
-            { asset_id: assetId, namespace: 'nagios', metric: 'aqu', dimensions: { service: 'Disk_Queue_sda' }, label: 'aqu-sz' },
-            { asset_id: assetId, namespace: 'nagios', metric: 'util', dimensions: { service: 'Disk_Queue_sda' }, label: '%util' },
+            { asset_id: assetId, namespace: 'nagios', metric: 'aqu',  dimensions: { service: 'Disk_Queue_sda' }, label: 'aqu-sz' },
+            { asset_id: assetId, namespace: 'nagios', metric: 'util', dimensions: { service: 'Disk_Queue_sda' }, label: '%util'  },
           ],
-          limit: 12000,
-        }
-      };
-
-      const qNet = {
-        language: 'orbitql',
-        query: {
-          kind: 'timeseries_multi',
-          from,
-          to,
-          agg: 'avg',
+        })).then(r => r.json()),
+        fetch('api/v1/query', q({ kind: 'timeseries_multi', from, to, agg: 'avg', limit: LIMIT,
           series: [
             { asset_id: assetId, namespace: 'nagios', metric: 'rx_mbps', dimensions: { service: 'Network_Traffic_eth0' }, label: 'RX Mbps' },
             { asset_id: assetId, namespace: 'nagios', metric: 'tx_mbps', dimensions: { service: 'Network_Traffic_eth0' }, label: 'TX Mbps' },
           ],
-          limit: 12000,
-        }
-      };
-
-      const qSuri = {
-        language: 'orbitql',
-        query: {
-          kind: 'timeseries',
-          asset_id: assetId,
-          namespace: 'nagios',
-          metric: 'alerts',
-          from,
-          to,
-          agg: 'sum',
-          dimensions: { service: 'Suricata_Alerts_5m' },
-          limit: 20000,
-        }
-      };
-
-      const [rCpu, rDisk, rNet, rSuri] = await Promise.all([
-        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qCpu) }).then(r => r.json()),
-        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qDisk) }).then(r => r.json()),
-        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qNet) }).then(r => r.json()),
-        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qSuri) }).then(r => r.json()),
+        })).then(r => r.json()),
+        fetch('api/v1/query', q({ kind: 'timeseries', asset_id: assetId, namespace: 'nagios',
+          metric: 'alerts', from, to, agg: 'sum',
+          dimensions: { service: 'Suricata_Alerts_5m' }, limit: LIMIT,
+        })).then(r => r.json()),
+        // Events: 40 per namespace so low-volume sources (otel, n8n) always appear.
+        ...evNsList.map(ns =>
+          fetch('api/v1/query', q({ kind: 'events', namespace: ns, from, to, limit: 40 }))
+            .then(r => r.json()).then(j => (j.result?.rows ?? []) as EventRow[])
+        ),
+        // Extra user-added charts.
+        ...extraCharts.map(cfg =>
+          fetch('api/v1/query', q({ kind: 'timeseries', asset_id: assetId,
+            namespace: cfg.ns, metric: cfg.metric, from, to, agg: 'avg', limit: LIMIT,
+          })).then(r => r.json()).then(j => ({ id: cfg.id, rows: (j.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })) }))
+        ),
       ]);
 
-      if (!rCpu.ok) throw new Error(rCpu.error ?? JSON.stringify(rCpu));
+      // Bail if a newer pulse has already started.
+      if (signal.aborted) return;
+
+      if (!rCpu.ok)  throw new Error(rCpu.error  ?? JSON.stringify(rCpu));
       if (!rDisk.ok) throw new Error(rDisk.error ?? JSON.stringify(rDisk));
-      if (!rNet.ok) throw new Error(rNet.error ?? JSON.stringify(rNet));
+      if (!rNet.ok)  throw new Error(rNet.error  ?? JSON.stringify(rNet));
       if (!rSuri.ok) throw new Error(rSuri.error ?? JSON.stringify(rSuri));
 
-      setCpuRows((rCpu.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
-      setDiskRows((rDisk.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
-      setNetRows((rNet.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
-      setSuriRows((rSuri.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })));
+      // Separate the mixed evResults + extraCharts results back out.
+      const evRows    = evResults.slice(0, evNsList.length) as EventRow[][];
+      const extraData = evResults.slice(evNsList.length) as Array<{ id: string; rows: Row[] }>;
 
-      // Fetch events per namespace so high-volume sources (wazuh) don't crowd out
-      // low-volume ones (otel, n8n). 40 events per namespace → merge → sort → top 200.
-      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n'];
-      const evResults = await Promise.all(
-        evNsList.map(ns =>
-          fetch('api/v1/query', {
-            method: 'POST', headers: apiHeaders(),
-            body: JSON.stringify({ language: 'orbitql', query: { kind: 'events', namespace: ns, from, to, limit: 40 } }),
-          }).then(r => r.json()).then(j => (j.result?.rows ?? []) as EventRow[])
-        )
-      );
-      const mergedEvents = evResults.flat().sort((a, b) =>
+      const mergedEvents = (evRows as EventRow[][]).flat().sort((a, b) =>
         new Date(b.ts).getTime() - new Date(a.ts).getTime()
       );
+
+      setCpuRows( (rCpu.result?.rows  ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
+      setDiskRows((rDisk.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
+      setNetRows( (rNet.result?.rows  ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
+      setSuriRows((rSuri.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })));
       setFeed(mergedEvents.slice(0, 200));
 
-      // fetch extra charts in parallel
-      if (extraCharts.length) {
-        const extras = await Promise.all(
-          extraCharts.map(cfg =>
-            fetch('api/v1/query', {
-              method: 'POST', headers: apiHeaders(),
-              body: JSON.stringify({
-                language: 'orbitql',
-                query: { kind: 'timeseries', asset_id: assetId, namespace: cfg.ns, metric: cfg.metric, from, to, agg: 'avg', limit: 20000 },
-              }),
-            }).then(r => r.json()).then(j => ({ id: cfg.id, rows: (j.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })) }))
-          )
-        );
+      if (extraData.length) {
         const newExtra: Record<string, Row[]> = {};
-        for (const e of extras) newExtra[e.id] = e.rows;
+        for (const e of extraData) if (e?.id) newExtra[e.id] = e.rows;
         setExtraRows(newExtra);
       }
 
     } catch (e: any) {
+      if (e.name === 'AbortError') return;
       setErr(String(e));
     }
   }
@@ -2310,12 +2287,9 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
 
   }, [cpuRows, diskRows, netRows, suriRows, extraRows]);
 
-  const lastCpu: Record<string, number> = {};
-  for (const r of cpuRows) lastCpu[r.series] = r.value;
-  const lastDisk: Record<string, number> = {};
-  for (const r of diskRows) lastDisk[r.series] = r.value;
-  const lastNet: Record<string, number> = {};
-  for (const r of netRows) lastNet[r.series] = r.value;
+  const lastCpu  = React.useMemo(() => { const m: Record<string,number> = {}; for (const r of cpuRows)  m[r.series] = r.value; return m; }, [cpuRows]);
+  const lastDisk = React.useMemo(() => { const m: Record<string,number> = {}; for (const r of diskRows) m[r.series] = r.value; return m; }, [diskRows]);
+  const lastNet  = React.useMemo(() => { const m: Record<string,number> = {}; for (const r of netRows)  m[r.series] = r.value; return m; }, [netRows]);
   const fmtN = (v: any, d = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(d) : '—');
   const suriLast = suriRows.length ? suriRows[suriRows.length - 1].value : null;
 
