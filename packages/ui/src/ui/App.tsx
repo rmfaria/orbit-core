@@ -2372,15 +2372,16 @@ function RelChange({ r }: { r: number | null }) {
 }
 
 function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
-  const [assetId, setAssetId] = React.useState('');
-  const [from, setFrom]       = React.useState(() => relativeFrom(24));
-  const [to, setTo]           = React.useState(() => new Date().toISOString());
-  const [rows, setRows]       = React.useState<CorrelationRow[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [err, setErr]         = React.useState<string | null>(null);
+  const [assetId, setAssetId]         = React.useState('');
+  const [from, setFrom]               = React.useState(() => relativeFrom(24));
+  const [to, setTo]                   = React.useState(() => new Date().toISOString());
+  const [rows, setRows]               = React.useState<CorrelationRow[]>([]);
+  const [loading, setLoading]         = React.useState(false);
+  const [err, setErr]                 = React.useState<string | null>(null);
+  const [expandedIdx, setExpandedIdx] = React.useState<number | null>(null);
 
   async function run() {
-    setLoading(true); setErr(null);
+    setLoading(true); setErr(null); setExpandedIdx(null);
     try {
       const params = new URLSearchParams({ from, to, limit: '500' });
       if (assetId) params.set('asset_id', assetId);
@@ -2405,14 +2406,13 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
       <div style={S.card}>
         <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4 }}>{t('corr_title')}</div>
         <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>
-          {t('corr_desc1')}
-          {t('corr_desc2')}
+          {t('corr_desc1')} {t('corr_desc2')}
         </div>
         <div style={{ ...S.grid4, marginBottom: 10 }}>
           <label style={S.label}>
             Asset
             <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-              <option value="">— Todos —</option>
+              <option value="">{t('all')}</option>
               {assets.map((a) => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
             </select>
           </label>
@@ -2441,36 +2441,107 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
       {rows.length === 0 && !loading && !err && (
         <div style={{ ...S.card, color: '#64748b', textAlign: 'center', padding: 32 }}>
           {t('corr_no_data')}
-          namespace do mesmo asset_id dos eventos.
         </div>
       )}
 
+      {/* Table — sticky header, expandable rows, fills remaining viewport height */}
       {rows.length > 0 && (
-        <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
-          <table style={S.table}>
-            <thead>
+        <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 370px)', minHeight: 240 }}>
+          <table style={{ ...S.table, tableLayout: 'fixed', minWidth: 560 }}>
+            <colgroup>
+              <col style={{ width: 88 }} />  {/* event ts   */}
+              <col style={{ width: '16%' }} />{/* asset      */}
+              <col style={{ width: '22%' }} />{/* metric     */}
+              <col style={{ width: '22%' }} />{/* base→peak  */}
+              <col />                          {/* anomaly    */}
+            </colgroup>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: '#0d1224' }}>
               <tr>
-                {[t('corr_col_event'), t('asset'), t('metric'), t('corr_col_base'), 'Peak', 'z-score', 'Δ rel', t('corr_col_det')].map((h) => (
+                {[t('corr_col_event'), t('asset'), t('metric'), t('corr_col_base_peak'), t('corr_col_anomaly')].map((h) => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} style={{ background: i % 2 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
-                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtTs(r.event_ts)}</td>
-                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{r.asset_id}</td>
-                  <td style={{ ...S.td }}>
-                    <span style={{ color: '#94a3b8', fontSize: 11 }}>{r.metric_ns}/</span>
-                    <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.metric}</span>
-                  </td>
-                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{fmtNum(r.baseline_avg)}</td>
-                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, color: '#f0abfc' }}>{fmtNum(r.peak_value)}</td>
-                  <td style={S.td}><ZScore z={r.z_score} /></td>
-                  <td style={S.td}><RelChange r={r.rel_change} /></td>
-                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{fmtTs(r.detected_at)}</td>
-                </tr>
-              ))}
+              {rows.map((r, i) => {
+                const isExp = expandedIdx === i;
+                return (
+                  <React.Fragment key={i}>
+                    <tr
+                      onClick={() => setExpandedIdx(isExp ? null : i)}
+                      style={{
+                        cursor: 'pointer',
+                        background: isExp
+                          ? 'rgba(85,243,255,0.06)'
+                          : i % 2 ? 'rgba(255,255,255,0.015)' : 'transparent',
+                      }}
+                    >
+                      {/* Event timestamp */}
+                      <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 11, whiteSpace: 'nowrap', color: '#64748b' }}>
+                        {fmtTs(r.event_ts)}
+                      </td>
+                      {/* Asset */}
+                      <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.asset_id}>
+                        {r.asset_id}
+                      </td>
+                      {/* Metric (ns/name) */}
+                      <td style={{ ...S.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${r.metric_ns}/${r.metric}`}>
+                        <span style={{ color: '#64748b', fontSize: 10 }}>{r.metric_ns}/</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{r.metric}</span>
+                      </td>
+                      {/* Baseline → Peak */}
+                      <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'nowrap' }}>
+                        <span style={{ color: '#94a3b8' }}>{fmtNum(r.baseline_avg)}</span>
+                        <span style={{ color: '#475569', margin: '0 4px' }}>→</span>
+                        <span style={{ color: '#f0abfc' }}>{fmtNum(r.peak_value)}</span>
+                      </td>
+                      {/* Anomaly: z-score + Δ rel side by side */}
+                      <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
+                        <ZScore z={r.z_score} />
+                        <span style={{ color: '#334155', margin: '0 6px' }}>·</span>
+                        <RelChange r={r.rel_change} />
+                        <span style={{ marginLeft: 8, fontSize: 10, color: '#475569', verticalAlign: 'middle', userSelect: 'none' }}>
+                          {isExp ? '▲' : '▶'}
+                        </span>
+                      </td>
+                    </tr>
+                    {isExp && (
+                      <tr style={{ background: 'rgba(85,243,255,0.025)' }}>
+                        <td colSpan={5} style={{ ...S.td, padding: '10px 14px 12px', borderTop: '1px solid rgba(85,243,255,0.08)' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 11 }}>
+                            {[
+                              ['event_ts',    r.event_ts],
+                              ['detected_at', r.detected_at],
+                              ['asset',       r.asset_id],
+                              ['namespace',   r.metric_ns],
+                              ['metric',      r.metric],
+                            ].map(([k, v]) => (
+                              <span key={k}>
+                                <span style={{ color: '#475569' }}>{k}</span>{' '}
+                                <code style={{ color: '#cbd5e1', fontSize: 11 }}>{v}</code>
+                              </span>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 11, marginTop: 6 }}>
+                            {[
+                              ['baseline_avg', fmtNum(r.baseline_avg)],
+                              ['baseline_std', r.baseline_std != null ? `±${r.baseline_std.toFixed(3)}` : '—'],
+                              ['peak',         fmtNum(r.peak_value)],
+                              ['z_score',      r.z_score != null ? `${r.z_score.toFixed(2)}σ` : '—'],
+                              ['rel_change',   r.rel_change != null ? `${(r.rel_change * 100).toFixed(1)}%` : '—'],
+                            ].map(([k, v]) => (
+                              <span key={k}>
+                                <span style={{ color: '#475569' }}>{k}</span>{' '}
+                                <code style={{ color: '#a5f3fc', fontSize: 11 }}>{v}</code>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
