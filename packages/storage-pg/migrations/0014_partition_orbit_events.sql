@@ -110,16 +110,17 @@ CREATE TABLE orbit_events_2027_12 PARTITION OF orbit_events FOR VALUES FROM ('20
 -- Catch-all for timestamps outside 2025-2027
 CREATE TABLE orbit_events_default PARTITION OF orbit_events DEFAULT;
 
--- ── Step 4: indexes on partitioned parent ────────────────────────────────────
--- Each index below is automatically propagated to all child partitions.
+-- ── Step 4: indexes on partitioned parent and per-partition unique indexes ────
+--
+-- Non-unique indexes: CREATE INDEX on the parent propagates to all partitions.
+-- Unique indexes: PostgreSQL requires the partition key (ts) to be included in
+-- any UNIQUE index created on the parent. We do NOT want ts in the fingerprint
+-- unique index (it would break per-fingerprint dedup), so we create the unique
+-- index DIRECTLY on each child partition instead. ON CONFLICT (fingerprint)
+-- WHERE fingerprint IS NOT NULL still works because PostgreSQL resolves the
+-- conflict against the local unique index of the target partition.
 
--- Unique fingerprint (local per partition — per-month dedup).
--- Replaces: idx_orbit_events_fingerprint_unique from migration 0010.
-CREATE UNIQUE INDEX idx_orbit_events_fingerprint_unique
-  ON orbit_events (fingerprint)
-  WHERE fingerprint IS NOT NULL;
-
--- Query acceleration (same names as 0002 / 0009 — recreated on new table)
+-- Query acceleration (non-unique — propagated to all partitions automatically)
 CREATE INDEX idx_orbit_events_ts
   ON orbit_events (ts DESC);
 
@@ -132,7 +133,7 @@ CREATE INDEX idx_orbit_events_sev_ts
 CREATE INDEX idx_orbit_events_kind_ts
   ON orbit_events (kind, ts DESC);
 
--- Non-unique fingerprint lookup index (from 0009 — kept for correlate worker)
+-- Non-unique fingerprint lookup for correlate worker (from 0009)
 CREATE INDEX idx_orbit_events_fingerprint
   ON orbit_events (fingerprint)
   WHERE fingerprint IS NOT NULL;
@@ -141,6 +142,47 @@ CREATE INDEX idx_orbit_events_fingerprint
 CREATE INDEX idx_orbit_events_sev_ts_correlate
   ON orbit_events (ts DESC)
   WHERE severity IN ('medium', 'high', 'critical');
+
+-- Unique fingerprint index — created per partition (local, not global).
+-- Replaces idx_orbit_events_fingerprint_unique from migration 0010.
+-- Enables ON CONFLICT (fingerprint) WHERE fingerprint IS NOT NULL per-partition.
+CREATE UNIQUE INDEX ON orbit_events_2025_01 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_02 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_03 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_04 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_05 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_06 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_07 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_08 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_09 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_10 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_11 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2025_12 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_01 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_02 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_03 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_04 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_05 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_06 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_07 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_08 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_09 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_10 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_11 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2026_12 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_01 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_02 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_03 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_04 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_05 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_06 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_07 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_08 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_09 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_10 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_11 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_2027_12 (fingerprint) WHERE fingerprint IS NOT NULL;
+CREATE UNIQUE INDEX ON orbit_events_default  (fingerprint) WHERE fingerprint IS NOT NULL;
 
 -- ── Step 5: copy all historical rows ────────────────────────────────────────
 -- NOTE: this INSERT holds ACCESS EXCLUSIVE on orbit_events_legacy for its
