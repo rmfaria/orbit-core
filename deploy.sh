@@ -70,6 +70,27 @@ for SVC in "$API_SERVICE" "$UI_SERVICE"; do
   fi
 done
 
+# ── 5b. Apply migrations to Docker Swarm DB ──────────────────────────────────
+# The Docker API uses a separate PostgreSQL instance (orbitcore_pg overlay).
+# Wait for the API container to be running, then run migrations inside it.
+if docker service ls --format '{{.Name}}' 2>/dev/null | grep -q "^${API_SERVICE}$"; then
+  log "waiting for Docker API container to start..."
+  for _i in $(seq 1 12); do
+    _CID=$(docker ps --filter "name=${API_SERVICE}" --format '{{.ID}}' 2>/dev/null | head -1)
+    [ -n "$_CID" ] && break
+    sleep 5
+  done
+  if [ -n "$_CID" ]; then
+    log "applying migrations to Docker Swarm DB (container ${_CID:0:12})..."
+    docker exec "$_CID" sh -c \
+      'cd /app/packages/storage-pg && node ./dist/migrate.js' \
+      && ok "Docker Swarm DB migrations done" \
+      || log "WARN: Docker Swarm DB migrations failed — check manually"
+  else
+    log "WARN: Docker API container did not start in time — skipping Docker DB migration"
+  fi
+fi
+
 # ── 6. Health check ───────────────────────────────────────────────────────────
 log "health check (systemd port ${API_PORT})..."
 sleep 2
