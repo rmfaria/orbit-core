@@ -2137,35 +2137,38 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
         }
       };
 
-      const qEvents = {
-        language: 'orbitql',
-        query: {
-          kind: 'events',
-          from,
-          to,
-          limit: 200,
-        }
-      };
-
-      const [rCpu, rDisk, rNet, rSuri, rEv] = await Promise.all([
+      const [rCpu, rDisk, rNet, rSuri] = await Promise.all([
         fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qCpu) }).then(r => r.json()),
         fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qDisk) }).then(r => r.json()),
         fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qNet) }).then(r => r.json()),
         fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qSuri) }).then(r => r.json()),
-        fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(qEvents) }).then(r => r.json()),
       ]);
 
       if (!rCpu.ok) throw new Error(rCpu.error ?? JSON.stringify(rCpu));
       if (!rDisk.ok) throw new Error(rDisk.error ?? JSON.stringify(rDisk));
       if (!rNet.ok) throw new Error(rNet.error ?? JSON.stringify(rNet));
       if (!rSuri.ok) throw new Error(rSuri.error ?? JSON.stringify(rSuri));
-      if (!rEv.ok) throw new Error(rEv.error ?? JSON.stringify(rEv));
 
       setCpuRows((rCpu.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
       setDiskRows((rDisk.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
       setNetRows((rNet.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
       setSuriRows((rSuri.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })));
-      setFeed((rEv.result?.rows ?? []) as EventRow[]);
+
+      // Fetch events per namespace so high-volume sources (wazuh) don't crowd out
+      // low-volume ones (otel, n8n). 40 events per namespace → merge → sort → top 200.
+      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n'];
+      const evResults = await Promise.all(
+        evNsList.map(ns =>
+          fetch('api/v1/query', {
+            method: 'POST', headers: apiHeaders(),
+            body: JSON.stringify({ language: 'orbitql', query: { kind: 'events', namespace: ns, from, to, limit: 40 } }),
+          }).then(r => r.json()).then(j => (j.result?.rows ?? []) as EventRow[])
+        )
+      );
+      const mergedEvents = evResults.flat().sort((a, b) =>
+        new Date(b.ts).getTime() - new Date(a.ts).getTime()
+      );
+      setFeed(mergedEvents.slice(0, 200));
 
       // fetch extra charts in parallel
       if (extraCharts.length) {
@@ -2537,7 +2540,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 {/* source toggle pills — built from namespaces in feed + always show known ones */}
-                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'n8n'])].sort().map(ns => {
+                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'n8n', 'otel'])].sort().map(ns => {
                   const active = feedNs.includes(ns);
                   const color  = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
                   const bg     = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';
