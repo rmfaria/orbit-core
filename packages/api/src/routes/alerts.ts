@@ -109,7 +109,7 @@ export function alertsRouter(pool?: Pool | null): Router {
       } else if (ch.kind === 'telegram') {
         await sendTelegram(ch.config.bot_token, ch.config.chat_id, payload);
       }
-      return res.json({ ok: true, message: 'notificação enviada com sucesso' });
+      return res.json({ ok: true, message: 'notification sent successfully' });
     } catch (e: any) {
       return res.status(502).json({ ok: false, error: String(e?.message ?? e) });
     }

@@ -20,12 +20,12 @@ cd "$REPO"
 # so the rest of the deploy uses the fresh script, not bash's buffered copy.
 log "git pull..."
 _HASH_BEFORE=$(git rev-parse HEAD)
-git pull || fail "git pull falhou"
+git pull || fail "git pull failed"
 _HASH_AFTER=$(git rev-parse HEAD)
-ok "código atualizado → $(git log --oneline -1)"
+ok "code updated → $(git log --oneline -1)"
 
 if [ "$_HASH_BEFORE" != "$_HASH_AFTER" ] && git diff --name-only "$_HASH_BEFORE" "$_HASH_AFTER" | grep -q '^deploy\.sh$'; then
-  log "deploy.sh atualizado — re-executando versão nova..."
+  log "deploy.sh updated — re-executing new version..."
   exec bash "$0" "$@"
 fi
 
@@ -35,34 +35,34 @@ pnpm --filter @orbit/core-contracts build \
   && pnpm --filter @orbit/storage-pg    build \
   && pnpm --filter @orbit/api           build \
   && pnpm --filter @orbit/ui            build \
-  || fail "build falhou"
-ok "build concluído"
+  || fail "build failed"
+ok "build done"
 
 # ── 3. Migrations ─────────────────────────────────────────────────────────────
 # Uses the Node.js migration runner (packages/storage-pg/dist/migrate.js) which
 # tracks applied migrations in _orbit_migrations — idempotent and transactional.
 # Only runs files not yet recorded; never re-runs completed migrations.
-log "aplicando migrations..."
+log "applying migrations..."
 (cd "$REPO/packages/storage-pg" && DATABASE_URL="$DATABASE_URL" node ./dist/migrate.js) \
-  || fail "migrations falharam"
+  || fail "migrations failed"
 ok "migrations OK"
 
 # ── 4. Restart systemd service ────────────────────────────────────────────────
-log "reiniciando orbit-core-api.service..."
+log "restarting orbit-core-api.service..."
 systemctl restart orbit-core-api.service
 sleep 2
-systemctl is-active orbit-core-api.service > /dev/null || fail "serviço systemd não subiu"
+systemctl is-active orbit-core-api.service > /dev/null || fail "systemd service did not start"
 ok "systemd OK"
 
 # ── 5. Update Docker Swarm services ──────────────────────────────────────────
 # --detach=true sends the update and returns immediately; convergence is async.
 for SVC in "$API_SERVICE" "$UI_SERVICE"; do
   if docker service ls --format '{{.Name}}' 2>/dev/null | grep -q "^${SVC}$"; then
-    log "atualizando Docker service ${SVC}..."
+    log "updating Docker service ${SVC}..."
     docker service update --force --detach=true "$SVC" > /dev/null
-    ok "Docker service ${SVC} atualizado (convergindo em background)"
+    ok "Docker service ${SVC} updated (converging in background)"
   else
-    log "Docker service ${SVC} não encontrado — pulando"
+    log "Docker service ${SVC} not found — skipping"
   fi
 done
 
@@ -70,14 +70,14 @@ done
 log "health check (systemd port ${API_PORT})..."
 sleep 2
 HEALTH=$(curl -sf "http://localhost:${API_PORT}/api/v1/health" 2>/dev/null) \
-  || fail "health check falhou — API não responde na porta ${API_PORT}"
+  || fail "health check failed — API not responding on port ${API_PORT}"
 DB=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('db','?'))")
 GIT=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('build',{}).get('git','?'))")
-ok "API respondendo — db=${DB} git=${GIT}"
+ok "API responding — db=${DB} git=${GIT}"
 
 echo ""
 echo "========================================"
-echo "  Deploy concluído!"
+echo "  Deploy complete!"
 echo "  Commit: $(git log --oneline -1)"
-echo "  Docker services convergindo em background."
+echo "  Docker services converging in background."
 echo "========================================"

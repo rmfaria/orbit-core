@@ -8,6 +8,7 @@
 import React from 'react';
 import { Chart, registerables } from 'chart.js';
 import './home.css';
+import { t } from './i18n';
 
 // Register Chart.js components once.
 Chart.register(...registerables);
@@ -427,7 +428,7 @@ function WorkerPill({ name, w }: { name: string; w: SysData['workers'][string] }
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0, boxShadow: `0 0 6px ${c}` }} />
         <span style={{ fontWeight: 700, fontSize: 13, color: '#e9eeff' }}>{name}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 10, color: c, fontWeight: 600 }}>{w.alive ? 'OK' : 'STALE'}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: c, fontWeight: 600 }}>{w.alive ? t('sys_alive') : t('sys_stale')}</span>
       </div>
       <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.5)', lineHeight: 1.6 }}>
         <div>beats: <span style={{ color: '#94a3b8' }}>{w.beats}</span></div>
@@ -482,7 +483,7 @@ function SystemTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 14 }}>
 
         {/* CPU */}
-        <SysCard title="CPU" accent="rgba(85,243,255,0.35)">
+        <SysCard title={t('sys_cpu')} accent="rgba(85,243,255,0.35)">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <span style={{ fontSize: 28, fontWeight: 900, color: loadColor }}>{cpu.load[0].toFixed(2)}</span>
             <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.45)' }}>load avg 1m</span>
@@ -497,7 +498,7 @@ function SystemTab() {
         </SysCard>
 
         {/* Memory */}
-        <SysCard title="Memória" accent="rgba(155,124,255,0.35)">
+        <SysCard title={t('sys_memory')} accent="rgba(155,124,255,0.35)">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <span style={{ fontSize: 28, fontWeight: 900, color: memColor }}>{memory.percent}%</span>
             <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.45)' }}>{memory.used_mb} / {memory.total_mb} MB</span>
@@ -513,7 +514,7 @@ function SystemTab() {
         </SysCard>
 
         {/* Process */}
-        <SysCard title="Processo" accent="rgba(74,222,128,0.30)">
+        <SysCard title={t('sys_process')} accent="rgba(74,222,128,0.30)">
           <div style={{ fontSize: 28, fontWeight: 900, color: '#4ade80' }}>{fmtUptime(proc.uptime_sec)}</div>
           <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.5)', lineHeight: 2 }}>
             <div>PID <span style={{ color: '#94a3b8' }}>{proc.pid}</span></div>
@@ -527,9 +528,9 @@ function SystemTab() {
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
 
         {/* Network */}
-        <SysCard title="Rede" accent="rgba(251,191,36,0.30)">
+        <SysCard title={t('sys_network')} accent="rgba(251,191,36,0.30)">
           {network.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.35)' }}>/proc/net/dev não disponível neste ambiente</div>
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.35)' }}>/proc/net/dev not available in this environment</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {network.map(iface => (
@@ -560,7 +561,7 @@ function SystemTab() {
         <SysCard title="PostgreSQL Pool" accent={db.connected ? 'rgba(74,222,128,0.30)' : 'rgba(255,93,214,0.35)'}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: db.connected ? '#4ade80' : '#ff5dd6', boxShadow: `0 0 8px ${db.connected ? '#4ade80' : '#ff5dd6'}` }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: db.connected ? '#4ade80' : '#ff5dd6' }}>{db.connected ? 'Conectado' : 'Desconectado'}</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: db.connected ? '#4ade80' : '#ff5dd6' }}>{db.connected ? t('sys_connected') : t('sys_disconnected')}</span>
           </div>
           <Bar pct={db.total > 0 ? ((db.total - db.idle) / db.total) * 100 : 0} color="#4ade80" />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 11, marginTop: 4 }}>
@@ -581,7 +582,7 @@ function SystemTab() {
       </div>
 
       {/* Workers */}
-      <SysCard title="Workers" accent="rgba(251,191,36,0.30)">
+      <SysCard title={t('sys_workers')} accent="rgba(251,191,36,0.30)">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
           {Object.entries(workers).map(([name, w]) => (
             <WorkerPill key={name} name={name} w={w} />
@@ -687,8 +688,8 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
 
       {/* Nav tabs */}
       <nav style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-        {navTabBtn('home', 'Home')}
-        {navTabBtn('system', '⬡ Sistema')}
+        {navTabBtn('home', t('nav_home'))}
+        {navTabBtn('system', t('nav_system'))}
 
         {/* Fontes dropdown */}
         <div data-dd="fontes" style={{ position: 'relative' }}>
@@ -712,7 +713,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
               whiteSpace: 'nowrap' as const,
             }}
           >
-            Fontes
+            { t('nav_sources') }
             <span style={{ fontSize: 10, opacity: 0.7 }}>{fontesDdOpen ? '▲' : '▼'}</span>
           </button>
           {fontesDdOpen && (
@@ -741,12 +742,12 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
           )}
         </div>
 
-        {navTabBtn('events',       'Eventos')}
-        {navTabBtn('metrics',      'Métricas')}
-        {navTabBtn('correlations', 'Correlações')}
-        {navTabBtn('alerts',       '🔔 Alertas')}
-        {navTabBtn('connectors',   '🔌 Connectors')}
-        {navTabBtn('dashboards',   '⊞ Dashboards')}
+        {navTabBtn('events',       t('nav_events'))}
+        {navTabBtn('metrics',      t('nav_metrics'))}
+        {navTabBtn('correlations', t('nav_correlations'))}
+        {navTabBtn('alerts',       t('nav_alerts'))}
+        {navTabBtn('connectors',   t('nav_connectors'))}
+        {navTabBtn('dashboards',   t('nav_dashboards'))}
       </nav>
 
       {/* Right side */}
@@ -761,7 +762,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
             display: 'inline-block',
           }} />
           <span style={{ color: apiKey ? '#4ade80' : '#fbbf24', fontWeight: 600 }}>
-            {apiKey ? 'admin' : 'sem auth'}
+            {apiKey ? t('auth_admin') : t('auth_no_auth')}
           </span>
         </div>
 
@@ -769,7 +770,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         <div data-dd="gear" style={{ position: 'relative' }}>
           <button
             onClick={() => setGearDdOpen(x => !x)}
-            title="Configurações"
+            title={t('auth_settings')}
             style={{
               background: gearDdOpen ? 'rgba(85,243,255,0.10)' : 'transparent',
               border: '1px solid ' + (gearDdOpen ? 'rgba(85,243,255,0.30)' : 'rgba(140,160,255,0.20)'),
@@ -793,7 +794,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
                 onClick={() => { setTab('admin'); setGearDdOpen(false); }}
                 style={ddBtn}
               >
-                ⚙ Administração
+                ⚙ Administration
               </button>
             </div>
           )}
@@ -896,7 +897,7 @@ function FeedRow({ e }: { e: EventRow }) {
         <div style={{ fontSize: 11, color: 'rgba(233,238,255,.38)', marginTop: 5, display: 'flex', gap: 10 }}>
           <span>{fmtTs(e.ts)}</span>
           {expandable && (
-            <span style={{ color: 'rgba(140,160,255,.5)' }}>{open ? '▲ fechar' : '▶ ver log'}</span>
+            <span style={{ color: 'rgba(140,160,255,.5)' }}>{open ? t('events_close') : t('events_see_log')}</span>
           )}
         </div>
       </div>
@@ -1047,7 +1048,7 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
   }, [rows]);
 
   async function run() {
-    if (!assetId || !namespace || !metric) { setErr('Selecione asset / namespace / metric'); return; }
+    if (!assetId || !namespace || !metric) { setErr(t('metrics_no_asset')); return; }
     setLoading(true); setErr(null);
     try {
       const body: any = {
@@ -1206,14 +1207,14 @@ function EpsChart({ namespace, from, to, variant = 'card', onClose }: { namespac
           EPS — Wazuh{loading ? ' · …' : ''} · bucket: {bucketLabel}
         </div>
         {onClose && (
-          <button className="orbit-chart-close" onClick={onClose} title="Remover gráfico">×</button>
+          <button className="orbit-chart-close" onClick={onClose} title={t('chart_remove')}>×</button>
         )}
         <div className="orbit-chart-canvas-wrap">
           {/* canvas always in DOM so Chart.js can attach on mount */}
           <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block' }} />
           {isEmpty && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>
-              Sem dados no período
+              {t('events_no_data')}
             </div>
           )}
         </div>
@@ -1225,13 +1226,13 @@ function EpsChart({ namespace, from, to, variant = 'card', onClose }: { namespac
     <div style={{ ...S.card, marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <span style={{ fontWeight: 700, fontSize: 13 }}>EPS — Eventos por segundo</span>
-        <span style={{ fontSize: 11, color: '#94a3b8' }}>bucket: {bucketLabel}{loading ? ' · carregando…' : ''}</span>
+        <span style={{ fontSize: 11, color: '#94a3b8' }}>bucket: {bucketLabel}{loading ? t('events_loading') : ''}</span>
       </div>
       <div style={{ position: 'relative', height: 160 }}>
         <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block', width: '100%', height: '100%' }} />
         {isEmpty && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', color: '#64748b', fontSize: 12 }}>
-            Sem dados no período
+            {t('events_no_data')}
           </div>
         )}
       </div>
@@ -1300,14 +1301,14 @@ function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs?: stri
           <label style={S.label}>
             Severity
             <select style={S.select} value={severity} onChange={(e) => setSeverity(e.target.value)}>
-              {SEVERITY_OPTS.map((s) => <option key={s} value={s}>{s || '— Todas —'}</option>)}
+              {SEVERITY_OPTS.map((s) => <option key={s} value={s}>{s || t('all')}</option>)}
             </select>
           </label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 12, color: '#94a3b8' }}>Ações</span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>{t('actions')}</span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingTop: 2 }}>
-              <button style={S.btn} onClick={run} disabled={loading}>{loading ? '…' : 'Buscar'}</button>
-              <span style={{ color: '#64748b', fontSize: 12 }}>{events.length} eventos</span>
+              <button style={S.btn} onClick={run} disabled={loading}>{loading ? '…' : t('search')}</button>
+              <span style={{ color: '#64748b', fontSize: 12 }}>{events.length} events</span>
             </div>
           </div>
         </div>
@@ -1331,7 +1332,7 @@ function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs?: stri
         <table style={S.table}>
           <thead>
             <tr>
-              {['Timestamp', 'Asset', 'Namespace', 'Kind', 'Severity', 'Título', 'Mensagem'].map((h) => (
+              {['Timestamp', t('asset'), t('namespace'), 'Kind', 'Severity', t('title'), t('events_col_message')].map((h) => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
@@ -1492,7 +1493,7 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
           <label style={S.label}>
             Estado
             <select style={S.select} value={stateFilter} onChange={(e) => setStateFilter(e.target.value)}>
-              {states.map((s) => <option key={s} value={s}>{s || '— Todos —'}</option>)}
+              {states.map((s) => <option key={s} value={s}>{s || t('all')}</option>)}
             </select>
           </label>
           <label style={S.label}>
@@ -1506,8 +1507,8 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
         </div>
         <div style={S.row}>
           <RangeShortcuts setFrom={setFrom} setTo={setTo} />
-          <button style={S.btn} onClick={run} disabled={loading}>{loading ? 'Buscando…' : 'Buscar'}</button>
-          <span style={{ color: '#64748b', fontSize: 12 }}>{services.length} serviços</span>
+          <button style={S.btn} onClick={run} disabled={loading}>{loading ? 'Buscando…' : t('search')}</button>
+          <span style={{ color: '#64748b', fontSize: 12 }}>{services.length} services</span>
         </div>
         {err && <div style={S.err}>{err}</div>}
       </div>
@@ -1516,7 +1517,7 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
         <table style={S.table}>
           <thead>
             <tr>
-              {['Estado', 'Host', 'Serviço', 'Severity', 'Última mudança', 'Output'].map((h) => (
+              {[t('nagios_col_state'), 'Host', t('nagios_col_service'), 'Severity', t('nagios_col_last_change'), 'Output'].map((h) => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
@@ -1524,7 +1525,7 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
           <tbody>
             {services.length === 0 && (
               <tr><td colSpan={6} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
-                Nenhum serviço Nagios encontrado no período
+                {t('nagios_no_services')}
               </td></tr>
             )}
             {services.map((svc, i) => (
@@ -1618,7 +1619,7 @@ function makeNeLineChart(canvas: HTMLCanvasElement, datasetCount: number) {
             autoSkip: true,
             maxTicksLimit: 7,
             padding: 6,
-            font: { size: 10, weight: '600' },
+            font: { size: 10, weight: 600 },
           },
         },
         y: {
@@ -1629,7 +1630,7 @@ function makeNeLineChart(canvas: HTMLCanvasElement, datasetCount: number) {
             autoSkip: true,
             maxTicksLimit: 5,
             padding: 6,
-            font: { size: 10, weight: '600' },
+            font: { size: 10, weight: 600 },
           },
         },
       },
@@ -1642,7 +1643,7 @@ function makeNeLineChart(canvas: HTMLCanvasElement, datasetCount: number) {
             usePointStyle: true,
             pointStyle: 'rectRounded',
             padding: 14,
-            font: { size: 10, weight: '700' },
+            font: { size: 10, weight: 700 },
           },
         },
         tooltip: {
@@ -2003,7 +2004,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     { label: 'CPU Load',          value: `${fmtN(lastCpu['load1'])} • ${fmtN(lastCpu['load5'])} • ${fmtN(lastCpu['load15'])}`, hint: 'load1 • load5 • load15' },
     { label: 'Disk Queue',        value: `${fmtN(lastDisk['aqu-sz'])} • ${fmtN(lastDisk['%util'])}`,                             hint: 'aqu-sz • %util' },
     { label: 'Net Traffic',       value: `${fmtN(lastNet['RX Mbps'])} • ${fmtN(lastNet['TX Mbps'])}`,                            hint: 'RX Mbps • TX Mbps' },
-    { label: 'Suricata Alerts',   value: fmtN(suriLast, 0),                                                                       hint: 'últimos 5 min' },
+    { label: 'Suricata Alerts',   value: fmtN(suriLast, 0),                                                                       hint: t('home_suri_hint') },
     { label: 'API',               value: health?.ok ? 'online' : '…',                                                             hint: '/api/v1/health' },
     { label: 'Postgres',          value: health?.db ?? '…',                                                                        hint: 'database' },
   ];
@@ -2019,7 +2020,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
           <div>
             <div style={{ fontWeight: 800, fontSize: 20, letterSpacing: '.4px' }}>◎ Orbit Core</div>
             <div style={{ color: 'rgba(233,238,255,.65)', fontSize: 12, marginTop: 4 }}>
-              Dashboard espacial • métricas contínuas (Nagios/Wazuh) • <a href="#" onClick={(e) => { e.preventDefault(); setTab('src-nagios'); }} style={{ color: '#55f3ff', textDecoration: 'none' }}>fontes</a>
+              {t('home_subtitle')}<a href="#" onClick={(e) => { e.preventDefault(); setTab('src-nagios'); }} style={{ color: '#55f3ff', textDecoration: 'none' }}>{t('home_subtitle_link')}</a>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -2092,11 +2093,11 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 6px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, color: 'rgba(233,238,255,.45)', letterSpacing: '.2px' }}>
-                    {total}/6 gráficos
+                    {total}/6 charts
                   </span>
                   {total < 6 && !showAddChart && (
                     <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(85,243,255,.10)', borderColor: 'rgba(85,243,255,.3)', color: '#55f3ff' }}
-                      onClick={() => setShowAddChart(true)}>+ gráfico</button>
+                      onClick={() => setShowAddChart(true)}>{t('home_add_chart')}</button>
                   )}
                   {hiddenFixed.length > 0 && (
                     <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(155,124,255,.10)', borderColor: 'rgba(155,124,255,.3)', color: '#9b7cff' }}
@@ -2149,35 +2150,35 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               {!hiddenFixed.includes('cpu') && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">CPU Load</div>
-                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'cpu'])} title="Remover gráfico">×</button>
+                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'cpu'])} title={t('chart_remove')}>×</button>
                   <div className="orbit-chart-canvas-wrap"><canvas ref={cpuRef} /></div>
                 </div>
               )}
               {!hiddenFixed.includes('disk') && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">Disk Queue</div>
-                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'disk'])} title="Remover gráfico">×</button>
+                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'disk'])} title={t('chart_remove')}>×</button>
                   <div className="orbit-chart-canvas-wrap"><canvas ref={diskRef} /></div>
                 </div>
               )}
               {!hiddenFixed.includes('net') && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">Net Traffic</div>
-                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'net'])} title="Remover gráfico">×</button>
+                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'net'])} title={t('chart_remove')}>×</button>
                   <div className="orbit-chart-canvas-wrap"><canvas ref={netRef} /></div>
                 </div>
               )}
               {!hiddenFixed.includes('suri') && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">Suricata Alerts</div>
-                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'suri'])} title="Remover gráfico">×</button>
+                  <button className="orbit-chart-close" onClick={() => setHiddenFixed(h => [...h, 'suri'])} title={t('chart_remove')}>×</button>
                   <div className="orbit-chart-canvas-wrap"><canvas ref={suriRef} /></div>
                 </div>
               )}
               {extraCharts[0] && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">{extraCharts[0].label}</div>
-                  <button className="orbit-chart-close" title="Remover gráfico"
+                  <button className="orbit-chart-close" title={t('chart_remove')}
                     onClick={() => {
                       setExtraCharts(prev => prev.filter((_, i) => i !== 0));
                       setExtraRows(prev => { const n = { ...prev }; delete n[extraCharts[0].id]; return n; });
@@ -2190,7 +2191,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               {extraCharts[1] && (
                 <div className="orbit-chart-box">
                   <div className="orbit-chart-tag">{extraCharts[1].label}</div>
-                  <button className="orbit-chart-close" title="Remover gráfico"
+                  <button className="orbit-chart-close" title={t('chart_remove')}
                     onClick={() => {
                       setExtraCharts(prev => prev.filter((_, i) => i !== 1));
                       setExtraRows(prev => { const n = { ...prev }; delete n[extraCharts[1].id]; return n; });
@@ -2247,7 +2248,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
                 const visible = feed.filter(e => feedNs.includes(eventSource(e)));
                 if (visible.length === 0) return (
                   <div style={{ color: 'rgba(233,238,255,.45)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
-                    Nenhum evento no período
+                    {t('home_no_events')}
                   </div>
                 );
                 return visible.slice(0, 30).map((e, idx) => (
@@ -2316,10 +2317,10 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
   return (
     <div>
       <div style={S.card}>
-        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4 }}>Correlações Evento × Métrica</div>
+        <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4 }}>{t('corr_title')}</div>
         <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>
-          Anomalias métricas detectadas automaticamente em torno de eventos medium/high/critical.
-          z-score ≥ 2σ ou variação relativa ≥ 50%.
+          {t('corr_desc1')}
+          {t('corr_desc2')}
         </div>
         <div style={{ ...S.grid4, marginBottom: 10 }}>
           <label style={S.label}>
@@ -2338,10 +2339,10 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
             <input style={S.input} value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 12, color: '#94a3b8' }}>Ações</span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>{t('actions')}</span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingTop: 2 }}>
-              <button style={S.btn} onClick={run} disabled={loading}>{loading ? '…' : 'Buscar'}</button>
-              <span style={{ color: '#64748b', fontSize: 12 }}>{rows.length} correlações</span>
+              <button style={S.btn} onClick={run} disabled={loading}>{loading ? '…' : t('search')}</button>
+              <span style={{ color: '#64748b', fontSize: 12 }}>{rows.length} correlations</span>
             </div>
           </div>
         </div>
@@ -2353,7 +2354,7 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
 
       {rows.length === 0 && !loading && !err && (
         <div style={{ ...S.card, color: '#64748b', textAlign: 'center', padding: 32 }}>
-          Nenhuma correlação encontrada. O worker executa a cada 5 min e requer métricas no
+          {t('corr_no_data')}
           namespace do mesmo asset_id dos eventos.
         </div>
       )}
@@ -2363,7 +2364,7 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
           <table style={S.table}>
             <thead>
               <tr>
-                {['Evento (ts)', 'Asset', 'Métrica', 'Baseline avg', 'Peak', 'z-score', 'Δ rel', 'Detectado em'].map((h) => (
+                {[t('corr_col_event'), t('asset'), t('metric'), t('corr_col_base'), 'Peak', 'z-score', 'Δ rel', t('corr_col_det')].map((h) => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
@@ -2439,34 +2440,34 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
   return (
     <div>
       <div style={S.card}>
-        <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>Administração</div>
-        <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13 }}>Configurações de segurança e acesso à API.</div>
+        <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>{t('admin_title')}</div>
+        <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13 }}>{t('admin_api_desc')}</div>
       </div>
 
       <div style={S.card}>
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Proteção da API</div>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>API Protection</div>
         {checking ? (
-          <div style={{ color: '#64748b', fontSize: 13 }}>Verificando…</div>
+          <div style={{ color: '#64748b', fontSize: 13 }}>{t('admin_checking')}</div>
         ) : apiProtected === null ? (
-          <div style={{ color: '#f87171', fontSize: 13 }}>Não foi possível verificar o status da API.</div>
+          <div style={{ color: '#f87171', fontSize: 13 }}>{t('admin_api_check_err')}</div>
         ) : apiProtected ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
-            <span style={{ color: '#4ade80', fontWeight: 700, fontSize: 13 }}>API protegida</span>
-            <span style={{ color: '#64748b', fontSize: 12 }}>— ORBIT_API_KEY configurada no servidor</span>
+            <span style={{ color: '#4ade80', fontWeight: 700, fontSize: 13 }}>{t('admin_api_protected')}</span>
+            <span style={{ color: '#64748b', fontSize: 12 }}>{t('admin_api_server_key')}</span>
           </div>
         ) : (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f87171', display: 'inline-block' }} />
-              <span style={{ color: '#f87171', fontWeight: 700, fontSize: 13 }}>API aberta</span>
-              <span style={{ color: '#94a3b8', fontSize: 12 }}>— sem autenticação</span>
+              <span style={{ color: '#f87171', fontWeight: 700, fontSize: 13 }}>{t('admin_api_open')}</span>
+              <span style={{ color: '#94a3b8', fontSize: 12 }}>{t('admin_api_no_auth')}</span>
             </div>
             <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.7 }}>
-              Qualquer requisição pode ler e ingerir dados sem autenticação.<br />
-              Para proteger, defina{' '}
+              Any request can read and ingest data without authentication.<br />
+              {t('admin_api_protect_hint')}{' '}
               <code style={{ background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 4 }}>ORBIT_API_KEY</code>
-              {' '}no servidor orbit-core e reinicie o serviço.
+              {' '}{t('admin_api_protect_hint2')}
             </div>
           </div>
         )}
@@ -2475,7 +2476,7 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
       <div style={S.card}>
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>API Key (client)</div>
         <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 10 }}>
-          Chave enviada nas requisições desta UI via header <code style={codeStyle}>X-Api-Key</code>.
+          Key sent in this UI’s requests via header <code style={codeStyle}>X-Api-Key</code>.
           Persistida no <code style={codeStyle}>localStorage</code> do browser.
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -2487,15 +2488,15 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
             placeholder="ORBIT_API_KEY (deixe vazio se sem auth)"
             style={{ ...S.input, flex: 1 }}
           />
-          <button onClick={saveKey} style={S.btnSm}>{saved ? 'Salvo ✓' : 'Salvar'}</button>
+          <button onClick={saveKey} style={S.btnSm}>{saved ? t('saved') : t('save')}</button>
         </div>
       </div>
 
       <div style={S.card}>
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Configurar autenticação no servidor</div>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Configure server authentication</div>
         <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
-          A autenticação é controlada pela variável de ambiente <code style={codeStyle}>ORBIT_API_KEY</code> no processo da API.
-          Se não definida, a API aceita qualquer requisição sem autenticação.
+          Authentication is controlled by the environment variable <code style={codeStyle}>ORBIT_API_KEY</code> in the API process.
+          If not set, the API accepts any request without authentication.
         </div>
 
         <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', marginBottom: 6 }}>systemd</div>
@@ -2518,8 +2519,8 @@ systemctl restart orbit-core-api`}</pre>
       <div style={S.card}>
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Configurar connectors</div>
         <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
-          Todos os connectors suportam <code style={codeStyle}>ORBIT_API_KEY</code> via variável de ambiente.
-          Quando definida, o header <code style={codeStyle}>X-Api-Key</code> é enviado automaticamente em cada requisição.
+          All connectors support <code style={codeStyle}>ORBIT_API_KEY</code> via environment variable.
+          When set, the header <code style={codeStyle}>X-Api-Key</code> is sent automatically in every request.
         </div>
 
         <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', marginBottom: 6 }}>Nagios / Wazuh / n8n</div>
@@ -2529,7 +2530,7 @@ python3 ship_events.py`}</pre>
 
         <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', margin: '12px 0 6px' }}>Fortigate</div>
         <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.7 }}>
-          Usa o conector Wazuh (<code style={codeStyle}>ship_events.py</code>) — mesma configuração acima.
+          Uses the Wazuh connector (<code style={codeStyle}>ship_events.py</code>) — same configuration above.
         </div>
       </div>
 
@@ -2578,7 +2579,7 @@ function AiConfigCard() {
             <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
           </select>
         </label>
-        <button onClick={save} style={S.btnSm}>{saved ? 'Salvo ✓' : 'Salvar'}</button>
+        <button onClick={save} style={S.btnSm}>{saved ? t('saved') : t('save')}</button>
       </div>
     </div>
   );
@@ -2599,9 +2600,9 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
           <div style={S.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ fontWeight: 900 }}>Nagios</div>
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>ATIVO</span>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>{t('sources_active')}</span>
             </div>
-            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Serviços, eventos e métricas (perfdata)</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>{t('sources_nagios_desc')}</div>
             <div style={{ marginTop: 10, display: 'flex', gap: 14 }}>
               <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/nagios/README.md" target="_blank" rel="noreferrer"
                 style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2619,9 +2620,9 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
           <div style={S.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ fontWeight: 900 }}>Wazuh</div>
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>ATIVO</span>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>{t('sources_active')}</span>
             </div>
-            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Alertas de segurança, regras e logs de auditoria via conector passivo</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>{t('sources_wazuh_desc')}</div>
             <div style={{ marginTop: 10, display: 'flex', gap: 14 }}>
               <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/wazuh/README.md" target="_blank" rel="noreferrer"
                 style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2633,13 +2634,13 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
               </a>
             </div>
             <div style={{ marginTop: 10 }}>
-              <button style={S.btn} onClick={() => setTab('events')}>Ver Eventos</button>
+              <button style={S.btn} onClick={() => setTab('events')}>{t('sources_view_events')}</button>
             </div>
           </div>
           <div style={S.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ fontWeight: 900 }}>Fortigate</div>
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>ATIVO</span>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>{t('sources_active')}</span>
             </div>
             <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Firewall logs via syslog → Wazuh → orbit-core</div>
             <div style={{ marginTop: 10, display: 'flex', gap: 14 }}>
@@ -2653,15 +2654,15 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
               </a>
             </div>
             <div style={{ marginTop: 10 }}>
-              <button style={S.btn} onClick={() => setTab('events')}>Ver Eventos</button>
+              <button style={S.btn} onClick={() => setTab('events')}>{t('sources_view_events')}</button>
             </div>
           </div>
           <div style={S.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ fontWeight: 900 }}>n8n</div>
-              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>ATIVO</span>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(85,243,255,.12)', color: '#55f3ff', fontWeight: 700, letterSpacing: '.05em' }}>{t('sources_active')}</span>
             </div>
-            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Falhas e execuções travadas de workflows (Error Trigger + polling)</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>{t('sources_n8n_desc')}</div>
             <div style={{ marginTop: 10, display: 'flex', gap: 14 }}>
               <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/n8n/README.md" target="_blank" rel="noreferrer"
                 style={{ fontSize: 12, color: 'rgba(160,180,255,.75)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2677,7 +2678,7 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
               </a>
             </div>
             <div style={{ marginTop: 10 }}>
-              <button style={S.btn} onClick={() => setTab('events')}>Ver Eventos</button>
+              <button style={S.btn} onClick={() => setTab('events')}>{t('sources_view_events')}</button>
             </div>
           </div>
           <div style={S.card}>
@@ -2771,7 +2772,7 @@ function DashWidgetTimeseries({ widget, from, to, assets }: { widget: WidgetSpec
         setIsEmpty(rows.length === 0);
         const chart = chartRef.current;
         if (!chart) return;
-        chart.data.labels = rows.map(r => {
+        (chart.data.labels as string[]) = rows.map(r => {
           const d = new Date(r.ts);
           return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         });
@@ -2790,7 +2791,7 @@ function DashWidgetTimeseries({ widget, from, to, assets }: { widget: WidgetSpec
         <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block' }} />
         {isEmpty && !loading && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>
-            Sem dados no período
+            {t('events_no_data')}
           </div>
         )}
       </div>
@@ -2861,7 +2862,7 @@ function DashWidgetMulti({ widget, from, to, assets }: { widget: WidgetSpec; fro
         const seriesKeys = Array.from(bySeries.keys());
         const allTs = Array.from(new Set(rows.map(r => r.ts))).sort();
 
-        chart.data.labels = allTs.map(ts => {
+        (chart.data.labels as string[]) = allTs.map(ts => {
           const d = new Date(ts);
           return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         });
@@ -2891,7 +2892,7 @@ function DashWidgetMulti({ widget, from, to, assets }: { widget: WidgetSpec; fro
         <canvas ref={canvasRef} style={{ display: isEmpty ? 'none' : 'block' }} />
         {isEmpty && !loading && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 12 }}>
-            Sem dados no período
+            {t('events_no_data')}
           </div>
         )}
       </div>
@@ -2918,7 +2919,7 @@ function DashWidgetEvents({ widget, from, to }: { widget: WidgetSpec; from: stri
       <div className="orbit-chart-tag">{widget.title}{loading ? ' · …' : ''}</div>
       <div style={{ overflowY: 'auto', maxHeight: 280, paddingTop: 8 }}>
         {events.length === 0 && !loading && (
-          <div style={{ color: '#64748b', fontSize: 12, padding: '12px 0' }}>Sem eventos no período</div>
+          <div style={{ color: '#64748b', fontSize: 12, padding: '12px 0' }}>{t('home_no_events')}</div>
         )}
         {events.map(e => <FeedRow key={e.ts + e.title} e={e} />)}
       </div>
@@ -3231,7 +3232,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
   }
 
   async function deleteDash(id: string) {
-    if (!confirm('Deletar este dashboard?')) return;
+    if (!confirm(t('dash_confirm_del'))) return;
     await fetch(`api/v1/dashboards/${id}`, { method: 'DELETE', headers: apiGetHeaders() });
     loadList();
   }
@@ -3271,7 +3272,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
           <div>
             <div style={{ fontWeight: 900, fontSize: 18 }}>⊞ Dashboards</div>
             <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 4 }}>
-              Painéis personalizados com qualquer fonte de dados.
+              {t('dash_desc')}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -3294,7 +3295,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
               disabled={dashboards.length < 2}
               style={{ ...S.btnSm, opacity: dashboards.length < 2 ? 0.4 : 1 }}
             >
-              ▶ Rotação
+              ▶ Rotation
             </button>
             <button
               onClick={() => { setEditSpec(null); setMode('build'); }}
@@ -3371,7 +3372,7 @@ function DashboardView({ spec, rotating, rotProgress, rotIdx, rotTotal, onBack, 
         <button onClick={onEdit} style={S.btnSm}>✎ Editar</button>
         {rotating && (
           <button onClick={onStopRotation} style={{ ...S.btnSm, borderColor: 'rgba(248,113,113,.35)', color: '#f87171' }}>
-            ⏹ Parar rotação
+            ⏹ Stop rotation
           </button>
         )}
       </div>
@@ -3380,7 +3381,7 @@ function DashboardView({ spec, rotating, rotProgress, rotIdx, rotTotal, onBack, 
       {rotating && (
         <div style={{ marginBottom: 14, background: 'rgba(85,243,255,0.06)', border: '1px solid rgba(85,243,255,.18)', borderRadius: 10, padding: '8px 14px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#55f3ff', marginBottom: 6 }}>
-            <span>▶ Rotação ativa</span>
+            <span>▶ Rotation ativa</span>
             <span>{rotIdx + 1} / {rotTotal}</span>
           </div>
           <div style={{ height: 4, background: 'rgba(255,255,255,.08)', borderRadius: 99, overflow: 'hidden' }}>
@@ -3423,6 +3424,8 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
       severities: Array.isArray(w.query.severities) ? (w.query.severities as string[]).join(', ') : '',
       kindFilter: Array.isArray(w.query.kinds) ? (w.query.kinds as string[])[0] ?? '' : '',
       span:       (w.layout.w as 1 | 2) ?? 1,
+      gaugeMin:   (w.query.gauge_min as number) ?? 0,
+      gaugeMax:   (w.query.gauge_max as number) ?? 100,
     }));
   });
 
@@ -3498,7 +3501,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
     const aiKey   = localStorage.getItem('ai_api_key') ?? '';
     const aiModel = localStorage.getItem('ai_model') ?? 'claude-sonnet-4-6';
     if (!aiKey) {
-      setAiError('Configure a Anthropic API Key em Admin → AI Agent antes de usar.');
+      setAiError(t('alerts_no_api_key'));
       return;
     }
     setAiLoading(true); setAiError(null);
@@ -3525,6 +3528,8 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
         severities: Array.isArray(w.query.severities) ? (w.query.severities as string[]).join(', ') : '',
         kindFilter: Array.isArray(w.query.kinds) ? (w.query.kinds as string[])[0] ?? '' : '',
         span:       (w.layout.w as 1 | 2),
+        gaugeMin:   (w.query.gauge_min as number) ?? 0,
+        gaugeMax:   (w.query.gauge_max as number) ?? 100,
       })));
     } catch (e: any) {
       setAiError(String(e));
@@ -3562,8 +3567,8 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
   }
 
   async function save() {
-    if (!name.trim()) { setSaveErr('Nome do dashboard é obrigatório.'); return; }
-    if (widgets.length === 0) { setSaveErr('Adicione pelo menos 1 widget.'); return; }
+    if (!name.trim()) { setSaveErr(t('dash_name_required')); return; }
+    if (widgets.length === 0) { setSaveErr(t('dash_widget_required')); return; }
 
     const specId = initialSpec?.id ?? `dash-${Date.now()}`;
     const spec = {
@@ -3602,8 +3607,8 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Meu Dashboard" style={{ ...S.input, minWidth: 180 }} />
         </label>
         <label style={S.label}>
-          Descrição
-          <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Opcional" style={{ ...S.input, minWidth: 220 }} />
+          Description
+          <input value={desc} onChange={e => setDesc(e.target.value)} placeholder={t('optional')} style={{ ...S.input, minWidth: 220 }} />
         </label>
         <label style={S.label}>
           Time preset
@@ -3611,7 +3616,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
             {TIME_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
         </label>
-        <button onClick={save} disabled={saving} style={S.btn}>{saving ? 'Salvando…' : 'Salvar'}</button>
+        <button onClick={save} disabled={saving} style={S.btn}>{saving ? t('saving') : t('save')}</button>
         <button onClick={onCancel} style={S.btnSm}>Cancelar</button>
       </div>
       {saveErr && <div style={S.err}>{saveErr}</div>}
@@ -3623,7 +3628,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
           <textarea
             value={aiPrompt}
             onChange={e => setAiPrompt(e.target.value)}
-            placeholder="Descreva o dashboard que deseja criar… ex: quero monitorar CPU e memória dos servidores nagios e ver o EPS do wazuh"
+            placeholder="Describe the dashboard you want to create… ex: monitor CPU and memory of nagios servers and show EPS from wazuh"
             style={{ ...S.input, flex: 1, minHeight: 64, resize: 'vertical' as const }}
           />
           <button
@@ -3651,7 +3656,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
             </select>
           </label>
           <label style={S.label}>
-            Título
+            Title
             <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="ex: CPU Usage" style={{ ...S.input, width: 160 }} />
           </label>
           <label style={S.label}>
@@ -3663,7 +3668,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
           </label>
           {(newKind === 'timeseries' || newKind === 'timeseries_multi' || newKind === 'kpi' || newKind === 'gauge') && (
             <label style={S.label}>
-              {newKind === 'timeseries_multi' ? 'Métricas (vírgula)' : 'Métrica'}
+              {newKind === 'timeseries_multi' ? t('metrics_csv') : t('metric')}
               {newKind === 'timeseries_multi' ? (
                 <input
                   value={newMetric}
@@ -3860,7 +3865,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   }
 
   async function deleteRule(id: number) {
-    if (!confirm('Remover esta regra?')) return;
+    if (!confirm(t('alerts_confirm_delete'))) return;
     await fetch(`api/v1/alerts/rules/${id}`, { method: 'DELETE', headers: apiGetHeaders() });
     loadRules();
   }
@@ -3895,7 +3900,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   async function testChannel(id: string) {
     const r = await fetch(`api/v1/alerts/channels/${id}/test`, { method: 'POST', headers: apiHeaders() });
     const j = await r.json();
-    showToast(j.ok ? '✓ Notificação enviada com sucesso' : '✗ Erro: ' + j.error, j.ok);
+    showToast(j.ok ? t('alerts_notif_ok') : '✗ Erro: ' + j.error, j.ok);
   }
 
   async function saveChannel() {
@@ -3915,14 +3920,14 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   function conditionText(rule: AlertRule) {
     const c = rule.condition;
     if (c.kind === 'threshold') return `${c.agg ?? 'avg'} ${c.op} ${c.value} (${c.window_min}min)`;
-    if (c.kind === 'absence')   return `ausência ${c.window_min}min`;
+    if (c.kind === 'absence')   return `absence ${c.window_min}min`;
     return JSON.stringify(c);
   }
 
   function stateBadge(rule: AlertRule) {
     const silenced = rule.silence_until && new Date(rule.silence_until) > new Date();
-    if (!rule.enabled) return <span style={{ background: '#1e293b', color: '#64748b', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>DESATIV.</span>;
-    if (silenced)      return <span style={{ background: '#1c1c1c', color: '#94a3b8', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>SILENC.</span>;
+    if (!rule.enabled) return <span style={{ background: '#1e293b', color: '#64748b', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{t('alerts_state_disabled')}</span>;
+    if (silenced)      return <span style={{ background: '#1c1c1c', color: '#94a3b8', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{t('alerts_state_silenced')}</span>;
     if (rule.state === 'firing') return <span style={{ background: '#450a0a', color: '#f87171', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>FIRING</span>;
     return <span style={{ background: '#052e16', color: '#4ade80', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>OK</span>;
   }
@@ -3945,45 +3950,45 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
       )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-        {subtabBtn('rules',    '📋 Regras')}
-        {subtabBtn('channels', '📡 Canais')}
-        {subtabBtn('history',  '📜 Histórico')}
+        {subtabBtn('rules',    t('alerts_subtab_rules'))}
+        {subtabBtn('channels', t('alerts_subtab_channels'))}
+        {subtabBtn('history',  t('alerts_subtab_history'))}
       </div>
 
       {/* ── RULES ─────────────────────────────────────────────────────────── */}
       {subtab === 'rules' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ color: '#94a3b8', fontSize: 13 }}>{rules.length} regra(s)</span>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>{t('alerts_rules_count').replace('{n}', String(rules.length))}</span>
             <button onClick={() => setShowRuleForm(x => !x)} style={{ ...S.btn, padding: '7px 16px', fontSize: 13 }}>
-              {showRuleForm ? '✕ Cancelar' : '+ Nova Regra'}
+              {showRuleForm ? t('alerts_cancel_rule') : t('alerts_new_rule')}
             </button>
           </div>
 
           {showRuleForm && (
             <div style={{ ...S.card, marginBottom: 16, border: '1px solid rgba(85,243,255,0.25)' }}>
-              <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 12, fontSize: 14 }}>Nova Regra de Alerta</div>
+              <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 12, fontSize: 14 }}>{t('alerts_form_title')}</div>
               <div style={{ ...S.grid4, marginBottom: 10 }}>
-                <label style={S.label}>Nome<input style={S.input} value={rf.name} onChange={e => setRf(p => ({ ...p, name: e.target.value }))} placeholder="Ex: CPU alta" /></label>
-                <label style={S.label}>Asset<input style={S.input} value={rf.asset_id} onChange={e => setRf(p => ({ ...p, asset_id: e.target.value }))} placeholder="host:portn8n (vazio=todos)" /></label>
-                <label style={S.label}>Namespace<input style={S.input} value={rf.namespace} onChange={e => setRf(p => ({ ...p, namespace: e.target.value }))} placeholder="nagios (vazio=todos)" /></label>
-                <label style={S.label}>Métrica<input style={S.input} value={rf.metric} onChange={e => setRf(p => ({ ...p, metric: e.target.value }))} placeholder="cpu (vazio=todos)" /></label>
+                <label style={S.label}>Nome<input style={S.input} value={rf.name} onChange={e => setRf(p => ({ ...p, name: e.target.value }))} placeholder={t('alerts_name_ph')} /></label>
+                <label style={S.label}>Asset<input style={S.input} value={rf.asset_id} onChange={e => setRf(p => ({ ...p, asset_id: e.target.value }))} placeholder={t('alerts_asset_ph')} /></label>
+                <label style={S.label}>Namespace<input style={S.input} value={rf.namespace} onChange={e => setRf(p => ({ ...p, namespace: e.target.value }))} placeholder={t('alerts_ns_ph')} /></label>
+                <label style={S.label}>Metric<input style={S.input} value={rf.metric} onChange={e => setRf(p => ({ ...p, metric: e.target.value }))} placeholder="cpu (empty=all)" /></label>
               </div>
               <div style={{ ...S.grid4, marginBottom: 10 }}>
-                <label style={S.label}>Tipo de condição
+                <label style={S.label}>{t('alerts_cond_type')}
                   <select style={S.select} value={rf.condKind} onChange={e => setRf(p => ({ ...p, condKind: e.target.value as any }))}>
-                    <option value="threshold">Threshold (valor)</option>
-                    <option value="absence">Ausência de dados</option>
+                    <option value="threshold">{t('alerts_cond_threshold')}</option>
+                    <option value="absence">{t('alerts_cond_nodata')}</option>
                   </select>
                 </label>
                 {rf.condKind === 'threshold' && <>
-                  <label style={S.label}>Operador
+                  <label style={S.label}>{t('operator')}
                     <select style={S.select} value={rf.op} onChange={e => setRf(p => ({ ...p, op: e.target.value }))}>
                       {['>', '>=', '<', '<='].map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </label>
-                  <label style={S.label}>Valor<input style={S.input} type="number" value={rf.condValue} onChange={e => setRf(p => ({ ...p, condValue: e.target.value }))} placeholder="80" /></label>
-                  <label style={S.label}>Agregação
+                  <label style={S.label}>{t('value')}<input style={S.input} type="number" value={rf.condValue} onChange={e => setRf(p => ({ ...p, condValue: e.target.value }))} placeholder="80" /></label>
+                  <label style={S.label}>{t('alerts_aggregation')}
                     <select style={S.select} value={rf.agg} onChange={e => setRf(p => ({ ...p, agg: e.target.value }))}>
                       <option value="avg">avg</option>
                       <option value="max">max</option>
@@ -3992,15 +3997,15 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                 </>}
               </div>
               <div style={{ ...S.grid4, marginBottom: 12 }}>
-                <label style={S.label}>Janela (min)<input style={S.input} type="number" value={rf.windowMin} onChange={e => setRf(p => ({ ...p, windowMin: e.target.value }))} placeholder="5" /></label>
-                <label style={S.label}>Severidade
+                <label style={S.label}>{t('alerts_window_min')}<input style={S.input} type="number" value={rf.windowMin} onChange={e => setRf(p => ({ ...p, windowMin: e.target.value }))} placeholder="5" /></label>
+                <label style={S.label}>{t('severity')}
                   <select style={S.select} value={rf.severity} onChange={e => setRf(p => ({ ...p, severity: e.target.value }))}>
                     {['info','low','medium','high','critical'].map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </label>
-                <label style={{ ...S.label, gridColumn: 'span 2' }}>Canais
+                <label style={{ ...S.label, gridColumn: 'span 2' }}>{t('channels')}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-                    {channels.length === 0 && <span style={{ color: '#64748b', fontSize: 12 }}>Nenhum canal cadastrado</span>}
+                    {channels.length === 0 && <span style={{ color: '#64748b', fontSize: 12 }}>{t('alerts_no_channels')}</span>}
                     {channels.map(ch => (
                       <label key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>
                         <input type="checkbox" checked={rf.selectedChannels.includes(ch.id)}
@@ -4011,7 +4016,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                   </div>
                 </label>
               </div>
-              <button onClick={saveRule} style={{ ...S.btn, padding: '8px 20px' }}>Salvar Regra</button>
+              <button onClick={saveRule} style={{ ...S.btn, padding: '8px 20px' }}>{t('alerts_save_rule')}</button>
             </div>
           )}
 
@@ -4021,20 +4026,20 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
           <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
             <table style={S.table}>
               <thead>
-                <tr>{['Nome','Alvo','Condição','Sev','Estado','Último valor','Canais','Ações'].map(h =>
+                <tr>{[t('name'),'Target','Condition','Sev',t('nagios_col_state'),'Last value',t('channels'),t('actions')].map(h =>
                   <th key={h} style={S.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {rules.length === 0 && !loading && (
                   <tr><td colSpan={8} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
-                    Nenhuma regra configurada. Crie a primeira acima.
+                    {t('alerts_no_rules_list')}
                   </td></tr>
                 )}
                 {rules.map(rule => (
                   <tr key={rule.id} style={{ background: rule.state === 'firing' ? 'rgba(248,113,113,0.04)' : 'transparent' }}>
                     <td style={S.td}><span style={{ fontWeight: 600, color: '#e9eeff' }}>{rule.name}</span></td>
                     <td style={{ ...S.td, fontSize: 11, color: '#94a3b8' }}>
-                      {[rule.asset_id, rule.namespace, rule.metric].filter(Boolean).join(' / ') || '— todos —'}
+                      {[rule.asset_id, rule.namespace, rule.metric].filter(Boolean).join(' / ') || t('all')}
                     </td>
                     <td style={{ ...S.td, fontSize: 11, fontFamily: 'monospace', color: '#7dd3fc' }}>{conditionText(rule)}</td>
                     <td style={S.td}><SevBadge sev={rule.severity} /></td>
@@ -4044,11 +4049,11 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                     </td>
                     <td style={{ ...S.td, fontSize: 11, color: '#64748b' }}>{rule.channels.join(', ') || '—'}</td>
                     <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                      <button onClick={() => toggleRule(rule)} style={{ ...S.btnSm, marginRight: 4, color: rule.enabled ? '#4ade80' : '#64748b' }} title={rule.enabled ? 'Desativar' : 'Ativar'}>
+                      <button onClick={() => toggleRule(rule)} style={{ ...S.btnSm, marginRight: 4, color: rule.enabled ? '#4ade80' : '#64748b' }} title={rule.enabled ? t('alerts_btn_toggle_off') : t('alerts_btn_toggle_on')}>
                         {rule.enabled ? '●' : '○'}
                       </button>
-                      <button onClick={() => silenceRule(rule)} style={{ ...S.btnSm, marginRight: 4 }} title="Silenciar 1h">🔕</button>
-                      <button onClick={() => deleteRule(rule.id)} style={{ ...S.btnSm, color: '#f87171' }} title="Remover">✕</button>
+                      <button onClick={() => silenceRule(rule)} style={{ ...S.btnSm, marginRight: 4 }} title={t('alerts_btn_silence')}>🔕</button>
+                      <button onClick={() => deleteRule(rule.id)} style={{ ...S.btnSm, color: '#f87171' }} title={t('remove')}>✕</button>
                     </td>
                   </tr>
                 ))}
@@ -4062,19 +4067,19 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
       {subtab === 'channels' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ color: '#94a3b8', fontSize: 13 }}>{channels.length} canal(is)</span>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>{t('alerts_channels_count').replace('{n}', String(channels.length))}</span>
             <button onClick={() => setShowChForm(x => !x)} style={{ ...S.btn, padding: '7px 16px', fontSize: 13 }}>
-              {showChForm ? '✕ Cancelar' : '+ Novo Canal'}
+              {showChForm ? t('alerts_cancel_rule') : t('alerts_new_channel')}
             </button>
           </div>
 
           {showChForm && (
             <div style={{ ...S.card, marginBottom: 16, border: '1px solid rgba(85,243,255,0.25)' }}>
-              <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 12, fontSize: 14 }}>Novo Canal de Notificação</div>
+              <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 12, fontSize: 14 }}>{t('alerts_channel_title')}</div>
               <div style={{ ...S.grid4, marginBottom: 10 }}>
                 <label style={S.label}>ID (slug)<input style={S.input} value={cf.id} onChange={e => setCf(p => ({ ...p, id: e.target.value }))} placeholder="telegram-ops" /></label>
                 <label style={S.label}>Nome<input style={S.input} value={cf.name} onChange={e => setCf(p => ({ ...p, name: e.target.value }))} placeholder="Telegram NOC" /></label>
-                <label style={S.label}>Tipo
+                <label style={S.label}>{t('type')}
                   <select style={S.select} value={cf.kind} onChange={e => setCf(p => ({ ...p, kind: e.target.value as any }))}>
                     <option value="webhook">Webhook</option>
                     <option value="telegram">Telegram</option>
@@ -4084,7 +4089,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
               {cf.kind === 'webhook' && (
                 <div style={{ ...S.grid2, marginBottom: 10 }}>
                   <label style={S.label}>URL<input style={S.input} value={cf.url} onChange={e => setCf(p => ({ ...p, url: e.target.value }))} placeholder="https://hooks.example.com/..." /></label>
-                  <label style={S.label}>Headers (JSON opcional)<textarea style={{ ...S.input, height: 60, resize: 'vertical' }} value={cf.headers} onChange={e => setCf(p => ({ ...p, headers: e.target.value }))} placeholder='{"Authorization":"Bearer ..."}'  /></label>
+                  <label style={S.label}>{t('headers_json')}<textarea style={{ ...S.input, height: 60, resize: 'vertical' }} value={cf.headers} onChange={e => setCf(p => ({ ...p, headers: e.target.value }))} placeholder='{"Authorization":"Bearer ..."}'  /></label>
                 </div>
               )}
               {cf.kind === 'telegram' && (
@@ -4093,19 +4098,19 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                   <label style={S.label}>Chat ID<input style={S.input} value={cf.chat_id} onChange={e => setCf(p => ({ ...p, chat_id: e.target.value }))} placeholder="-1001234567890" /></label>
                 </div>
               )}
-              <button onClick={saveChannel} style={{ ...S.btn, padding: '8px 20px' }}>Salvar Canal</button>
+              <button onClick={saveChannel} style={{ ...S.btn, padding: '8px 20px' }}>{t('alerts_save_channel')}</button>
             </div>
           )}
 
           <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
             <table style={S.table}>
               <thead>
-                <tr>{['ID','Nome','Tipo','Criado em','Ações'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+                <tr>{['ID',t('name'),t('type'),t('created_at'),t('actions')].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {channels.length === 0 && (
                   <tr><td colSpan={5} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
-                    Nenhum canal configurado. Crie o primeiro acima.
+                    {t('alerts_no_channels_list')}
                   </td></tr>
                 )}
                 {channels.map(ch => (
@@ -4119,7 +4124,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                     </td>
                     <td style={{ ...S.td, fontSize: 12, color: '#64748b' }}>{new Date(ch.created_at).toLocaleString('pt-BR')}</td>
                     <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                      <button onClick={() => testChannel(ch.id)} style={{ ...S.btnSm, marginRight: 6, color: '#55f3ff' }}>Testar</button>
+                      <button onClick={() => testChannel(ch.id)} style={{ ...S.btnSm, marginRight: 6, color: '#55f3ff' }}>{t('test')}</button>
                       <button onClick={() => deleteChannel(ch.id)} style={{ ...S.btnSm, color: '#f87171' }}>✕</button>
                     </td>
                   </tr>
@@ -4134,18 +4139,18 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
       {subtab === 'history' && (
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <span style={{ color: '#94a3b8', fontSize: 13 }}>Últimas {history.length} notificação(ões)</span>
-            <button onClick={loadHistory} style={{ ...S.btnSm }}>↻ Atualizar</button>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>{t('alerts_history_count').replace('{n}', String(history.length))}</span>
+            <button onClick={loadHistory} style={{ ...S.btnSm }}>{t('reload')}</button>
           </div>
           <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
             <table style={S.table}>
               <thead>
-                <tr>{['Hora','Regra','Canal','Evento','Status','Erro'].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+                <tr>{[t('alerts_notif_col_time'),t('alerts_notif_col_rule'),t('alerts_notif_col_ch'),t('alerts_notif_col_event'),t('alerts_notif_col_status'),t('alerts_notif_col_error')].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {history.length === 0 && (
                   <tr><td colSpan={6} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
-                    Nenhuma notificação enviada ainda.
+                    {t('alerts_no_notifs')}
                   </td></tr>
                 )}
                 {history.map(n => (
@@ -4160,7 +4165,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                     </td>
                     <td style={S.td}>
                       <span style={{ color: n.ok ? '#4ade80' : '#f87171', fontWeight: 700, fontSize: 12 }}>
-                        {n.ok ? '✓ OK' : '✗ ERRO'}
+                        {n.ok ? '✓ OK' : '✗ ERROR'}
                       </span>
                     </td>
                     <td style={{ ...S.td, fontSize: 11, color: '#f87171', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -4328,7 +4333,7 @@ function ConnectorsTab() {
     try {
       const body: any = {};
       if (testPayload.trim()) {
-        try { body.payload = JSON.parse(testPayload); } catch { setTestErr('JSON inválido'); setTestLoading(false); return; }
+        try { body.payload = JSON.parse(testPayload); } catch { setTestErr('Invalid JSON'); setTestLoading(false); return; }
       }
       const r = await fetch(`api/v1/connectors/${c.id}/test`, {
         method: 'POST', headers: apiHeaders(), body: JSON.stringify(body),
@@ -4347,7 +4352,7 @@ function ConnectorsTab() {
   async function runPush(c: Connector) {
     if (!pushPayload.trim()) { setPushErr('Informe o payload JSON'); return; }
     let payloadObj: unknown;
-    try { payloadObj = JSON.parse(pushPayload); } catch { setPushErr('JSON inválido'); return; }
+    try { payloadObj = JSON.parse(pushPayload); } catch { setPushErr('Invalid JSON'); return; }
     setPushLoading(true); setPushResult(null); setPushErr(null);
     try {
       const r = await fetch(`api/v1/ingest/raw/${encodeURIComponent(c.source_id)}`, {
@@ -4373,7 +4378,7 @@ function ConnectorsTab() {
 
   async function create() {
     let specObj: unknown;
-    try { specObj = JSON.parse(cf.spec); } catch { showToast('Spec JSON inválido', false); return; }
+    try { specObj = JSON.parse(cf.spec); } catch { showToast('Invalid Spec JSON', false); return; }
     const body: any = {
       id: cf.id, source_id: cf.source_id || cf.id, mode: cf.mode,
       type: cf.type, spec: specObj,
@@ -4392,7 +4397,7 @@ function ConnectorsTab() {
   async function aiGenerate() {
     if (!af.aiKey) { setAiErr('Informe a API Key da Anthropic'); return; }
     let payloadObj: unknown;
-    try { payloadObj = JSON.parse(af.payload); } catch { setAiErr('Payload JSON inválido'); return; }
+    try { payloadObj = JSON.parse(af.payload); } catch { setAiErr('Invalid Payload JSON'); return; }
     localStorage.setItem('orbit_ai_key', af.aiKey);
     setAiLoading(true); setAiErr(null); setAiResult(null);
     try {
@@ -4431,7 +4436,7 @@ function ConnectorsTab() {
 
       {/* ── Subtab bar ── */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-        {subtabBtn('list',   '📋 Connectors')}
+        {subtabBtn('list',   t('conn_title'))}
         {subtabBtn('create', '+ Criar')}
         {subtabBtn('ai',     '✨ Gerar com IA')}
       </div>
@@ -4441,7 +4446,7 @@ function ConnectorsTab() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ color: '#94a3b8', fontSize: 13 }}>{connectors.length} connector(s)</span>
-            <button onClick={load} style={{ ...S.btnSm, fontSize: 12 }}>↻ Atualizar</button>
+            <button onClick={load} style={{ ...S.btnSm, fontSize: 12 }}>{t('reload')}</button>
           </div>
           {err && <div style={S.err}>{err}</div>}
           {loading && <div style={{ color: '#94a3b8', fontSize: 13 }}>Carregando…</div>}
@@ -4476,35 +4481,35 @@ function ConnectorsTab() {
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   {(c.status === 'draft' || c.status === 'disabled') && (
-                    <button onClick={() => approve(c.id)} style={{ ...S.btnSm, color: '#4ade80', borderColor: 'rgba(74,222,128,0.35)' }} title="Aprovar">✓ Aprovar</button>
+                    <button onClick={() => approve(c.id)} style={{ ...S.btnSm, color: '#4ade80', borderColor: 'rgba(74,222,128,0.35)' }} title={t('conn_approve')}>{t('conn_approve')}</button>
                   )}
                   {c.status === 'approved' && (
-                    <button onClick={() => disable(c.id)} style={{ ...S.btnSm, color: '#94a3b8' }} title="Desativar">⊘ Desativar</button>
+                    <button onClick={() => disable(c.id)} style={{ ...S.btnSm, color: '#94a3b8' }} title={t('conn_btn_disable_tt')}>{t('conn_btn_disable')}</button>
                   )}
                   {c.mode === 'push' && (
-                    <button onClick={() => togglePush(c)} style={{ ...S.btnSm, color: '#34d399', borderColor: 'rgba(52,211,153,0.30)', background: pushId === c.id ? 'rgba(52,211,153,0.10)' : 'transparent' }} title="Enviar payload">📤 Push</button>
+                    <button onClick={() => togglePush(c)} style={{ ...S.btnSm, color: '#34d399', borderColor: 'rgba(52,211,153,0.30)', background: pushId === c.id ? 'rgba(52,211,153,0.10)' : 'transparent' }} title={t('conn_btn_push_tt')}>📤 Push</button>
                   )}
-                  <button onClick={() => toggleTest(c)} style={{ ...S.btnSm, color: '#fbbf24', borderColor: 'rgba(251,191,36,0.30)', background: testId === c.id ? 'rgba(251,191,36,0.10)' : 'transparent' }} title="Testar">⚡ Testar</button>
-                  <button onClick={() => del(c.id)} style={{ ...S.btnSm, color: '#f87171', borderColor: 'rgba(248,113,113,0.30)' }} title="Remover">🗑</button>
+                  <button onClick={() => toggleTest(c)} style={{ ...S.btnSm, color: '#fbbf24', borderColor: 'rgba(251,191,36,0.30)', background: testId === c.id ? 'rgba(251,191,36,0.10)' : 'transparent' }} title={t('conn_btn_test_tt')}>{t('conn_btn_test')}</button>
+                  <button onClick={() => del(c.id)} style={{ ...S.btnSm, color: '#f87171', borderColor: 'rgba(248,113,113,0.30)' }} title={t('remove')}>🗑</button>
                 </div>
               </div>
 
               {/* Runs panel */}
               {expandedId === c.id && (
                 <div style={{ borderTop: '1px solid rgba(140,160,255,0.12)', padding: '12px 16px', background: 'rgba(4,7,19,0.4)' }}>
-                  <div style={{ color: '#55f3ff', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Histórico de Runs</div>
+                  <div style={{ color: '#55f3ff', fontSize: 12, fontWeight: 700, marginBottom: 8 }}>{t('conn_runs_history')}</div>
                   {runsLoading && <div style={{ color: '#94a3b8', fontSize: 12 }}>Carregando…</div>}
-                  {!runsLoading && runs.length === 0 && <div style={{ color: '#475569', fontSize: 12 }}>Nenhum run registrado.</div>}
+                  {!runsLoading && runs.length === 0 && <div style={{ color: '#475569', fontSize: 12 }}>{t('conn_no_runs')}</div>}
                   {!runsLoading && runs.length > 0 && (
                     <table style={{ ...S.table, fontSize: 12 }}>
                       <thead>
                         <tr>
-                          <th style={S.th}>Início</th>
+                          <th style={S.th}>{t('conn_runs_start')}</th>
                           <th style={S.th}>Status</th>
-                          <th style={S.th}>Ingestados</th>
+                          <th style={S.th}>{t('conn_runs_ingested')}</th>
                           <th style={S.th}>Raw Size</th>
-                          <th style={S.th}>Duração</th>
-                          <th style={S.th}>Erro</th>
+                          <th style={S.th}>{t('conn_runs_duration')}</th>
+                          <th style={S.th}>{t('conn_runs_error')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4516,7 +4521,7 @@ function ConnectorsTab() {
                               <td style={S.td}>
                                 {r.status === 'ok'
                                   ? <span style={{ color: '#4ade80', fontWeight: 700 }}>✓ ok</span>
-                                  : <span style={{ color: '#f87171', fontWeight: 700 }}>✗ erro</span>
+                                  : <span style={{ color: '#f87171', fontWeight: 700 }}>✗ error</span>
                                 }
                               </td>
                               <td style={S.td}>{r.ingested}</td>
@@ -4535,7 +4540,7 @@ function ConnectorsTab() {
               {/* Push panel */}
               {pushId === c.id && (
                 <div style={{ borderTop: '1px solid rgba(52,211,153,0.15)', padding: '12px 16px', background: 'rgba(4,7,19,0.4)' }}>
-                  <div style={{ color: '#34d399', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>📤 Push — ingestão real</div>
+                  <div style={{ color: '#34d399', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>{t('conn_push_title')}</div>
                   {/* Webhook URL row */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' as const }}>
                     <code style={{ fontSize: 11, color: '#94a3b8', background: 'rgba(15,23,42,0.6)', padding: '4px 8px', borderRadius: 6, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
@@ -4544,10 +4549,10 @@ function ConnectorsTab() {
                     <button
                       onClick={() => { navigator.clipboard.writeText(curlExample(c)); setPushCopied(true); setTimeout(() => setPushCopied(false), 2000); }}
                       style={{ ...S.btnSm, color: pushCopied ? '#4ade80' : '#34d399', borderColor: 'rgba(52,211,153,0.30)', flexShrink: 0, fontSize: 11 }}
-                    >{pushCopied ? '✓ Copiado' : '📋 Copiar curl'}</button>
+                    >{pushCopied ? t('conn_push_copied') : t('conn_push_copy_curl')}</button>
                   </div>
                   <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>
-                    Payload enviado será mapeado pelo spec e gravado no banco. O connector precisa estar <strong style={{ color: '#4ade80' }}>aprovado</strong>.
+                    Payload will be mapped by spec and saved to DB. The connector must be <strong style={{ color: '#4ade80' }}>approved</strong>.
                   </div>
                   <textarea
                     style={{ ...S.input, width: '100%', minHeight: 100, fontFamily: 'monospace', fontSize: 11, resize: 'vertical' as const, boxSizing: 'border-box' as const, marginBottom: 8 }}
@@ -4556,12 +4561,12 @@ function ConnectorsTab() {
                   />
                   {pushErr && <div style={{ ...S.err, marginBottom: 8, fontSize: 11 }}>✗ {pushErr}</div>}
                   <button onClick={() => runPush(c)} disabled={pushLoading} style={{ ...S.btnSm, color: '#34d399', borderColor: 'rgba(52,211,153,0.35)' }}>
-                    {pushLoading ? '⏳ Enviando…' : '📤 Enviar e Ingestar'}
+                    {pushLoading ? t('conn_push_sending') : t('conn_push_send')}
                   </button>
                   {pushResult && (
                     <div style={{ marginTop: 10, display: 'flex', gap: 16, fontSize: 12, flexWrap: 'wrap' as const }}>
-                      <span style={{ color: '#4ade80', fontWeight: 700 }}>✓ ingestados: {pushResult.ingested ?? pushResult.inserted ?? 0}</span>
-                      {(pushResult.skipped ?? 0) > 0 && <span style={{ color: '#f87171' }}>✗ pulados: {pushResult.skipped}</span>}
+                      <span style={{ color: '#4ade80', fontWeight: 700 }}>✓ ingested: {pushResult.ingested ?? pushResult.inserted ?? 0}</span>
+                      {(pushResult.skipped ?? 0) > 0 && <span style={{ color: '#f87171' }}>✗ skipped: {pushResult.skipped}</span>}
                       {pushResult.errors?.length > 0 && (
                         <div style={{ color: '#f87171', fontSize: 11, width: '100%' }}>
                           {pushResult.errors.slice(0, 3).map((e: string, i: number) => <div key={i}>{e}</div>)}
@@ -4575,28 +4580,28 @@ function ConnectorsTab() {
               {/* Test panel */}
               {testId === c.id && (
                 <div style={{ borderTop: '1px solid rgba(251,191,36,0.15)', padding: '12px 16px', background: 'rgba(4,7,19,0.4)' }}>
-                  <div style={{ color: '#fbbf24', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>⚡ Teste Dry-Run</div>
+                  <div style={{ color: '#fbbf24', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>{t('conn_test_dry_run')}</div>
                   <div style={{ color: '#64748b', fontSize: 11, marginBottom: 8 }}>
                     {c.mode === 'pull'
-                      ? <>Payload opcional — vazio fará fetch de <code style={{ color: '#a78bfa' }}>{c.pull_url ?? 'pull_url'}</code></>
-                      : 'Informe um payload JSON para simular o mapeamento sem gravar no banco.'}
+                      ? <>Optional payload — empty will fetch from <code style={{ color: '#a78bfa' }}>{c.pull_url ?? 'pull_url'}</code></>
+                      : 'Provide a JSON payload to simulate the mapping without saving to DB.'}
                   </div>
                   <textarea
                     style={{ ...S.input, width: '100%', minHeight: 90, fontFamily: 'monospace', fontSize: 11, resize: 'vertical' as const, boxSizing: 'border-box' as const, marginBottom: 8 }}
                     value={testPayload} onChange={e => setTestPayload(e.target.value)}
-                    placeholder={c.mode === 'pull' ? '{ ... } — opcional' : '{ ... } — obrigatório'}
+                    placeholder={c.mode === 'pull' ? '{ ... } — optional' : '{ ... } — required'}
                   />
                   {testErr && <div style={{ ...S.err, marginBottom: 8, fontSize: 11 }}>✗ {testErr}</div>}
                   <button onClick={() => runTest(c)} disabled={testLoading} style={{ ...S.btnSm, color: '#fbbf24', borderColor: 'rgba(251,191,36,0.35)' }}>
-                    {testLoading ? '⏳ Testando…' : '⚡ Executar Teste'}
+                    {testLoading ? t('conn_test_testing') : t('conn_test_run_btn')}
                   </button>
                   {testResult && (
                     <div style={{ marginTop: 12 }}>
                       <div style={{ display: 'flex', gap: 16, marginBottom: 8, fontSize: 12, flexWrap: 'wrap' as const }}>
-                        <span style={{ color: '#4ade80' }}>✓ válidos: <strong>{testResult.valid}</strong></span>
-                        {testResult.skipped > 0 && <span style={{ color: '#f87171' }}>✗ inválidos: <strong>{testResult.skipped}</strong></span>}
-                        <span style={{ color: '#64748b' }}>fonte: <strong>{testResult.source}</strong></span>
-                        <span style={{ color: '#64748b' }}>tipo: <strong>{testResult.type}</strong></span>
+                        <span style={{ color: '#4ade80' }}>✓ valid: <strong>{testResult.valid}</strong></span>
+                        {testResult.skipped > 0 && <span style={{ color: '#f87171' }}>✗ invalid: <strong>{testResult.skipped}</strong></span>}
+                        <span style={{ color: '#64748b' }}>source: <strong>{testResult.source}</strong></span>
+                        <span style={{ color: '#64748b' }}>type: <strong>{testResult.type}</strong></span>
                       </div>
                       {testResult.errors?.length > 0 && (
                         <div style={{ color: '#f87171', fontSize: 11, marginBottom: 8 }}>
@@ -4605,7 +4610,7 @@ function ConnectorsTab() {
                       )}
                       {testResult.mapped?.length > 0 && (
                         <pre style={{ background: 'rgba(4,7,19,0.6)', border: '1px solid rgba(251,191,36,0.15)', borderRadius: 8, padding: 10, fontSize: 11, color: '#fef3c7', overflowX: 'auto' as const, maxHeight: 200, margin: 0 }}>
-                          {JSON.stringify(testResult.mapped[0], null, 2)}{testResult.mapped.length > 1 ? `\n… +${testResult.mapped.length - 1} mais` : ''}
+                          {JSON.stringify(testResult.mapped[0], null, 2)}{testResult.mapped.length > 1 ? `\n… +${testResult.mapped.length - 1} more` : ''}
                         </pre>
                       )}
                     </div>
@@ -4620,23 +4625,23 @@ function ConnectorsTab() {
       {/* ── CREATE ── */}
       {subtab === 'create' && (
         <div style={{ ...S.card, border: '1px solid rgba(85,243,255,0.20)' }}>
-          <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 16, fontSize: 15 }}>Novo Connector</div>
+          <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 16, fontSize: 15 }}>{t('conn_new_title')}</div>
           <div style={{ ...S.grid2, marginBottom: 12 }}>
             <label style={S.label}>ID (slug)
               <input style={S.input} value={cf.id} onChange={e => setCf(p => ({ ...p, id: e.target.value }))} placeholder="nagios-perf" />
             </label>
             <label style={S.label}>Source ID
-              <input style={S.input} value={cf.source_id} onChange={e => setCf(p => ({ ...p, source_id: e.target.value }))} placeholder="igual ao ID se não informado" />
+              <input style={S.input} value={cf.source_id} onChange={e => setCf(p => ({ ...p, source_id: e.target.value }))} placeholder="same as ID if not provided" />
             </label>
           </div>
           <div style={{ ...S.grid4, marginBottom: 12 }}>
-            <label style={S.label}>Modo
+            <label style={S.label}>{t('mode')}
               <select style={S.select} value={cf.mode} onChange={e => setCf(p => ({ ...p, mode: e.target.value }))}>
                 <option value="push">push</option>
                 <option value="pull">pull</option>
               </select>
             </label>
-            <label style={S.label}>Tipo
+            <label style={S.label}>{t('type')}
               <select style={S.select} value={cf.type}
                 onChange={e => setCf(p => ({ ...p, type: e.target.value, spec: e.target.value === 'event' ? SPEC_TEMPLATE_EVENT : SPEC_TEMPLATE_METRIC }))}>
                 <option value="metric">metric</option>
@@ -4651,25 +4656,25 @@ function ConnectorsTab() {
           </div>
           {cf.mode === 'pull' && (
             <div style={{ marginBottom: 12 }}>
-              <label style={S.label}>Intervalo de Pull (minutos)
+              <label style={S.label}>{t('conn_pull_interval')}
                 <input style={{ ...S.input, width: 100 }} type="number" min={1} max={1440} value={cf.pull_interval_min}
                   onChange={e => setCf(p => ({ ...p, pull_interval_min: e.target.value }))} />
               </label>
             </div>
           )}
           <div style={{ marginBottom: 12 }}>
-            <label style={S.label}>Descrição
-              <input style={S.input} value={cf.description} onChange={e => setCf(p => ({ ...p, description: e.target.value }))} placeholder="Opcional" />
+            <label style={S.label}>{t('description')}
+              <input style={S.input} value={cf.description} onChange={e => setCf(p => ({ ...p, description: e.target.value }))} placeholder={t('optional')} />
             </label>
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ ...S.label, marginBottom: 4 }}>Spec DSL (JSON)</label>
+            <label style={{ ...S.label, marginBottom: 4 }}>{t('conn_spec_dsl')}</label>
             <textarea style={{ ...S.input, width: '100%', minHeight: 220, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' as const, boxSizing: 'border-box' as const }}
               value={cf.spec} onChange={e => setCf(p => ({ ...p, spec: e.target.value }))} />
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={create} style={S.btn}>Salvar como Draft</button>
-            <button onClick={() => setSubtab('list')} style={S.btnSm}>✕ Cancelar</button>
+            <button onClick={create} style={S.btn}>{t('conn_save_draft')}</button>
+            <button onClick={() => setSubtab('list')} style={S.btnSm}>{t('cancel')}</button>
           </div>
         </div>
       )}
@@ -4677,9 +4682,9 @@ function ConnectorsTab() {
       {/* ── AI GENERATE ── */}
       {subtab === 'ai' && (
         <div style={{ ...S.card, border: '1px solid rgba(155,124,255,0.25)' }}>
-          <div style={{ fontWeight: 700, color: '#c084fc', marginBottom: 4, fontSize: 15 }}>✨ Gerar Connector com IA</div>
+          <div style={{ fontWeight: 700, color: '#c084fc', marginBottom: 4, fontSize: 15 }}>{t('conn_ai_title')}</div>
           <div style={{ color: '#64748b', fontSize: 12, marginBottom: 16 }}>
-            Cole um payload de exemplo. O Claude irá analisar a estrutura e gerar o spec de mapeamento automaticamente.
+            Paste an example payload. Claude will analyze the structure and generate the mapping spec automatically.
           </div>
 
           <div style={{ ...S.grid2, marginBottom: 12 }}>
@@ -4687,7 +4692,7 @@ function ConnectorsTab() {
               <input style={{ ...S.input, fontFamily: 'monospace' }} type="password" value={af.aiKey}
                 onChange={e => setAf(p => ({ ...p, aiKey: e.target.value }))} placeholder="sk-ant-..." />
             </label>
-            <label style={S.label}>Modelo
+            <label style={S.label}>{t('conn_ai_model')}
               <input style={S.input} value={af.aiModel} onChange={e => setAf(p => ({ ...p, aiModel: e.target.value }))} placeholder="claude-sonnet-4-6" />
             </label>
           </div>
@@ -4695,22 +4700,22 @@ function ConnectorsTab() {
             <label style={S.label}>Source Type (hint)
               <input style={S.input} value={af.sourceType} onChange={e => setAf(p => ({ ...p, sourceType: e.target.value }))} placeholder="nagios, wazuh, snmp…" />
             </label>
-            <label style={S.label}>Tipo (opcional)
+            <label style={S.label}>Type (optional)
               <select style={S.select} value={af.type} onChange={e => setAf(p => ({ ...p, type: e.target.value }))}>
-                <option value="">IA infere</option>
+                <option value="">AI infers</option>
                 <option value="metric">metric</option>
                 <option value="event">event</option>
               </select>
             </label>
-            <label style={S.label}>ID (opcional)
-              <input style={S.input} value={af.id} onChange={e => setAf(p => ({ ...p, id: e.target.value }))} placeholder="auto-gerado" />
+            <label style={S.label}>ID (optional)
+              <input style={S.input} value={af.id} onChange={e => setAf(p => ({ ...p, id: e.target.value }))} placeholder="auto-generated" />
             </label>
-            <label style={S.label}>Descrição (opcional)
+            <label style={S.label}>Description (optional)
               <input style={S.input} value={af.description} onChange={e => setAf(p => ({ ...p, description: e.target.value }))} />
             </label>
           </div>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ ...S.label, marginBottom: 4 }}>Payload de Exemplo (JSON)</label>
+            <label style={{ ...S.label, marginBottom: 4 }}>Example Payload (JSON)</label>
             <textarea style={{ ...S.input, width: '100%', minHeight: 200, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' as const, boxSizing: 'border-box' as const }}
               value={af.payload} onChange={e => setAf(p => ({ ...p, payload: e.target.value }))}
               placeholder={'{\n  "host": "server-01",\n  "service": "cpu",\n  "value": 72.4,\n  "ts": 1740576000\n}'} />
@@ -4720,7 +4725,7 @@ function ConnectorsTab() {
 
           <div style={{ display: 'flex', gap: 10, marginBottom: aiResult ? 20 : 0 }}>
             <button onClick={aiGenerate} disabled={aiLoading} style={{ ...S.btn, background: 'linear-gradient(135deg, rgba(155,124,255,0.30), rgba(85,243,255,0.18))', borderColor: 'rgba(155,124,255,0.50)' }}>
-              {aiLoading ? '⏳ Gerando…' : '✨ Gerar Spec'}
+              {aiLoading ? t('conn_ai_generating') : t('conn_ai_generate')}
             </button>
           </div>
 
