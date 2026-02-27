@@ -11,8 +11,8 @@ export const pool = env.DATABASE_URL
       max: 20,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
-      statement_timeout: 15_000,
-      query_timeout: 15_000,
+      statement_timeout: 30_000,
+      query_timeout: 30_000,
     })
   : null;
 

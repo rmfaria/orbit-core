@@ -76,7 +76,20 @@ export async function ingestEventsHandler(req: Request, res: Response) {
 
   await ensureAssets(pool, body.events.map(e => e.asset_id));
 
-  if (body.events.length) {
+  // Deduplicate by fingerprint within the batch (keep last = latest ts).
+  // ON CONFLICT DO UPDATE fails if the same fingerprint appears twice in one INSERT.
+  const fpSeen = new Set<string>();
+  const events: typeof body.events = [];
+  for (let i = body.events.length - 1; i >= 0; i--) {
+    const ev = body.events[i];
+    if (ev.fingerprint) {
+      if (!fpSeen.has(ev.fingerprint)) { fpSeen.add(ev.fingerprint); events.push(ev); }
+    } else {
+      events.push(ev);
+    }
+  }
+
+  if (events.length) {
     await pool.query(
       `INSERT INTO orbit_events(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
        SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::jsonb[])
@@ -90,15 +103,15 @@ export async function ingestEventsHandler(req: Request, res: Response) {
          attributes  = excluded.attributes,
          ingested_at = now()`,
       [
-        body.events.map(e => e.ts),
-        body.events.map(e => e.asset_id),
-        body.events.map(e => e.namespace),
-        body.events.map(e => e.kind),
-        body.events.map(e => e.severity),
-        body.events.map(e => e.title),
-        body.events.map(e => e.message ?? null),
-        body.events.map(e => e.fingerprint ?? null),
-        body.events.map(e => JSON.stringify(e.attributes ?? {})),
+        events.map(e => e.ts),
+        events.map(e => e.asset_id),
+        events.map(e => e.namespace),
+        events.map(e => e.kind),
+        events.map(e => e.severity),
+        events.map(e => e.title),
+        events.map(e => e.message ?? null),
+        events.map(e => e.fingerprint ?? null),
+        events.map(e => JSON.stringify(e.attributes ?? {})),
       ]
     );
   }

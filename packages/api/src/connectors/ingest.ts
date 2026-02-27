@@ -89,7 +89,20 @@ export async function ingestMapped(
     });
 
     if (valid.length) {
-      await ensureAssets(pool, valid.map(e => String(e.asset_id)));
+      // Deduplicate by fingerprint (keep last = latest ts) before bulk INSERT.
+      const fpSeen = new Set<string>();
+      const deduped: typeof valid = [];
+      for (let i = valid.length - 1; i >= 0; i--) {
+        const ev = valid[i];
+        const fp = ev.fingerprint ? String(ev.fingerprint) : null;
+        if (fp) {
+          if (!fpSeen.has(fp)) { fpSeen.add(fp); deduped.push(ev); }
+        } else {
+          deduped.push(ev);
+        }
+      }
+
+      await ensureAssets(pool, deduped.map(e => String(e.asset_id)));
       await pool.query(
         `INSERT INTO orbit_events
            (ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
@@ -101,18 +114,18 @@ export async function ingestMapped(
            title = EXCLUDED.title, message = EXCLUDED.message,
            attributes = EXCLUDED.attributes, ingested_at = now()`,
         [
-          valid.map(e => e.ts),
-          valid.map(e => e.asset_id),
-          valid.map(e => e.namespace),
-          valid.map(e => e.kind),
-          valid.map(e => e.severity),
-          valid.map(e => e.title),
-          valid.map(e => e.message ?? null),
-          valid.map(e => e.fingerprint ?? null),
-          valid.map(e => JSON.stringify(e.attributes ?? {})),
+          deduped.map(e => e.ts),
+          deduped.map(e => e.asset_id),
+          deduped.map(e => e.namespace),
+          deduped.map(e => e.kind),
+          deduped.map(e => e.severity),
+          deduped.map(e => e.title),
+          deduped.map(e => e.message ?? null),
+          deduped.map(e => e.fingerprint ?? null),
+          deduped.map(e => JSON.stringify(e.attributes ?? {})),
         ]
       );
-      result.ingested = valid.length;
+      result.ingested = deduped.length;
     }
   }
 
