@@ -1462,18 +1462,18 @@ type NagiosSvc = {
 };
 
 function NagiosTab({ assets }: { assets: AssetOpt[] }) {
-  const [assetId, setAssetId]   = React.useState('');
+  const [assetId, setAssetId]         = React.useState('');
   const [stateFilter, setStateFilter] = React.useState('');
-  const [from, setFrom]         = React.useState(() => relativeFrom(24));
-  const [to, setTo]             = React.useState(() => new Date().toISOString());
-  const [services, setServices] = React.useState<NagiosSvc[]>([]);
-  const [loading, setLoading]   = React.useState(false);
-  const [err, setErr]           = React.useState<string | null>(null);
+  const [from, setFrom]               = React.useState(() => relativeFrom(24));
+  const [to, setTo]                   = React.useState(() => new Date().toISOString());
+  const [services, setServices]       = React.useState<NagiosSvc[]>([]);
+  const [loading, setLoading]         = React.useState(false);
+  const [err, setErr]                 = React.useState<string | null>(null);
+  const [expandedIdx, setExpandedIdx] = React.useState<number | null>(null);
 
   async function run() {
-    setLoading(true); setErr(null);
+    setLoading(true); setErr(null); setExpandedIdx(null);
     try {
-      // Fetch nagios events (service and host kinds)
       const q: any = { kind: 'events', from, to, namespace: 'nagios', limit: 2000 };
       if (assetId) q.asset_id = assetId;
 
@@ -1483,16 +1483,10 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
 
       const raw: EventRow[] = j?.result?.rows ?? [];
 
-      // Keep only the most recent event per asset_id + title (title encodes host+service in Nagios)
-      // title format from ship_events.py: "HTTP CRITICAL", "CPU Load OK", "HOST DOWN", etc.
-      // kind from write_hard_event.py: "service" or "host"
       const latestMap = new Map<string, NagiosSvc>();
       for (const ev of raw) {
-        // Extract service name: for service events, kind="service" and title contains "SERVICE CHECK_NAME STATE"
-        // For host events, kind="host"
         const isHost = ev.kind === 'host';
         const parts = ev.title.split(' ');
-        // title = "SERVICE_NAME STATE" or "HOST STATE" — last word is the state
         const state = parts[parts.length - 1] ?? ev.severity.toUpperCase();
         const service = isHost
           ? '(host)'
@@ -1513,7 +1507,6 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
       }
 
       let all = Array.from(latestMap.values());
-      // Sort: critical first, then host order
       const sevOrder = ['critical', 'high', 'medium', 'low', 'info'];
       all.sort((a, b) => {
         const sa = sevOrder.indexOf(a.severity);
@@ -1546,20 +1539,15 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
       {/* Summary chips */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         {[
-          { label: 'OK / UP',           count: counts.ok,       color: '#4ade80' },
-          { label: 'WARNING',           count: counts.warning,  color: '#fbbf24' },
-          { label: 'CRITICAL / DOWN',   count: counts.critical, color: '#f87171' },
-          { label: 'UNKNOWN',           count: counts.unknown,  color: '#94a3b8' },
+          { label: 'OK / UP',         count: counts.ok,       color: '#4ade80' },
+          { label: 'WARNING',         count: counts.warning,  color: '#fbbf24' },
+          { label: 'CRITICAL / DOWN', count: counts.critical, color: '#f87171' },
+          { label: 'UNKNOWN',         count: counts.unknown,  color: '#94a3b8' },
         ].map(({ label, count, color }) => (
           <div key={label} style={{
-            background: '#1e293b',
-            border: `1px solid ${color}44`,
-            borderRadius: 8,
-            padding: '8px 16px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            minWidth: 100,
+            background: '#1e293b', border: `1px solid ${color}44`, borderRadius: 8,
+            padding: '8px 16px', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', minWidth: 100,
           }}>
             <span style={{ fontSize: 22, fontWeight: 700, color }}>{count}</span>
             <span style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{label}</span>
@@ -1572,12 +1560,12 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
           <label style={S.label}>
             Host
             <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
-              <option value="">— Todos —</option>
+              <option value="">{t('all')}</option>
               {assets.map((a) => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
             </select>
           </label>
           <label style={S.label}>
-            Estado
+            {t('nagios_col_state')}
             <select style={S.select} value={stateFilter} onChange={(e) => setStateFilter(e.target.value)}>
               {states.map((s) => <option key={s} value={s}>{s || t('all')}</option>)}
             </select>
@@ -1593,37 +1581,104 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
         </div>
         <div style={S.row}>
           <RangeShortcuts setFrom={setFrom} setTo={setTo} />
-          <button style={S.btn} onClick={run} disabled={loading}>{loading ? 'Buscando…' : t('search')}</button>
+          <button style={S.btn} onClick={run} disabled={loading}>{loading ? '…' : t('search')}</button>
           <span style={{ color: '#64748b', fontSize: 12 }}>{services.length} services</span>
         </div>
         {err && <div style={S.err}>{err}</div>}
       </div>
 
-      <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 560 }}>
-        <table style={S.table}>
-          <thead>
+      {/* Table — sticky header, expandable rows, fills remaining viewport height */}
+      <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 390px)', minHeight: 240 }}>
+        <table style={{ ...S.table, tableLayout: 'fixed', minWidth: 520 }}>
+          <colgroup>
+            <col style={{ width: 96 }} />  {/* state      */}
+            <col style={{ width: 68 }} />  {/* severity   */}
+            <col style={{ width: '18%' }} />{/* host       */}
+            <col style={{ width: '22%' }} />{/* service    */}
+            <col />                          {/* output     */}
+          </colgroup>
+          <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: '#0d1224' }}>
             <tr>
-              {[t('nagios_col_state'), 'Host', t('nagios_col_service'), 'Severity', t('nagios_col_last_change'), 'Output'].map((h) => (
+              {[t('nagios_col_state'), t('nagios_col_severity'), 'Host', t('nagios_col_service'), t('nagios_col_output')].map((h) => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {services.length === 0 && (
-              <tr><td colSpan={6} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
-                {t('nagios_no_services')}
-              </td></tr>
-            )}
-            {services.map((svc, i) => (
-              <tr key={i} style={{ background: i % 2 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
-                <td style={S.td}><StateBadge state={svc.state} /></td>
-                <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{svc.asset_id}</td>
-                <td style={{ ...S.td, fontWeight: 500 }}>{svc.service}</td>
-                <td style={S.td}><SevBadge sev={svc.severity} /></td>
-                <td style={{ ...S.td, fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>{fmtTs(svc.ts)}</td>
-                <td style={{ ...S.td, color: '#94a3b8', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={svc.output}>{svc.output}</td>
+              <tr>
+                <td colSpan={5} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
+                  {loading ? t('loading') : t('nagios_no_services')}
+                </td>
               </tr>
-            ))}
+            )}
+            {services.map((svc, i) => {
+              const isExp = expandedIdx === i;
+              const hasOutput = !!svc.output;
+              return (
+                <React.Fragment key={i}>
+                  <tr
+                    onClick={() => setExpandedIdx(isExp ? null : i)}
+                    style={{
+                      cursor: 'pointer',
+                      background: isExp
+                        ? 'rgba(85,243,255,0.06)'
+                        : i % 2 ? 'rgba(255,255,255,0.015)' : 'transparent',
+                    }}
+                  >
+                    <td style={S.td}><StateBadge state={svc.state} /></td>
+                    <td style={S.td}><SevBadge sev={svc.severity} /></td>
+                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={svc.asset_id}>
+                      {svc.asset_id}
+                    </td>
+                    <td style={{ ...S.td, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={svc.service}>
+                      {svc.service}
+                    </td>
+                    <td style={{ ...S.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={svc.output}>
+                      <span style={{ color: '#94a3b8', fontSize: 12 }}>{svc.output}</span>
+                      {hasOutput && (
+                        <span style={{ marginLeft: 8, fontSize: 10, color: '#475569', verticalAlign: 'middle', userSelect: 'none' }}>
+                          {isExp ? '▲' : '▶'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  {isExp && (
+                    <tr style={{ background: 'rgba(85,243,255,0.025)' }}>
+                      <td colSpan={5} style={{ ...S.td, padding: '10px 14px 12px', borderTop: '1px solid rgba(85,243,255,0.08)' }}>
+                        {/* Metadata pills */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 11, marginBottom: hasOutput ? 8 : 0 }}>
+                          {[
+                            ['last change', fmtTs(svc.ts)],
+                            ['host',        svc.asset_id],
+                            ['service',     svc.service],
+                            ['state',       svc.state],
+                            ['severity',    svc.severity],
+                          ].map(([k, v]) => (
+                            <span key={k}>
+                              <span style={{ color: '#475569' }}>{k}</span>{' '}
+                              <code style={{ color: '#cbd5e1', fontSize: 11 }}>{v}</code>
+                            </span>
+                          ))}
+                        </div>
+                        {hasOutput && (
+                          <pre style={{
+                            margin: 0, fontSize: 12, color: 'rgba(233,238,255,0.80)',
+                            lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                            maxHeight: 220, overflowY: 'auto',
+                            background: 'rgba(4,7,19,0.5)',
+                            border: '1px solid rgba(140,160,255,0.10)',
+                            borderRadius: 6, padding: '8px 10px',
+                          }}>
+                            {svc.output}
+                          </pre>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
