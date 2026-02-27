@@ -126,15 +126,18 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
     const to = Date.parse(toIso);
     const sec = Math.max(0, Math.floor((to - from) / 1000));
 
-    // Retention policy:
-    // raw metric_points: 14d
-    // rollup_5m: 90d
-    // rollup_1h: 180d
-    const d14 = 14 * 86400;
+    // Source selection by query window:
+    //   < 2h  → raw metric_points (full resolution, fast for small ranges)
+    //   2h–90d → metric_rollup_5m  (pre-aggregated 5-min buckets, ~360x fewer rows)
+    //   > 90d  → metric_rollup_1h  (pre-aggregated 1-hour buckets)
+    //
+    // Switching from 14d to 2h means the HomeTab default (24h) now hits the rollup
+    // table (~288 rows per series) instead of scanning ~35k raw points.
+    const h2  =  2 * 3600;
     const d90 = 90 * 86400;
 
     if (sec > d90) return { table: 'metric_rollup_1h', bucket_sec: 3600 };
-    if (sec > d14) return { table: 'metric_rollup_5m', bucket_sec: 300 };
+    if (sec > h2)  return { table: 'metric_rollup_5m', bucket_sec: 300 };
     return { table: 'metric_points', bucket_sec: null };
   };
 
