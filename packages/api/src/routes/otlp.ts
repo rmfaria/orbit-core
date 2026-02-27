@@ -15,7 +15,7 @@
 
 import { Router, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
-import { ingestMapped } from '../connectors/ingest.js';
+import { ingestMapped, logRun } from '../connectors/ingest.js';
 
 // ── OTLP JSON type stubs ──────────────────────────────────────────────────────
 
@@ -122,6 +122,9 @@ export function otlpRouter(pool?: Pool | null): Router {
     res.json({});                // respond fast; ingest is best-effort
     if (!pool) return;
 
+    const startedAt = new Date();
+    let ingested = 0;
+    let runError: string | null = null;
     try {
       const body = req.body as {
         resourceSpans?: Array<{
@@ -191,9 +194,10 @@ export function otlpRouter(pool?: Pool | null): Router {
         }
       }
 
-      if (metrics.length) await ingestMapped(pool, 'metric', metrics);
-      if (events.length)  await ingestMapped(pool, 'event',  events);
-    } catch { /* best-effort */ }
+      if (metrics.length) { const r = await ingestMapped(pool, 'metric', metrics); ingested += r.ingested; }
+      if (events.length)  { const r = await ingestMapped(pool, 'event',  events);  ingested += r.ingested; }
+    } catch (e) { runError = String(e); }
+    await logRun(pool, 'otlp', startedAt, ingested, req.headers['content-length'] ? Number(req.headers['content-length']) : 0, runError);
   });
 
   // ── Metrics ───────────────────────────────────────────────────────────────
@@ -202,6 +206,9 @@ export function otlpRouter(pool?: Pool | null): Router {
     res.json({});
     if (!pool) return;
 
+    const startedAt = new Date();
+    let ingested = 0;
+    let runError: string | null = null;
     try {
       const body = req.body as {
         resourceMetrics?: Array<{
@@ -254,8 +261,9 @@ export function otlpRouter(pool?: Pool | null): Router {
         }
       }
 
-      if (points.length) await ingestMapped(pool, 'metric', points);
-    } catch { /* best-effort */ }
+      if (points.length) { const r = await ingestMapped(pool, 'metric', points); ingested += r.ingested; }
+    } catch (e) { runError = String(e); }
+    await logRun(pool, 'otlp', startedAt, ingested, req.headers['content-length'] ? Number(req.headers['content-length']) : 0, runError);
   });
 
   // ── Logs ──────────────────────────────────────────────────────────────────
@@ -264,6 +272,9 @@ export function otlpRouter(pool?: Pool | null): Router {
     res.json({});
     if (!pool) return;
 
+    const startedAt = new Date();
+    let ingested = 0;
+    let runError: string | null = null;
     try {
       const body = req.body as {
         resourceLogs?: Array<{
@@ -304,8 +315,9 @@ export function otlpRouter(pool?: Pool | null): Router {
         }
       }
 
-      if (events.length) await ingestMapped(pool, 'event', events);
-    } catch { /* best-effort */ }
+      if (events.length) { const r = await ingestMapped(pool, 'event', events); ingested += r.ingested; }
+    } catch (e) { runError = String(e); }
+    await logRun(pool, 'otlp', startedAt, ingested, req.headers['content-length'] ? Number(req.headers['content-length']) : 0, runError);
   });
 
   return r;

@@ -21,7 +21,7 @@ type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'home' | 'system' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'connectors' | 'admin';
+type Tab        = 'home' | 'system' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'src-otel' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'connectors' | 'admin';
 
 type CorrelationRow = {
   event_key:    string;
@@ -60,12 +60,14 @@ const NS_COLOR: Record<string, string> = {
   wazuh:     '#a78bfa',
   fortigate: '#fb923c',
   n8n:       '#4ade80',
+  otel:      '#f59e0b',
 };
 const NS_BG: Record<string, string> = {
   nagios:    '#0c1a3a',
   wazuh:     '#1e1040',
   fortigate: '#431407',
   n8n:       '#052e16',
+  otel:      '#1c1408',
 };
 
 /** Maps a raw event to its display/filter source.
@@ -718,9 +720,9 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
           </button>
           {fontesDdOpen && (
             <div style={ddBase}>
-              {(['src-nagios', 'src-wazuh', 'src-fortigate', 'src-n8n'] as Tab[]).map((t, i) => {
-                const labels  = ['Nagios', 'Wazuh', 'Fortigate', 'n8n'];
-                const colors  = [NS_COLOR.nagios, NS_COLOR.wazuh, NS_COLOR.fortigate, NS_COLOR.n8n];
+              {(['src-nagios', 'src-wazuh', 'src-fortigate', 'src-n8n', 'src-otel'] as Tab[]).map((t, i) => {
+                const labels  = ['Nagios', 'Wazuh', 'Fortigate', 'n8n', 'OTel'];
+                const colors  = [NS_COLOR.nagios, NS_COLOR.wazuh, NS_COLOR.fortigate, NS_COLOR.n8n, NS_COLOR.otel];
                 const active  = tab === t;
                 return (
                   <button
@@ -1307,6 +1309,7 @@ function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs?: stri
               <option value="nagios">nagios</option>
               <option value="wazuh">wazuh</option>
               <option value="n8n">n8n</option>
+              <option value="otel">otel</option>
             </select>
           </label>
           <label style={S.label}>
@@ -1829,7 +1832,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const [suriRows, setSuriRows] = React.useState<Row[]>([]);
   const [feed, setFeed] = React.useState<EventRow[]>([]);
   // selected namespaces for the consolidated feed
-  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n']);
+  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n', 'otel']);
 
   // Layout: 'side' = charts left + feed right; 'cols1/2/3' = stacked with N charts per row
   const [chartLayout, setChartLayout] = React.useState<'side' | 'cols1' | 'cols2' | 'cols3'>('side');
@@ -5131,6 +5134,7 @@ export function App() {
         {tab === 'src-wazuh'     && <EventsTab      key="src-wazuh"     assets={assets} defaultNs="wazuh" />}
         {tab === 'src-fortigate' && <EventsTab      key="src-fortigate" assets={assets} defaultNs="wazuh" />}
         {tab === 'src-n8n'       && <EventsTab      key="src-n8n"       assets={assets} defaultNs="n8n"   />}
+        {tab === 'src-otel'      && <EventsTab      key="src-otel"      assets={assets} defaultNs="otel"  />}
         {tab === 'events'        && <EventsTab      key="events"        assets={assets} />}
         {tab === 'metrics'       && <MetricsTab     assets={assets} />}
         {tab === 'correlations'  && <CorrelationsTab assets={assets} />}
