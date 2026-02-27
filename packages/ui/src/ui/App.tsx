@@ -4709,7 +4709,7 @@ function modeBadge(mode: string) {
 }
 
 function ConnectorsTab() {
-  const [subtab, setSubtab] = React.useState<'list' | 'create' | 'ai'>('list');
+  const [subtab, setSubtab] = React.useState<'list' | 'create' | 'ai' | 'plugin'>('list');
   const [connectors, setConnectors] = React.useState<Connector[]>([]);
   const [loading, setLoading]       = React.useState(false);
   const [err, setErr]               = React.useState<string | null>(null);
@@ -4752,6 +4752,16 @@ function ConnectorsTab() {
   const [aiLoading, setAiLoading]   = React.useState(false);
   const [aiResult, setAiResult]     = React.useState<{ id: string; source_id: string; spec: object; next_step: string } | null>(null);
   const [aiErr, setAiErr]           = React.useState<string | null>(null);
+
+  // ── Plugin Generator form ──
+  const [pf, setPf] = React.useState({
+    aiKey:       localStorage.getItem('orbit_ai_key') ?? '',
+    aiModel:     'claude-sonnet-4-6',
+    description: '',
+  });
+  const [pluginLoading, setPluginLoading]                                                          = React.useState(false);
+  const [pluginResult, setPluginResult] = React.useState<{ connector_spec: object; agent_script: string; readme: string } | null>(null);
+  const [pluginErr, setPluginErr]       = React.useState<string | null>(null);
 
   function showToast(msg: string, ok: boolean) {
     setToast({ msg, ok });
@@ -4865,6 +4875,33 @@ function ConnectorsTab() {
     setSubtab('list'); load();
   }
 
+  async function pluginGenerate() {
+    if (!pf.aiKey) { setPluginErr('Informe a API Key da Anthropic'); return; }
+    if (!pf.description.trim()) { setPluginErr('Descreva a fonte de dados'); return; }
+    localStorage.setItem('orbit_ai_key', pf.aiKey);
+    setPluginLoading(true); setPluginErr(null); setPluginResult(null);
+    try {
+      const r = await fetch('api/v1/ai/plugin', {
+        method: 'POST',
+        headers: { ...apiHeaders(), 'x-ai-key': pf.aiKey, 'x-ai-model': pf.aiModel },
+        body: JSON.stringify({ description: pf.description }),
+      });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+      setPluginResult({ connector_spec: j.connector_spec, agent_script: j.agent_script, readme: j.readme });
+    } catch (e: any) { setPluginErr(String(e)); } finally { setPluginLoading(false); }
+  }
+
+  function downloadText(content: string, filename: string) {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function aiGenerate() {
     if (!af.aiKey) { setAiErr('Informe a API Key da Anthropic'); return; }
     let payloadObj: unknown;
@@ -4888,7 +4925,7 @@ function ConnectorsTab() {
     } catch (e: any) { setAiErr(String(e)); } finally { setAiLoading(false); }
   }
 
-  const subtabBtn = (t: 'list' | 'create' | 'ai', label: string) => (
+  const subtabBtn = (t: 'list' | 'create' | 'ai' | 'plugin', label: string) => (
     <button onClick={() => setSubtab(t)} style={{
       background: subtab === t ? 'rgba(85,243,255,0.15)' : 'transparent',
       border: subtab === t ? '1px solid rgba(85,243,255,0.4)' : '1px solid transparent',
@@ -4910,6 +4947,7 @@ function ConnectorsTab() {
         {subtabBtn('list',   t('conn_title'))}
         {subtabBtn('create', '+ Criar')}
         {subtabBtn('ai',     '✨ Gerar com IA')}
+        {subtabBtn('plugin', '⬇ Plugin IA')}
       </div>
 
       {/* ── LIST ── */}
@@ -5217,6 +5255,87 @@ function ConnectorsTab() {
                   ✓ Aprovar Agora
                 </button>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PLUGIN GENERATOR ── */}
+      {subtab === 'plugin' && (
+        <div style={{ ...S.card, border: '1px solid rgba(85,243,255,0.20)' }}>
+          <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 4, fontSize: 15 }}>⬇ Gerador de Plugin com IA</div>
+          <div style={{ color: '#64748b', fontSize: 12, marginBottom: 16 }}>
+            Descreva a fonte de dados. A IA gera um agente de coleta, o spec do conector e as instruções de instalação — tudo pronto para baixar.
+          </div>
+
+          <div className="orbit-grid-2" style={{ marginBottom: 12 }}>
+            <label style={S.label}>API Key Anthropic
+              <input style={{ ...S.input, fontFamily: 'monospace' }} type="password" value={pf.aiKey}
+                onChange={e => setPf(p => ({ ...p, aiKey: e.target.value }))} placeholder="sk-ant-..." />
+            </label>
+            <label style={S.label}>Modelo
+              <input style={S.input} value={pf.aiModel} onChange={e => setPf(p => ({ ...p, aiModel: e.target.value }))} />
+            </label>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ ...S.label, marginBottom: 4 }}>Descrição da fonte de dados
+              <textarea
+                style={{ ...S.input, width: '100%', minHeight: 120, resize: 'vertical' as const, boxSizing: 'border-box' as const, marginTop: 4 }}
+                value={pf.description}
+                onChange={e => setPf(p => ({ ...p, description: e.target.value }))}
+                placeholder={'Exemplos:\n• Servidor Linux — CPU, memória e disco via /proc e df\n• App Node.js com Express — latência e taxa de erro por endpoint\n• Switch Cisco — tráfego de interface via SNMP walk\n• Banco PostgreSQL — queries lentas e conexões ativas'}
+              />
+            </label>
+          </div>
+
+          {pluginErr && <div style={{ ...S.err, marginBottom: 12 }}>✗ {pluginErr}</div>}
+
+          <button onClick={pluginGenerate} disabled={pluginLoading}
+            style={{ ...S.btn, background: 'linear-gradient(135deg, rgba(85,243,255,0.25), rgba(85,243,255,0.12))', borderColor: 'rgba(85,243,255,0.45)', color: '#55f3ff', marginBottom: pluginResult ? 20 : 0 }}>
+            {pluginLoading ? '⏳ Gerando plugin...' : '⬇ Gerar Plugin'}
+          </button>
+
+          {pluginResult && (
+            <div style={{ marginTop: 20, borderTop: '1px solid rgba(85,243,255,0.15)', paddingTop: 16 }}>
+              <div style={{ color: '#55f3ff', fontWeight: 700, marginBottom: 14, fontSize: 13 }}>
+                ✓ Plugin gerado — 3 arquivos prontos para download
+              </div>
+
+              {/* File cards */}
+              {([
+                { label: 'connector_spec.json', icon: '📋', content: JSON.stringify(pluginResult.connector_spec, null, 2), color: '#a78bfa', hint: 'Importe no orbit-core → Connectors → Criar (cole o JSON no campo Spec)' },
+                { label: 'agent.py',            icon: '🐍', content: pluginResult.agent_script,                            color: '#38bdf8', hint: 'Rode no servidor monitorado. Edite as variáveis ORBIT_URL, ORBIT_SOURCE_ID e ORBIT_API_KEY.' },
+                { label: 'README.md',           icon: '📄', content: pluginResult.readme,                                  color: '#4ade80', hint: 'Instruções de instalação completas.' },
+              ] as const).map(f => (
+                <div key={f.label} style={{ marginBottom: 12, border: `1px solid ${f.color}28`, borderRadius: 12, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', background: `${f.color}10` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>{f.icon}</span>
+                      <code style={{ color: f.color, fontWeight: 700, fontSize: 13 }}>{f.label}</code>
+                    </div>
+                    <button onClick={() => downloadText(f.content, f.label)}
+                      style={{ ...S.btnSm, borderColor: `${f.color}60`, color: f.color, background: `${f.color}15`, fontSize: 12 }}>
+                      ⬇ Baixar
+                    </button>
+                  </div>
+                  <div style={{ padding: '4px 14px 8px', color: '#64748b', fontSize: 11 }}>{f.hint}</div>
+                  <pre style={{ margin: 0, padding: '10px 14px', background: 'rgba(4,7,19,0.55)', fontSize: 11, color: '#94a3b8', maxHeight: 160, overflowY: 'auto' as const, overflowX: 'auto' as const, borderTop: '1px solid rgba(140,160,255,0.08)' }}>
+                    {f.content.length > 800 ? f.content.slice(0, 800) + '\n…' : f.content}
+                  </pre>
+                </div>
+              ))}
+
+              <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, background: 'rgba(85,243,255,0.06)', border: '1px solid rgba(85,243,255,0.15)', fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
+                <strong style={{ color: '#55f3ff' }}>Próximos passos:</strong>{' '}
+                1) Importe o <code style={{ color: '#a78bfa' }}>connector_spec.json</code> em Connectors → Criar.{' '}
+                2) Copie <code style={{ color: '#38bdf8' }}>agent.py</code> para <code>/opt/orbit-agents/</code> no servidor e edite as variáveis de configuração.{' '}
+                3) Agende via cron: <code>*/2 * * * * python3 /opt/orbit-agents/agent.py</code>
+              </div>
+
+              <button onClick={() => setPluginResult(null)} style={{ ...S.btnSm, marginTop: 12, color: '#64748b' }}>
+                Gerar novo
+              </button>
             </div>
           )}
         </div>
