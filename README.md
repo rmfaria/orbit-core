@@ -21,7 +21,7 @@ orbit-core collects telemetry from your existing tools (Nagios, Wazuh, Fortigate
 
 
   
-<img width="1408" height="798" alt="Captura de Tela 2026-02-26 às 22 33 17" src="https://github.com/user-attachments/assets/b05dd61c-84f2-481f-975c-d43a8a7f3e9c" />
+<img width="2352" height="1010" alt="orbit-core architecture diagram v1.4.0" src="./docs/orbit-core-architecture.png" />
 
 ---
 
