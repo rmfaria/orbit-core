@@ -27,6 +27,7 @@ import { alertsRouter } from './routes/alerts.js';
 import { correlationsHandler } from './routes/correlations.js';
 import { connectorsRouter } from './routes/connectors.js';
 import { systemHandler } from './routes/system.js';
+import { otlpRouter } from './routes/otlp.js';
 import { startConnectorWorker } from './connectors/worker.js';
 import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
@@ -97,6 +98,9 @@ app.get('/api/v1/correlations', a(correlationsHandler));
 
 // AI connector framework — specs CRUD + universal raw ingest
 app.use('/api/v1', connectorsRouter(pool));
+
+// OpenTelemetry OTLP/HTTP receiver — traces, metrics, logs from instrumented apps
+app.use('/', otlpRouter(pool));
 
 // System / infra metrics — process, CPU, memory, network, workers, DB pool
 app.get('/api/v1/system', a(systemHandler(pool)));
