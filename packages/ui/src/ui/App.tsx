@@ -8,7 +8,7 @@
 import React from 'react';
 import { Chart, registerables } from 'chart.js';
 import './home.css';
-import { t } from './i18n';
+import { t, setLocale, getLocale, Locale } from './i18n';
 
 // Register Chart.js components once.
 Chart.register(...registerables);
@@ -473,7 +473,7 @@ function SystemTab() {
     return () => { cancelled = true; clearInterval(t); };
   }, []);
 
-  if (err)   return <div style={{ padding: 32, color: '#ff5dd6' }}>Erro: {err}</div>;
+  if (err)   return <div style={{ padding: 32, color: '#ff5dd6' }}>Error: {err}</div>;
   if (!data) return <div style={{ padding: 32, color: 'rgba(233,238,255,0.4)' }}>Carregando sistema…</div>;
 
   const { cpu, memory, network, db, workers, process: proc } = data;
@@ -532,7 +532,7 @@ function SystemTab() {
           <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.5)', lineHeight: 2 }}>
             <div>PID <span style={{ color: '#94a3b8' }}>{proc.pid}</span></div>
             <div>Node <span style={{ color: '#94a3b8' }}>{proc.node_version}</span></div>
-            <div>iniciado <span style={{ color: '#94a3b8' }}>{new Date(proc.started_at).toLocaleString('pt-BR')}</span></div>
+            <div>{t('sys_started')} <span style={{ color: '#94a3b8' }}>{new Date(proc.started_at).toLocaleString('en')}</span></div>
           </div>
         </SysCard>
       </div>
@@ -608,12 +608,19 @@ function SystemTab() {
 
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
 
-function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+function TopBar({ tab, setTab, onLocaleChange }: { tab: Tab; setTab: (t: Tab) => void; onLocaleChange: () => void }) {
   const isMobile = useIsMobile();
   const [fontesDdOpen,  setFontesDdOpen]  = React.useState(false);
   const [gearDdOpen,    setGearDdOpen]    = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('orbit_api_key') ?? '');
+  const [locale, setLoc] = React.useState<Locale>(getLocale);
+
+  function changeLocale(l: Locale) {
+    setLocale(l);
+    setLoc(l);
+    onLocaleChange();
+  }
 
   // Close dropdowns on outside click
   React.useEffect(() => {
@@ -809,6 +816,32 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {/* Right side — desktop */}
         {!isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 8 }}>
+
+            {/* Language switcher */}
+            <div style={{ display: 'flex', gap: 2 }}>
+              {(['en', 'pt-BR', 'es'] as Locale[]).map(l => (
+                <button
+                  key={l}
+                  onClick={() => changeLocale(l)}
+                  style={{
+                    background: locale === l ? 'rgba(85,243,255,0.15)' : 'transparent',
+                    border: '1px solid ' + (locale === l ? 'rgba(85,243,255,0.40)' : 'rgba(140,160,255,0.18)'),
+                    borderRadius: 6,
+                    color: locale === l ? '#55f3ff' : 'rgba(233,238,255,0.50)',
+                    padding: '3px 7px',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontWeight: locale === l ? 700 : 500,
+                    letterSpacing: '0.03em',
+                    transition: 'all 0.12s',
+                    height: 26,
+                  }}
+                >
+                  {l === 'en' ? 'EN' : l === 'pt-BR' ? 'PT' : 'ES'}
+                </button>
+              ))}
+            </div>
+
             <HealthBadge />
 
             {/* User indicator */}
@@ -885,7 +918,7 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         {isMobile && (
           <button
             onClick={() => setMobileNavOpen(x => !x)}
-            aria-label={mobileNavOpen ? 'Fechar menu' : 'Abrir menu'}
+            aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
             style={{
               background: mobileNavOpen ? 'rgba(85,243,255,0.12)' : 'transparent',
               border: '1px solid ' + (mobileNavOpen ? 'rgba(85,243,255,0.30)' : 'rgba(140,160,255,0.20)'),
@@ -979,6 +1012,29 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
               {navDrawerBtn('alerts',       t('nav_alerts'))}
               {navDrawerBtn('connectors',   t('nav_connectors'))}
               {navDrawerBtn('dashboards',   t('nav_dashboards'))}
+            </div>
+
+            {/* Language switcher — mobile */}
+            <div style={{ padding: '10px 20px', display: 'flex', gap: 6 }}>
+              {(['en', 'pt-BR', 'es'] as Locale[]).map(l => (
+                <button
+                  key={l}
+                  onClick={() => { changeLocale(l); setMobileNavOpen(false); }}
+                  style={{
+                    background: locale === l ? 'rgba(85,243,255,0.15)' : 'transparent',
+                    border: '1px solid ' + (locale === l ? 'rgba(85,243,255,0.40)' : 'rgba(140,160,255,0.20)'),
+                    borderRadius: 8,
+                    color: locale === l ? '#55f3ff' : 'rgba(233,238,255,0.55)',
+                    padding: '8px 18px',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: locale === l ? 700 : 500,
+                    flex: 1,
+                  }}
+                >
+                  {l === 'en' ? 'EN' : l === 'pt-BR' ? 'PT' : 'ES'}
+                </button>
+              ))}
             </div>
 
             {/* Bottom actions */}
@@ -1402,7 +1458,7 @@ function EpsChart({ namespace, from, to, variant = 'card', onClose }: { namespac
   return (
     <div style={{ ...S.card, marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ fontWeight: 700, fontSize: 13 }}>EPS — Eventos por segundo</span>
+        <span style={{ fontWeight: 700, fontSize: 13 }}>EPS — Events per second</span>
         <span style={{ fontSize: 11, color: '#94a3b8' }}>bucket: {bucketLabel}{loading ? t('events_loading') : ''}</span>
       </div>
       <div style={{ position: 'relative', height: 160 }}>
@@ -3680,7 +3736,7 @@ function DashboardsTab({ assets }: { assets: AssetOpt[] }) {
 
       {!loading && dashboards.length === 0 && (
         <div style={{ ...S.card, textAlign: 'center', color: '#64748b', padding: 40 }}>
-          Nenhum dashboard salvo ainda.<br />
+          No dashboards saved yet.<br />
           <button onClick={() => { setEditSpec(null); setMode('build'); }} style={{ ...S.btn, marginTop: 16 }}>
             Criar o primeiro dashboard
           </button>
@@ -4005,7 +4061,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
             disabled={aiLoading || !aiPrompt.trim()}
             style={{ ...S.btn, whiteSpace: 'nowrap' }}
           >
-            {aiLoading ? '…gerando' : '⚡ Gerar com IA'}
+            {aiLoading ? '…generating' : '⚡ Generate with AI'}
           </button>
         </div>
         {aiError && <div style={S.err}>{aiError}</div>}
@@ -4123,7 +4179,7 @@ function DashboardBuilder({ assets, initialSpec, onCancel, onSaved }: {
           Widgets ({widgets.length})
         </div>
         {widgets.length === 0 && (
-          <div style={{ color: '#64748b', fontSize: 13 }}>Nenhum widget adicionado ainda.</div>
+          <div style={{ color: '#64748b', fontSize: 13 }}>No widgets added yet.</div>
         )}
         {widgets.map(w => (
           <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(140,160,255,.10)', flexWrap: 'wrap' }}>
@@ -4256,7 +4312,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
 
     const r = await fetch('api/v1/alerts/rules', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
     const j = await r.json();
-    if (!j.ok) { showToast('Erro: ' + JSON.stringify(j.error), false); return; }
+    if (!j.ok) { showToast('Error: ' + JSON.stringify(j.error), false); return; }
     showToast('Regra criada!', true);
     setShowRuleForm(false);
     setRf({ name: '', asset_id: '', namespace: '', metric: '', condKind: 'threshold', op: '>', condValue: '', windowMin: '5', agg: 'avg', severity: 'medium', selectedChannels: [] });
@@ -4264,7 +4320,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   }
 
   async function deleteChannel(id: string) {
-    if (!confirm('Remover este canal?')) return;
+    if (!confirm('Remove this channel?')) return;
     await fetch(`api/v1/alerts/channels/${id}`, { method: 'DELETE', headers: apiGetHeaders() });
     loadChannels();
   }
@@ -4272,7 +4328,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   async function testChannel(id: string) {
     const r = await fetch(`api/v1/alerts/channels/${id}/test`, { method: 'POST', headers: apiHeaders() });
     const j = await r.json();
-    showToast(j.ok ? t('alerts_notif_ok') : '✗ Erro: ' + j.error, j.ok);
+    showToast(j.ok ? t('alerts_notif_ok') : '✗ Error: ' + j.error, j.ok);
   }
 
   async function saveChannel() {
@@ -4282,7 +4338,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
     const body = { id: cf.id, name: cf.name, kind: cf.kind, config };
     const r = await fetch('api/v1/alerts/channels', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
     const j = await r.json();
-    if (!j.ok) { showToast('Erro: ' + JSON.stringify(j.error), false); return; }
+    if (!j.ok) { showToast('Error: ' + JSON.stringify(j.error), false); return; }
     showToast('Canal salvo!', true);
     setShowChForm(false);
     setCf({ id: '', name: '', kind: 'webhook', url: '', headers: '', bot_token: '', chat_id: '' });
@@ -4782,16 +4838,16 @@ function ConnectorsTab() {
 
   async function approve(id: string) {
     await fetch(`api/v1/connectors/${id}/approve`, { method: 'POST', headers: apiHeaders() });
-    showToast('Connector aprovado!', true); load();
+    showToast('Connector approved!', true); load();
   }
   async function disable(id: string) {
     await fetch(`api/v1/connectors/${id}/disable`, { method: 'POST', headers: apiHeaders() });
-    showToast('Connector desativado', true); load();
+    showToast('Connector disabled', true); load();
   }
   async function del(id: string) {
     if (!confirm(`Remover connector "${id}"?`)) return;
     await fetch(`api/v1/connectors/${id}`, { method: 'DELETE', headers: apiGetHeaders() });
-    showToast('Removido', true); load();
+    showToast('Removed', true); load();
   }
 
   async function toggleRuns(conn: Connector) {
@@ -4831,7 +4887,7 @@ function ConnectorsTab() {
   }
 
   async function runPush(c: Connector) {
-    if (!pushPayload.trim()) { setPushErr('Informe o payload JSON'); return; }
+    if (!pushPayload.trim()) { setPushErr('Enter the JSON payload'); return; }
     let payloadObj: unknown;
     try { payloadObj = JSON.parse(pushPayload); } catch { setPushErr('Invalid JSON'); return; }
     setPushLoading(true); setPushResult(null); setPushErr(null);
@@ -4869,14 +4925,14 @@ function ConnectorsTab() {
     if (cf.mode === 'pull' && cf.pull_url) body.pull_url = cf.pull_url;
     const r = await fetch('api/v1/connectors', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
     const j = await r.json();
-    if (!j.ok) { showToast('Erro: ' + JSON.stringify(j.error), false); return; }
-    showToast('Connector criado como draft!', true);
+    if (!j.ok) { showToast('Error: ' + JSON.stringify(j.error), false); return; }
+    showToast('Connector saved as draft!', true);
     setCf({ id: '', source_id: '', mode: 'push', type: 'metric', description: '', pull_url: '', pull_interval_min: '5', spec: SPEC_TEMPLATE_METRIC });
     setSubtab('list'); load();
   }
 
   async function pluginGenerate() {
-    if (!pf.aiKey) { setPluginErr('Informe a API Key da Anthropic'); return; }
+    if (!pf.aiKey) { setPluginErr('Enter the Anthropic API Key'); return; }
     if (!pf.description.trim()) { setPluginErr('Descreva a fonte de dados'); return; }
     localStorage.setItem('orbit_ai_key', pf.aiKey);
     setPluginLoading(true); setPluginErr(null); setPluginResult(null);
@@ -4903,7 +4959,7 @@ function ConnectorsTab() {
   }
 
   async function aiGenerate() {
-    if (!af.aiKey) { setAiErr('Informe a API Key da Anthropic'); return; }
+    if (!af.aiKey) { setAiErr('Enter the Anthropic API Key'); return; }
     let payloadObj: unknown;
     try { payloadObj = JSON.parse(af.payload); } catch { setAiErr('Invalid Payload JSON'); return; }
     localStorage.setItem('orbit_ai_key', af.aiKey);
@@ -4946,7 +5002,7 @@ function ConnectorsTab() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
         {subtabBtn('list',   t('conn_title'))}
         {subtabBtn('create', '+ Criar')}
-        {subtabBtn('ai',     '✨ Gerar com IA')}
+        {subtabBtn('ai',     '✨ Generate with AI')}
         {subtabBtn('plugin', '⬇ Plugin IA')}
       </div>
 
@@ -4961,7 +5017,7 @@ function ConnectorsTab() {
           {loading && <div style={{ color: '#94a3b8', fontSize: 13 }}>Carregando…</div>}
           {!loading && connectors.length === 0 && (
             <div style={{ ...S.card, textAlign: 'center', color: '#64748b', padding: 40 }}>
-              Nenhum connector. Crie um manualmente ou use <strong>✨ Gerar com IA</strong>.
+              No connectors. Create one manually or use <strong>✨ Generate with AI</strong>.
             </div>
           )}
           {connectors.map(c => (
@@ -5249,10 +5305,10 @@ function ConnectorsTab() {
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => { setSubtab('list'); load(); setAiResult(null); }} style={S.btn}>
-                  Ver na Lista
+                  View in List
                 </button>
                 <button onClick={() => approve(aiResult.id)} style={{ ...S.btn, background: 'linear-gradient(135deg, rgba(74,222,128,0.25), rgba(74,222,128,0.15))', borderColor: 'rgba(74,222,128,0.40)', color: '#4ade80' }}>
-                  ✓ Aprovar Agora
+                  ✓ Approve Now
                 </button>
               </div>
             </div>
@@ -5265,7 +5321,7 @@ function ConnectorsTab() {
         <div style={{ ...S.card, border: '1px solid rgba(85,243,255,0.20)' }}>
           <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 4, fontSize: 15 }}>⬇ Gerador de Plugin com IA</div>
           <div style={{ color: '#64748b', fontSize: 12, marginBottom: 16 }}>
-            Descreva a fonte de dados. A IA gera um agente de coleta, o spec do conector e as instruções de instalação — tudo pronto para baixar.
+            Describe your data source. The AI generates a collection agent, connector spec and install instructions — all ready to download.
           </div>
 
           <div className="orbit-grid-2" style={{ marginBottom: 12 }}>
@@ -5279,7 +5335,7 @@ function ConnectorsTab() {
           </div>
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ ...S.label, marginBottom: 4 }}>Descrição da fonte de dados
+            <label style={{ ...S.label, marginBottom: 4 }}>Data source description
               <textarea
                 style={{ ...S.input, width: '100%', minHeight: 120, resize: 'vertical' as const, boxSizing: 'border-box' as const, marginTop: 4 }}
                 value={pf.description}
@@ -5293,7 +5349,7 @@ function ConnectorsTab() {
 
           <button onClick={pluginGenerate} disabled={pluginLoading}
             style={{ ...S.btn, background: 'linear-gradient(135deg, rgba(85,243,255,0.25), rgba(85,243,255,0.12))', borderColor: 'rgba(85,243,255,0.45)', color: '#55f3ff', marginBottom: pluginResult ? 20 : 0 }}>
-            {pluginLoading ? '⏳ Gerando plugin...' : '⬇ Gerar Plugin'}
+            {pluginLoading ? '⏳ Generating plugin...' : '⬇ Generate Plugin'}
           </button>
 
           {pluginResult && (
@@ -5316,7 +5372,7 @@ function ConnectorsTab() {
                     </div>
                     <button onClick={() => downloadText(f.content, f.label)}
                       style={{ ...S.btnSm, borderColor: `${f.color}60`, color: f.color, background: `${f.color}15`, fontSize: 12 }}>
-                      ⬇ Baixar
+                      ⬇ Download
                     </button>
                   </div>
                   <div style={{ padding: '4px 14px 8px', color: '#64748b', fontSize: 11 }}>{f.hint}</div>
@@ -5327,14 +5383,14 @@ function ConnectorsTab() {
               ))}
 
               <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, background: 'rgba(85,243,255,0.06)', border: '1px solid rgba(85,243,255,0.15)', fontSize: 12, color: '#94a3b8', lineHeight: 1.6 }}>
-                <strong style={{ color: '#55f3ff' }}>Próximos passos:</strong>{' '}
+                <strong style={{ color: '#55f3ff' }}>Next steps:</strong>{' '}
                 1) Importe o <code style={{ color: '#a78bfa' }}>connector_spec.json</code> em Connectors → Criar.{' '}
                 2) Copie <code style={{ color: '#38bdf8' }}>agent.py</code> para <code>/opt/orbit-agents/</code> no servidor e edite as variáveis de configuração.{' '}
                 3) Agende via cron: <code>*/2 * * * * python3 /opt/orbit-agents/agent.py</code>
               </div>
 
               <button onClick={() => setPluginResult(null)} style={{ ...S.btnSm, marginTop: 12, color: '#64748b' }}>
-                Gerar novo
+                Generate new
               </button>
             </div>
           )}
@@ -5380,6 +5436,7 @@ export function App() {
   const [tab, setTab]         = React.useState<Tab>('home');
   const [assets, setAssets]   = React.useState<AssetOpt[]>([]);
   const [needsKey, setNeedsKey] = React.useState(false);
+  const [, _forceLocale] = React.useReducer((x: number) => x + 1, 0);
 
   React.useEffect(() => {
     fetch('api/v1/catalog/assets?limit=500', { headers: apiGetHeaders() })
@@ -5391,14 +5448,14 @@ export function App() {
   return (
     <ErrorBoundary>
     <div style={S.root}>
-      <TopBar tab={tab} setTab={setTab} />
+      <TopBar tab={tab} setTab={setTab} onLocaleChange={_forceLocale} />
       <div style={{ flex: 1, minWidth: 0, padding: isMobile ? '14px 12px' : '22px 24px' }}>
         {needsKey && tab !== 'admin' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', marginBottom: 18, background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.35)', borderRadius: 12, fontSize: 13, color: '#fbbf24' }}>
             <span style={{ fontSize: 18 }}>⚠</span>
-            <span>API protegida por chave. Configure a <strong>API Key</strong> em</span>
+            <span>{t('err_api_key')}<strong>API Key</strong>{t('err_api_key_mid')}</span>
             <button onClick={() => setTab('admin')} style={{ background: 'rgba(251,191,36,.15)', border: '1px solid rgba(251,191,36,.4)', borderRadius: 8, color: '#fbbf24', padding: '4px 12px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>⚙ Admin</button>
-            <span>para carregar os dados.</span>
+            <span>{t('err_api_key_suffix')}</span>
           </div>
         )}
         {tab === 'home'          && <HomeTab        assets={assets} setTab={setTab} />}
