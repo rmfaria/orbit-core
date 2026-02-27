@@ -50,22 +50,21 @@ export async function ingestMetricsHandler(req: Request, res: Response) {
 
   await ensureAssets(pool, body.metrics.map(m => m.asset_id));
 
-  const client = await pool.connect();
-  try {
-    await client.query('begin');
-    for (const m of body.metrics) {
-      await client.query(
-        `insert into metric_points(ts, asset_id, namespace, metric, value, unit, dimensions)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
-        [m.ts, m.asset_id, m.namespace, m.metric, m.value, m.unit ?? null, (m.dimensions ?? {})]
-      );
-    }
-    await client.query('commit');
-  } catch (e) {
-    await client.query('rollback');
-    throw e;
-  } finally {
-    client.release();
+  if (body.metrics.length) {
+    await pool.query(
+      `INSERT INTO metric_points(ts, asset_id, namespace, metric, value, unit, dimensions)
+       SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::jsonb[])
+         AS t(ts, asset_id, namespace, metric, value, unit, dimensions)`,
+      [
+        body.metrics.map(m => m.ts),
+        body.metrics.map(m => m.asset_id),
+        body.metrics.map(m => m.namespace),
+        body.metrics.map(m => m.metric),
+        body.metrics.map(m => m.value),
+        body.metrics.map(m => m.unit ?? null),
+        body.metrics.map(m => JSON.stringify(m.dimensions ?? {})),
+      ]
+    );
   }
 
   res.json({ ok: true, inserted: body.metrics.length });
@@ -77,30 +76,31 @@ export async function ingestEventsHandler(req: Request, res: Response) {
 
   await ensureAssets(pool, body.events.map(e => e.asset_id));
 
-  const client = await pool.connect();
-  try {
-    await client.query('begin');
-    for (const ev of body.events) {
-      await client.query(
-        `insert into orbit_events(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         on conflict (fingerprint) where fingerprint is not null
-         do update set
-           ts         = excluded.ts,
-           severity   = excluded.severity,
-           title      = excluded.title,
-           message    = excluded.message,
-           attributes = excluded.attributes,
-           ingested_at = now()`,
-        [ev.ts, ev.asset_id, ev.namespace, ev.kind, ev.severity, ev.title, ev.message ?? null, ev.fingerprint ?? null, (ev.attributes ?? {})]
-      );
-    }
-    await client.query('commit');
-  } catch (e) {
-    await client.query('rollback');
-    throw e;
-  } finally {
-    client.release();
+  if (body.events.length) {
+    await pool.query(
+      `INSERT INTO orbit_events(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
+       SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::jsonb[])
+         AS t(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
+       ON CONFLICT (fingerprint) WHERE fingerprint IS NOT NULL
+       DO UPDATE SET
+         ts          = excluded.ts,
+         severity    = excluded.severity,
+         title       = excluded.title,
+         message     = excluded.message,
+         attributes  = excluded.attributes,
+         ingested_at = now()`,
+      [
+        body.events.map(e => e.ts),
+        body.events.map(e => e.asset_id),
+        body.events.map(e => e.namespace),
+        body.events.map(e => e.kind),
+        body.events.map(e => e.severity),
+        body.events.map(e => e.title),
+        body.events.map(e => e.message ?? null),
+        body.events.map(e => e.fingerprint ?? null),
+        body.events.map(e => JSON.stringify(e.attributes ?? {})),
+      ]
+    );
   }
 
   res.json({ ok: true, inserted: body.events.length });
