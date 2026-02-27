@@ -4014,6 +4014,9 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
     severity: 'medium', selectedChannels: [] as string[],
   });
 
+  // — expand state —
+  const [expandedRuleId, setExpandedRuleId] = React.useState<number | null>(null);
+
   // — new channel form —
   const [showChForm, setShowChForm]   = React.useState(false);
   const [cf, setCf] = React.useState({
@@ -4233,42 +4236,112 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
           )}
 
           {err && <div style={S.err}>{err}</div>}
-          {loading && <div style={{ color: '#94a3b8', fontSize: 13, padding: 12 }}>Carregando…</div>}
+          {loading && <div style={{ color: '#94a3b8', fontSize: 13, padding: 12 }}>{t('loading')}</div>}
 
-          <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
-            <table style={S.table}>
-              <thead>
-                <tr>{[t('name'),'Target','Condition','Sev',t('nagios_col_state'),'Last value',t('channels'),t('actions')].map(h =>
+          {/* Rules table — sticky header, expandable rows */}
+          <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 420px)', minHeight: 200 }}>
+            <table style={{ ...S.table, tableLayout: 'fixed', minWidth: 520 }}>
+              <colgroup>
+                <col style={{ width: 88 }} />  {/* state      */}
+                <col style={{ width: 68 }} />  {/* sev        */}
+                <col style={{ width: '20%' }} />{/* name       */}
+                <col style={{ width: '20%' }} />{/* target     */}
+                <col />                          {/* condition  */}
+                <col style={{ width: 96 }} />  {/* actions    */}
+              </colgroup>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: '#0d1224' }}>
+                <tr>{[t('nagios_col_state'), t('severity'), t('name'), 'Target', 'Condition', t('actions')].map(h =>
                   <th key={h} style={S.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {rules.length === 0 && !loading && (
-                  <tr><td colSpan={8} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
+                  <tr><td colSpan={6} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
                     {t('alerts_no_rules_list')}
                   </td></tr>
                 )}
-                {rules.map(rule => (
-                  <tr key={rule.id} style={{ background: rule.state === 'firing' ? 'rgba(248,113,113,0.04)' : 'transparent' }}>
-                    <td style={S.td}><span style={{ fontWeight: 600, color: '#e9eeff' }}>{rule.name}</span></td>
-                    <td style={{ ...S.td, fontSize: 11, color: '#94a3b8' }}>
-                      {[rule.asset_id, rule.namespace, rule.metric].filter(Boolean).join(' / ') || t('all')}
-                    </td>
-                    <td style={{ ...S.td, fontSize: 11, fontFamily: 'monospace', color: '#7dd3fc' }}>{conditionText(rule)}</td>
-                    <td style={S.td}><SevBadge sev={rule.severity} /></td>
-                    <td style={S.td}>{stateBadge(rule)}</td>
-                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>
-                      {rule.last_value !== null ? rule.last_value!.toFixed(2) : '—'}
-                    </td>
-                    <td style={{ ...S.td, fontSize: 11, color: '#64748b' }}>{rule.channels.join(', ') || '—'}</td>
-                    <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
-                      <button onClick={() => toggleRule(rule)} style={{ ...S.btnSm, marginRight: 4, color: rule.enabled ? '#4ade80' : '#64748b' }} title={rule.enabled ? t('alerts_btn_toggle_off') : t('alerts_btn_toggle_on')}>
-                        {rule.enabled ? '●' : '○'}
-                      </button>
-                      <button onClick={() => silenceRule(rule)} style={{ ...S.btnSm, marginRight: 4 }} title={t('alerts_btn_silence')}>🔕</button>
-                      <button onClick={() => deleteRule(rule.id)} style={{ ...S.btnSm, color: '#f87171' }} title={t('remove')}>✕</button>
-                    </td>
-                  </tr>
-                ))}
+                {rules.map((rule, i) => {
+                  const isExp = expandedRuleId === rule.id;
+                  return (
+                    <React.Fragment key={rule.id}>
+                      <tr
+                        style={{ background: rule.state === 'firing' ? 'rgba(248,113,113,0.04)' : isExp ? 'rgba(85,243,255,0.05)' : i % 2 ? 'rgba(255,255,255,0.015)' : 'transparent' }}
+                      >
+                        <td style={S.td}>{stateBadge(rule)}</td>
+                        <td style={S.td}><SevBadge sev={rule.severity} /></td>
+                        <td
+                          style={{ ...S.td, fontWeight: 600, color: '#e9eeff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                          title={rule.name}
+                          onClick={() => setExpandedRuleId(isExp ? null : rule.id)}
+                        >
+                          {rule.name}
+                          <span style={{ marginLeft: 6, fontSize: 10, color: '#475569', verticalAlign: 'middle', userSelect: 'none' }}>
+                            {isExp ? '▲' : '▶'}
+                          </span>
+                        </td>
+                        <td style={{ ...S.td, fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {[rule.asset_id, rule.namespace, rule.metric].filter(Boolean).join(' / ') || t('all')}
+                        </td>
+                        <td style={{ ...S.td, fontSize: 11, fontFamily: 'monospace', color: '#7dd3fc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {conditionText(rule)}
+                          {rule.last_value !== null && (
+                            <span style={{ color: '#475569', marginLeft: 6 }}>| {rule.last_value!.toFixed(2)}</span>
+                          )}
+                        </td>
+                        <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
+                          <button onClick={() => toggleRule(rule)} style={{ ...S.btnSm, marginRight: 4, color: rule.enabled ? '#4ade80' : '#64748b' }} title={rule.enabled ? t('alerts_btn_toggle_off') : t('alerts_btn_toggle_on')}>
+                            {rule.enabled ? '●' : '○'}
+                          </button>
+                          <button onClick={() => silenceRule(rule)} style={{ ...S.btnSm, marginRight: 4 }} title={t('alerts_btn_silence')}>🔕</button>
+                          <button onClick={() => deleteRule(rule.id)} style={{ ...S.btnSm, color: '#f87171' }} title={t('remove')}>✕</button>
+                        </td>
+                      </tr>
+                      {isExp && (
+                        <tr style={{ background: 'rgba(85,243,255,0.025)' }}>
+                          <td colSpan={6} style={{ ...S.td, padding: '10px 14px 12px', borderTop: '1px solid rgba(85,243,255,0.08)' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 11, marginBottom: 6 }}>
+                              {[
+                                ['name',      rule.name],
+                                ['asset',     rule.asset_id || t('all')],
+                                ['namespace', rule.namespace || t('all')],
+                                ['metric',    rule.metric || t('all')],
+                                ['severity',  rule.severity],
+                              ].map(([k, v]) => (
+                                <span key={k}>
+                                  <span style={{ color: '#475569' }}>{k}</span>{' '}
+                                  <code style={{ color: '#cbd5e1', fontSize: 11 }}>{v}</code>
+                                </span>
+                              ))}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 11 }}>
+                              <span>
+                                <span style={{ color: '#475569' }}>condition</span>{' '}
+                                <code style={{ color: '#7dd3fc', fontSize: 11 }}>{conditionText(rule)}</code>
+                              </span>
+                              {rule.last_value !== null && (
+                                <span>
+                                  <span style={{ color: '#475569' }}>last value</span>{' '}
+                                  <code style={{ color: '#a5f3fc', fontSize: 11 }}>{rule.last_value!.toFixed(4)}</code>
+                                </span>
+                              )}
+                              {rule.channels.length > 0 && (
+                                <span>
+                                  <span style={{ color: '#475569' }}>channels</span>{' '}
+                                  <code style={{ color: '#cbd5e1', fontSize: 11 }}>{rule.channels.join(', ')}</code>
+                                </span>
+                              )}
+                              {rule.silence_until && new Date(rule.silence_until) > new Date() && (
+                                <span>
+                                  <span style={{ color: '#475569' }}>silenced until</span>{' '}
+                                  <code style={{ color: '#fbbf24', fontSize: 11 }}>{new Date(rule.silence_until).toLocaleString()}</code>
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -4314,10 +4387,17 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
             </div>
           )}
 
-          <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
-            <table style={S.table}>
-              <thead>
-                <tr>{['ID',t('name'),t('type'),t('created_at'),t('actions')].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+          <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 420px)', minHeight: 200 }}>
+            <table style={{ ...S.table, tableLayout: 'fixed', minWidth: 400 }}>
+              <colgroup>
+                <col style={{ width: '22%' }} />{/* id      */}
+                <col style={{ width: '24%' }} />{/* name    */}
+                <col style={{ width: 84 }} />  {/* type    */}
+                <col />                          {/* created */}
+                <col style={{ width: 96 }} />  {/* actions */}
+              </colgroup>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: '#0d1224' }}>
+                <tr>{['ID', t('name'), t('type'), t('created_at'), t('actions')].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {channels.length === 0 && (
@@ -4325,16 +4405,16 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                     {t('alerts_no_channels_list')}
                   </td></tr>
                 )}
-                {channels.map(ch => (
-                  <tr key={ch.id}>
-                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{ch.id}</td>
-                    <td style={S.td}>{ch.name}</td>
+                {channels.map((ch, i) => (
+                  <tr key={ch.id} style={{ background: i % 2 ? 'rgba(255,255,255,0.015)' : 'transparent' }}>
+                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.id}</td>
+                    <td style={{ ...S.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</td>
                     <td style={S.td}>
                       <span style={{ background: ch.kind === 'telegram' ? '#172554' : '#1c1917', color: ch.kind === 'telegram' ? '#60a5fa' : '#fdba74', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
                         {ch.kind.toUpperCase()}
                       </span>
                     </td>
-                    <td style={{ ...S.td, fontSize: 12, color: '#64748b' }}>{new Date(ch.created_at).toLocaleString('pt-BR')}</td>
+                    <td style={{ ...S.td, fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>{new Date(ch.created_at).toLocaleString()}</td>
                     <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
                       <button onClick={() => testChannel(ch.id)} style={{ ...S.btnSm, marginRight: 6, color: '#55f3ff' }}>{t('test')}</button>
                       <button onClick={() => deleteChannel(ch.id)} style={{ ...S.btnSm, color: '#f87171' }}>✕</button>
@@ -4354,37 +4434,59 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
             <span style={{ color: '#94a3b8', fontSize: 13 }}>{t('alerts_history_count').replace('{n}', String(history.length))}</span>
             <button onClick={loadHistory} style={{ ...S.btnSm }}>{t('reload')}</button>
           </div>
-          <div style={{ ...S.card, padding: 0, overflow: 'auto' }}>
-            <table style={S.table}>
-              <thead>
-                <tr>{[t('alerts_notif_col_time'),t('alerts_notif_col_rule'),t('alerts_notif_col_ch'),t('alerts_notif_col_event'),t('alerts_notif_col_status'),t('alerts_notif_col_error')].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
+          <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 380px)', minHeight: 200 }}>
+            <table style={{ ...S.table, tableLayout: 'fixed', minWidth: 480 }}>
+              <colgroup>
+                <col style={{ width: 110 }} /> {/* time    */}
+                <col style={{ width: '22%' }} />{/* rule    */}
+                <col style={{ width: '18%' }} />{/* channel */}
+                <col style={{ width: 106 }} /> {/* event   */}
+                <col />                          {/* status+error */}
+              </colgroup>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: '#0d1224' }}>
+                <tr>{[t('alerts_notif_col_time'), t('alerts_notif_col_rule'), t('alerts_notif_col_ch'), t('alerts_notif_col_event'), `${t('alerts_notif_col_status')} / ${t('alerts_notif_col_error')}`].map(h => <th key={h} style={S.th}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {history.length === 0 && (
-                  <tr><td colSpan={6} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
+                  <tr><td colSpan={5} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
                     {t('alerts_no_notifs')}
                   </td></tr>
                 )}
-                {history.map(n => (
-                  <tr key={n.id}>
-                    <td style={{ ...S.td, fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>{new Date(n.sent_at).toLocaleString('pt-BR')}</td>
-                    <td style={S.td}>{n.rule_name ?? n.rule_id}</td>
-                    <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12 }}>{n.channel_id}</td>
-                    <td style={S.td}>
-                      <span style={{ color: n.event === 'firing' ? '#f87171' : '#4ade80', fontWeight: 700, fontSize: 12 }}>
-                        {n.event === 'firing' ? '🚨 FIRING' : '✅ RESOLVED'}
-                      </span>
-                    </td>
-                    <td style={S.td}>
-                      <span style={{ color: n.ok ? '#4ade80' : '#f87171', fontWeight: 700, fontSize: 12 }}>
-                        {n.ok ? '✓ OK' : '✗ ERROR'}
-                      </span>
-                    </td>
-                    <td style={{ ...S.td, fontSize: 11, color: '#f87171', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {n.error ?? '—'}
-                    </td>
-                  </tr>
-                ))}
+                {history.map((n, i) => {
+                  const isExp = !n.ok && !!n.error;
+                  return (
+                    <React.Fragment key={n.id}>
+                      <tr style={{ background: !n.ok ? 'rgba(248,113,113,0.04)' : i % 2 ? 'rgba(255,255,255,0.015)' : 'transparent' }}>
+                        <td style={{ ...S.td, fontSize: 11, color: '#64748b', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                          {new Date(n.sent_at).toLocaleString()}
+                        </td>
+                        <td style={{ ...S.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={n.rule_name ?? String(n.rule_id)}>
+                          {n.rule_name ?? n.rule_id}
+                        </td>
+                        <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {n.channel_id}
+                        </td>
+                        <td style={S.td}>
+                          <span style={{ color: n.event === 'firing' ? '#f87171' : '#4ade80', fontWeight: 700, fontSize: 11 }}>
+                            {n.event === 'firing' ? '🚨 FIRING' : '✅ RESOLVED'}
+                          </span>
+                        </td>
+                        <td style={{ ...S.td, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {n.ok
+                            ? <span style={{ color: '#4ade80', fontWeight: 700, fontSize: 12 }}>✓ OK</span>
+                            : <>
+                                <span style={{ color: '#f87171', fontWeight: 700, fontSize: 12 }}>✗ ERROR</span>
+                                {n.error && (
+                                  <span style={{ color: '#f87171', fontSize: 11, marginLeft: 6 }}>{n.error}</span>
+                                )}
+                              </>
+                          }
+                        </td>
+                      </tr>
+                      {isExp && false /* errors shown inline */}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
