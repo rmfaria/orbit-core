@@ -16,9 +16,18 @@ fail() { echo "[$(date '+%H:%M:%S')] ✗ $*" >&2; exit 1; }
 cd "$REPO"
 
 # ── 1. Pull ──────────────────────────────────────────────────────────────────
+# Self-restart: if git pull updates deploy.sh itself, re-exec the new version
+# so the rest of the deploy uses the fresh script, not bash's buffered copy.
 log "git pull..."
+_HASH_BEFORE=$(git rev-parse HEAD)
 git pull || fail "git pull falhou"
+_HASH_AFTER=$(git rev-parse HEAD)
 ok "código atualizado → $(git log --oneline -1)"
+
+if [ "$_HASH_BEFORE" != "$_HASH_AFTER" ] && git diff --name-only "$_HASH_BEFORE" "$_HASH_AFTER" | grep -q '^deploy\.sh$'; then
+  log "deploy.sh atualizado — re-executando versão nova..."
+  exec bash "$0" "$@"
+fi
 
 # ── 2. Build ─────────────────────────────────────────────────────────────────
 log "build..."
