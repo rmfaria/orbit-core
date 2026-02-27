@@ -94,9 +94,8 @@ export async function ingestEventsHandler(req: Request, res: Response) {
       `INSERT INTO orbit_events(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
        SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::jsonb[])
          AS t(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
-       ON CONFLICT (fingerprint) WHERE fingerprint IS NOT NULL
+       ON CONFLICT (fingerprint, ts) WHERE fingerprint IS NOT NULL
        DO UPDATE SET
-         ts          = excluded.ts,
          severity    = excluded.severity,
          title       = excluded.title,
          message     = excluded.message,

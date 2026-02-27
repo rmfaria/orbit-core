@@ -108,9 +108,9 @@ export async function ingestMapped(
            (ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
          SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::jsonb[])
            AS t(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
-         ON CONFLICT (fingerprint) WHERE fingerprint IS NOT NULL
+         ON CONFLICT (fingerprint, ts) WHERE fingerprint IS NOT NULL
          DO UPDATE SET
-           ts = EXCLUDED.ts, severity = EXCLUDED.severity,
+           severity = EXCLUDED.severity,
            title = EXCLUDED.title, message = EXCLUDED.message,
            attributes = EXCLUDED.attributes, ingested_at = now()`,
         [
