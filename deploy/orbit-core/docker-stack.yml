@@ -45,7 +45,7 @@ services:
           memory: 128M
       labels:
         - traefik.enable=true
-        - traefik.http.routers.orbitcore-api.rule=Host(`${ORBIT_HOST}`) && (PathPrefix(`/orbit-core/api`) || PathPrefix(`/orbit-core/metrics`))
+        - traefik.http.routers.orbitcore-api.rule=Host(`${ORBIT_HOST}`) && (PathPrefix(`/orbit-core/api`) || PathPrefix(`/orbit-core/metrics`) || PathPrefix(`/orbit-core/otlp`))
         - traefik.http.routers.orbitcore-api.entrypoints=websecure
         - traefik.http.routers.orbitcore-api.tls=true
         - traefik.http.routers.orbitcore-api.tls.certresolver=letsencryptresolver
