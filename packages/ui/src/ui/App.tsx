@@ -2293,16 +2293,18 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const fmtN = (v: any, d = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(d) : '—');
   const suriLast = suriRows.length ? suriRows[suriRows.length - 1].value : null;
 
-  const dbColor  = health?.db === 'ok' ? '#47ff9a' : health?.db === 'error' ? '#ff4d6d' : '#ffd36a';
-  const apiColor = health?.ok ? '#47ff9a' : '#ffd36a';
+  const dbColor  = health?.db === 'ok' ? '#4ade80' : health?.db === 'error' ? '#f87171' : '#fbbf24';
+  const apiColor = health?.ok ? '#4ade80' : '#fbbf24';
+  const cpuLoad1 = lastCpu['load1'] ?? 0;
+  const cpuColor = cpuLoad1 > 4 ? '#f87171' : cpuLoad1 > 2 ? '#fbbf24' : '#55f3ff';
 
   const kpis = [
-    { label: 'CPU Load',          value: `${fmtN(lastCpu['load1'])} • ${fmtN(lastCpu['load5'])} • ${fmtN(lastCpu['load15'])}`, hint: 'load1 • load5 • load15' },
-    { label: 'Disk Queue',        value: `${fmtN(lastDisk['aqu-sz'])} • ${fmtN(lastDisk['%util'])}`,                             hint: 'aqu-sz • %util' },
-    { label: 'Net Traffic',       value: `${fmtN(lastNet['RX Mbps'])} • ${fmtN(lastNet['TX Mbps'])}`,                            hint: 'RX Mbps • TX Mbps' },
-    { label: 'Suricata Alerts',   value: fmtN(suriLast, 0),                                                                       hint: t('home_suri_hint') },
-    { label: 'API',               value: health?.ok ? 'online' : '…',                                                             hint: '/api/v1/health' },
-    { label: 'Postgres',          value: health?.db ?? '…',                                                                        hint: 'database' },
+    { label: 'CPU Load',        value: `${fmtN(lastCpu['load1'])} · ${fmtN(lastCpu['load5'])} · ${fmtN(lastCpu['load15'])}`, hint: 'load1 · load5 · load15', color: cpuColor },
+    { label: 'Disk Queue',      value: `${fmtN(lastDisk['aqu-sz'])} · ${fmtN(lastDisk['%util'])}`,                            hint: 'aqu-sz · %util',         color: '#a78bfa' },
+    { label: 'Net Traffic',     value: `${fmtN(lastNet['RX Mbps'])} · ${fmtN(lastNet['TX Mbps'])}`,                           hint: 'RX · TX  Mbps',          color: '#38bdf8' },
+    { label: 'Suricata Alerts', value: fmtN(suriLast, 0),                                                                      hint: t('home_suri_hint'),       color: (suriLast ?? 0) > 20 ? '#f87171' : '#fbbf24' },
+    { label: 'API',             value: health?.ok ? 'online' : '…',                                                            hint: '/api/v1/health',          color: apiColor },
+    { label: 'Postgres',        value: health?.db ?? '…',                                                                      hint: 'database',                color: dbColor },
   ];
 
   return (
@@ -2370,9 +2372,9 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
         {/* KPI strip */}
         <div className="orbit-kpi-strip">
           {kpis.map((k) => (
-            <div key={k.label} className="orbit-kpi">
+            <div key={k.label} className="orbit-kpi" style={{ '--kpi-color': k.color } as React.CSSProperties}>
               <div className="kpi-label">{k.label}</div>
-              <div className="kpi-value">{k.value}</div>
+              <div className="kpi-value" style={{ color: k.color }}>{k.value}</div>
               <div className="kpi-hint">{k.hint}</div>
             </div>
           ))}
