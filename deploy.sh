@@ -30,6 +30,10 @@ if [ "$_HASH_BEFORE" != "$_HASH_AFTER" ] && git diff --name-only "$_HASH_BEFORE"
 fi
 
 # ── 2. Build ─────────────────────────────────────────────────────────────────
+log "pnpm install..."
+pnpm install --frozen-lockfile || fail "pnpm install failed"
+ok "dependencies installed"
+
 log "build..."
 pnpm --filter @orbit/core-contracts build \
   && pnpm --filter @orbit/storage-pg    build \
