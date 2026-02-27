@@ -4,7 +4,7 @@
 
 > No SaaS. No vendor lock-in. Your infrastructure, your data.
 
-**v1.3.0** · Apache-2.0 · Node 22 · PostgreSQL 16 · Docker
+**v1.4.0** · Apache-2.0 · Node 22 · PostgreSQL 16 · Docker
 
 ---
 
@@ -17,6 +17,7 @@ orbit-core collects telemetry from your existing tools (Nagios, Wazuh, Fortigate
 - **AI query** — describe a dashboard in plain text, Claude builds it from your real catalog
 - **Connectors** — pull or push data from any HTTP source via a DSL-based mapping layer
 - **Anomaly correlation** — Z-score correlation across namespaces
+- **OpenTelemetry** — built-in OTLP/HTTP receiver for traces, metrics and logs from any OTel SDK
 
 
   
@@ -32,7 +33,8 @@ Sources                  orbit-core                  You
 Nagios    ──push──▶  /ingest/raw/:id  ──▶  DB   Dashboard UI
 Wazuh     ──push──▶  /ingest/events   ──▶  PG   AI builder
 n8n       ──pull──▶  connector worker      16   Alert rules
-Custom    ──push──▶  /ingest/metrics            API / CLI
+OTel SDK  ──push──▶  /otlp/v1/*                API / CLI
+Custom    ──push──▶  /ingest/metrics
 ```
 
 **Stack:** pnpm monorepo · Turborepo · Express · Zod · Vite + React · Vitest · Docker Swarm
@@ -87,6 +89,7 @@ Connectors define how orbit-core fetches or receives data from external tools.
 | Wazuh | push (webhook) | `wazuh` | [connectors/wazuh](connectors/wazuh/INSTALL.md) |
 | Fortigate | push via Wazuh | `wazuh` | [connectors/fortigate](connectors/fortigate/INSTALL.md) |
 | n8n | push (webhook) | `n8n` | [connectors/n8n](connectors/n8n/INSTALL.md) |
+| OpenTelemetry | push (OTLP/HTTP) | `otel` | [OTLP receiver](#opentelemetry-otlp-receiver) |
 | Custom | push or pull | any | [docs/connectors.md](docs/connectors.md) |
 
 ### AI Connector Framework
@@ -104,6 +107,31 @@ POST /api/v1/connectors/:id/approve
 # Or push directly
 POST /api/v1/ingest/raw/:source_id
 ```
+
+### OpenTelemetry OTLP receiver
+
+orbit-core includes a built-in OTLP/HTTP JSON receiver. Point any OpenTelemetry SDK exporter at the orbit-core URL — no Collector required.
+
+| Endpoint | Payload | Stored as |
+|----------|---------|-----------|
+| `POST /otlp/v1/traces` | ResourceSpans | `metric_points` (span duration) + `orbit_events` (errors) |
+| `POST /otlp/v1/metrics` | ResourceMetrics | `metric_points` |
+| `POST /otlp/v1/logs` | ResourceLogs | `orbit_events` |
+
+**Browser (React/Vite):**
+```typescript
+// packages/ui/src/telemetry.ts — already wired in orbit-ui
+const exporter = new OTLPTraceExporter({ url: `${apiBase}/otlp/v1/traces` });
+```
+
+**Plain JavaScript (no build step):**
+```html
+<!-- zero-dependency inline script, e.g. for static sites -->
+<script src="./otel.js" defer></script>
+```
+
+The `otel.js` approach is used by [orbit-site](https://github.com/rmfaria/orbit-site) to capture
+`page.load`, `web.lcp`, and `fetch()` spans with no npm dependencies.
 
 ---
 
@@ -125,6 +153,9 @@ POST /api/v1/ingest/raw/:source_id
 | GET/POST | `/api/v1/alerts/channels` | Notification channels |
 | GET | `/api/v1/correlations` | Anomaly correlations |
 | GET/POST | `/api/v1/connectors` | Connector specs CRUD |
+| POST | `/otlp/v1/traces` | OTLP/HTTP traces receiver |
+| POST | `/otlp/v1/metrics` | OTLP/HTTP metrics receiver |
+| POST | `/otlp/v1/logs` | OTLP/HTTP logs receiver |
 
 ### Authentication
 
