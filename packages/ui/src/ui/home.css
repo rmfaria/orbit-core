@@ -236,3 +236,46 @@
   border-radius: 14px;
   background: rgba(3,6,18,.35);
 }
+
+/* ── Responsive utility grids ───────────────────────────────────────────────── */
+
+.orbit-grid-4 { display: grid; gap: 10px; grid-template-columns: repeat(4, 1fr); }
+.orbit-grid-3 { display: grid; gap: 10px; grid-template-columns: repeat(3, 1fr); }
+.orbit-grid-2 { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+
+@media (max-width: 768px) {
+  .orbit-grid-4 { grid-template-columns: 1fr 1fr; }
+  .orbit-grid-3 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+  .orbit-grid-4 { grid-template-columns: 1fr; }
+  .orbit-grid-3 { grid-template-columns: 1fr; }
+  .orbit-grid-2 { grid-template-columns: 1fr; }
+}
+
+/* ── Mobile responsiveness ──────────────────────────────────────────────────── */
+
+/* Chart close button: always visible on touch devices and small screens */
+@media (hover: none), (max-width: 768px) {
+  .orbit-chart-close {
+    opacity: 1;
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+    top: 4px;
+    right: 4px;
+  }
+}
+
+/* KPI strip: smaller cards on very small screens */
+@media (max-width: 480px) {
+  .orbit-kpi       { min-width: 150px; }
+  .orbit-kpi .kpi-value { font-size: 18px; }
+  .orbit-panel-head { flex-wrap: wrap; gap: 8px; }
+}
+
+/* Feed: more compact on mobile */
+@media (max-width: 480px) {
+  .orbit-feed { padding: 8px 10px 12px; }
+  .orbit-feed-row { padding: 8px 10px; gap: 8px; }
+}

@@ -118,6 +118,17 @@ function apiGetHeaders(): HeadersInit {
   return { 'x-api-key': key };
 }
 
+// Returns true when viewport width is below 768 px (phone).
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = React.useState(() => window.innerWidth < 768);
+  React.useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < 768);
+    window.addEventListener('resize', fn, { passive: true });
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+  return mobile;
+}
+
 // ─── canvas chart ─────────────────────────────────────────────────────────────
 
 interface CanvasCtx {
@@ -482,7 +493,7 @@ function SystemTab() {
       </div>
 
       {/* Top row: CPU + Memory + Process */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 14 }}>
+      <div className="orbit-grid-3" style={{ gap: 14, marginBottom: 14 }}>
 
         {/* CPU */}
         <SysCard title={t('sys_cpu')} accent="rgba(85,243,255,0.35)">
@@ -585,7 +596,7 @@ function SystemTab() {
 
       {/* Workers */}
       <SysCard title={t('sys_workers')} accent="rgba(251,191,36,0.30)">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <div className="orbit-grid-4" style={{ gap: 12 }}>
           {Object.entries(workers).map(([name, w]) => (
             <WorkerPill key={name} name={name} w={w} />
           ))}
@@ -598,27 +609,34 @@ function SystemTab() {
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
 
 function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
-  const [fontesDdOpen, setFontesDdOpen] = React.useState(false);
-  const [gearDdOpen,   setGearDdOpen]   = React.useState(false);
+  const isMobile = useIsMobile();
+  const [fontesDdOpen,  setFontesDdOpen]  = React.useState(false);
+  const [gearDdOpen,    setGearDdOpen]    = React.useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('orbit_api_key') ?? '');
 
   // Close dropdowns on outside click
   React.useEffect(() => {
     function handle(e: MouseEvent) {
-      const t = e.target as HTMLElement;
-      if (!t.closest('[data-dd="fontes"]')) setFontesDdOpen(false);
-      if (!t.closest('[data-dd="gear"]'))   setGearDdOpen(false);
+      const tgt = e.target as HTMLElement;
+      if (!tgt.closest('[data-dd="fontes"]')) setFontesDdOpen(false);
+      if (!tgt.closest('[data-dd="gear"]'))   setGearDdOpen(false);
     }
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
   }, []);
 
-  function navTabBtn(t: Tab, label: string) {
-    const active = tab === t;
+  // Close mobile nav on resize to desktop
+  React.useEffect(() => {
+    if (!isMobile) setMobileNavOpen(false);
+  }, [isMobile]);
+
+  function navTabBtn(tid: Tab, label: string) {
+    const active = tab === tid;
     return (
       <button
-        key={t}
-        onClick={() => setTab(t)}
+        key={tid}
+        onClick={() => setTab(tid)}
         style={{
           background: active ? 'rgba(85,243,255,0.12)' : 'transparent',
           border: active ? '1px solid rgba(85,243,255,0.28)' : '1px solid transparent',
@@ -634,6 +652,34 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
           height: 34,
           display: 'flex',
           alignItems: 'center',
+        }}
+      >
+        {label}
+      </button>
+    );
+  }
+
+  // Drawer nav item (mobile)
+  function navDrawerBtn(tid: Tab, label: string) {
+    const active = tab === tid;
+    return (
+      <button
+        key={tid}
+        onClick={() => { setTab(tid); setMobileNavOpen(false); }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          width: '100%',
+          background: active ? 'rgba(85,243,255,0.08)' : 'transparent',
+          border: 'none',
+          borderLeft: active ? '3px solid #55f3ff' : '3px solid transparent',
+          color: active ? '#55f3ff' : 'rgba(233,238,255,0.80)',
+          padding: '14px 20px',
+          cursor: 'pointer',
+          fontSize: 15,
+          fontWeight: active ? 700 : 400,
+          textAlign: 'left' as const,
+          transition: 'background 0.12s',
         }}
       >
         {label}
@@ -678,153 +724,282 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     textAlign: 'left' as const,
   };
 
+  const sourceLabels = ['Nagios', 'Wazuh', 'Fortigate', 'n8n', 'OTel'];
+  const sourceColors = [NS_COLOR.nagios, NS_COLOR.wazuh, NS_COLOR.fortigate, NS_COLOR.n8n, NS_COLOR.otel];
+  const sourceTabs: Tab[] = ['src-nagios', 'src-wazuh', 'src-fortigate', 'src-n8n', 'src-otel'];
+
   return (
-    <div style={S.topbar}>
-      {/* Logo */}
-      <span style={{ fontSize: 15, fontWeight: 800, color: '#55f3ff', letterSpacing: '0.2px', marginRight: 8, whiteSpace: 'nowrap' }}>
-        ◎ Orbit
-      </span>
+    <>
+      <div style={S.topbar}>
+        {/* Logo */}
+        <span style={{ fontSize: 15, fontWeight: 800, color: '#55f3ff', letterSpacing: '0.2px', marginRight: 8, whiteSpace: 'nowrap' }}>
+          ◎ Orbit
+        </span>
 
-      {/* Divider */}
-      <div style={{ width: 1, height: 22, background: 'rgba(140,160,255,0.18)', marginRight: 8 }} />
+        {/* Divider */}
+        <div style={{ width: 1, height: 22, background: 'rgba(140,160,255,0.18)', marginRight: 8 }} />
 
-      {/* Nav tabs */}
-      <nav style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
-        {navTabBtn('home', t('nav_home'))}
-        {navTabBtn('system', t('nav_system'))}
+        {/* Nav tabs — desktop only */}
+        {!isMobile && (
+          <nav style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+            {navTabBtn('home', t('nav_home'))}
+            {navTabBtn('system', t('nav_system'))}
 
-        {/* Fontes dropdown */}
-        <div data-dd="fontes" style={{ position: 'relative' }}>
-          <button
-            onClick={() => setFontesDdOpen(x => !x)}
-            style={{
-              background: isFontesActive ? 'rgba(85,243,255,0.12)' : 'transparent',
-              border: isFontesActive ? '1px solid rgba(85,243,255,0.28)' : '1px solid transparent',
-              borderRadius: 8,
-              color: isFontesActive ? '#55f3ff' : 'rgba(233,238,255,0.60)',
-              padding: '5px 12px',
-              margin: '0 2px',
-              height: 34,
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: isFontesActive ? 700 : 500,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              transition: 'all 0.15s',
-              whiteSpace: 'nowrap' as const,
-            }}
-          >
-            { t('nav_sources') }
-            <span style={{ fontSize: 10, opacity: 0.7 }}>{fontesDdOpen ? '▲' : '▼'}</span>
-          </button>
-          {fontesDdOpen && (
-            <div style={ddBase}>
-              {(['src-nagios', 'src-wazuh', 'src-fortigate', 'src-n8n', 'src-otel'] as Tab[]).map((t, i) => {
-                const labels  = ['Nagios', 'Wazuh', 'Fortigate', 'n8n', 'OTel'];
-                const colors  = [NS_COLOR.nagios, NS_COLOR.wazuh, NS_COLOR.fortigate, NS_COLOR.n8n, NS_COLOR.otel];
-                const active  = tab === t;
-                return (
-                  <button
-                    key={t}
-                    onClick={() => { setTab(t); setFontesDdOpen(false); }}
-                    style={{
-                      ...ddBtn,
-                      background: active ? 'rgba(85,243,255,0.07)' : 'transparent',
-                      color: active ? '#e9eeff' : 'rgba(233,238,255,0.75)',
-                      fontWeight: active ? 700 : 400,
-                    }}
-                  >
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: colors[i], flexShrink: 0 }} />
-                    {labels[i]}
-                  </button>
-                );
-              })}
+            {/* Sources dropdown */}
+            <div data-dd="fontes" style={{ position: 'relative' }}>
+              <button
+                onClick={() => setFontesDdOpen(x => !x)}
+                style={{
+                  background: isFontesActive ? 'rgba(85,243,255,0.12)' : 'transparent',
+                  border: isFontesActive ? '1px solid rgba(85,243,255,0.28)' : '1px solid transparent',
+                  borderRadius: 8,
+                  color: isFontesActive ? '#55f3ff' : 'rgba(233,238,255,0.60)',
+                  padding: '5px 12px',
+                  margin: '0 2px',
+                  height: 34,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: isFontesActive ? 700 : 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  transition: 'all 0.15s',
+                  whiteSpace: 'nowrap' as const,
+                }}
+              >
+                {t('nav_sources')}
+                <span style={{ fontSize: 10, opacity: 0.7 }}>{fontesDdOpen ? '▲' : '▼'}</span>
+              </button>
+              {fontesDdOpen && (
+                <div style={ddBase}>
+                  {sourceTabs.map((tid, i) => {
+                    const active = tab === tid;
+                    return (
+                      <button
+                        key={tid}
+                        onClick={() => { setTab(tid); setFontesDdOpen(false); }}
+                        style={{
+                          ...ddBtn,
+                          background: active ? 'rgba(85,243,255,0.07)' : 'transparent',
+                          color: active ? '#e9eeff' : 'rgba(233,238,255,0.75)',
+                          fontWeight: active ? 700 : 400,
+                        }}
+                      >
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: sourceColors[i], flexShrink: 0 }} />
+                        {sourceLabels[i]}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {navTabBtn('events',       t('nav_events'))}
-        {navTabBtn('metrics',      t('nav_metrics'))}
-        {navTabBtn('correlations', t('nav_correlations'))}
-        {navTabBtn('alerts',       t('nav_alerts'))}
-        {navTabBtn('connectors',   t('nav_connectors'))}
-        {navTabBtn('dashboards',   t('nav_dashboards'))}
-      </nav>
+            {navTabBtn('events',       t('nav_events'))}
+            {navTabBtn('metrics',      t('nav_metrics'))}
+            {navTabBtn('correlations', t('nav_correlations'))}
+            {navTabBtn('alerts',       t('nav_alerts'))}
+            {navTabBtn('connectors',   t('nav_connectors'))}
+            {navTabBtn('dashboards',   t('nav_dashboards'))}
+          </nav>
+        )}
 
-      {/* Right side */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 8 }}>
-        <HealthBadge />
+        {/* Mobile spacer */}
+        {isMobile && <div style={{ flex: 1 }} />}
 
-        {/* User indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-            background: apiKey ? '#4ade80' : '#fbbf24',
-            display: 'inline-block',
-          }} />
-          <span style={{ color: apiKey ? '#4ade80' : '#fbbf24', fontWeight: 600 }}>
-            {apiKey ? t('auth_admin') : t('auth_no_auth')}
-          </span>
-        </div>
+        {/* Right side — desktop */}
+        {!isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 8 }}>
+            <HealthBadge />
 
-        {/* Gear dropdown */}
-        <div data-dd="gear" style={{ position: 'relative' }}>
+            {/* User indicator */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                background: apiKey ? '#4ade80' : '#fbbf24',
+                display: 'inline-block',
+              }} />
+              <span style={{ color: apiKey ? '#4ade80' : '#fbbf24', fontWeight: 600 }}>
+                {apiKey ? t('auth_admin') : t('auth_no_auth')}
+              </span>
+            </div>
+
+            {/* Gear dropdown */}
+            <div data-dd="gear" style={{ position: 'relative' }}>
+              <button
+                onClick={() => setGearDdOpen(x => !x)}
+                title={t('auth_settings')}
+                style={{
+                  background: gearDdOpen ? 'rgba(85,243,255,0.10)' : 'transparent',
+                  border: '1px solid ' + (gearDdOpen ? 'rgba(85,243,255,0.30)' : 'rgba(140,160,255,0.20)'),
+                  borderRadius: 8,
+                  color: 'rgba(233,238,255,0.70)',
+                  cursor: 'pointer',
+                  fontSize: 16,
+                  width: 32,
+                  height: 32,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s',
+                }}
+              >
+                ⚙
+              </button>
+              {gearDdOpen && (
+                <div style={ddBase}>
+                  <button
+                    onClick={() => { setTab('admin'); setGearDdOpen(false); }}
+                    style={ddBtn}
+                  >
+                    ⚙ Administration
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Logoff */}
+            <button
+              onClick={logoff}
+              title="Logoff"
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(140,160,255,0.20)',
+                borderRadius: 8,
+                color: 'rgba(233,238,255,0.55)',
+                cursor: 'pointer',
+                fontSize: 15,
+                width: 32,
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.15s',
+              }}
+            >
+              ⏻
+            </button>
+          </div>
+        )}
+
+        {/* Hamburger button — mobile only */}
+        {isMobile && (
           <button
-            onClick={() => setGearDdOpen(x => !x)}
-            title={t('auth_settings')}
+            onClick={() => setMobileNavOpen(x => !x)}
+            aria-label={mobileNavOpen ? 'Fechar menu' : 'Abrir menu'}
             style={{
-              background: gearDdOpen ? 'rgba(85,243,255,0.10)' : 'transparent',
-              border: '1px solid ' + (gearDdOpen ? 'rgba(85,243,255,0.30)' : 'rgba(140,160,255,0.20)'),
+              background: mobileNavOpen ? 'rgba(85,243,255,0.12)' : 'transparent',
+              border: '1px solid ' + (mobileNavOpen ? 'rgba(85,243,255,0.30)' : 'rgba(140,160,255,0.20)'),
               borderRadius: 8,
-              color: 'rgba(233,238,255,0.70)',
+              color: '#e9eeff',
               cursor: 'pointer',
-              fontSize: 16,
-              width: 32,
-              height: 32,
+              fontSize: 20,
+              width: 44,
+              height: 44,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'all 0.15s',
+              marginLeft: 8,
+              flexShrink: 0,
             }}
           >
-            ⚙
+            {mobileNavOpen ? '✕' : '☰'}
           </button>
-          {gearDdOpen && (
-            <div style={ddBase}>
+        )}
+      </div>
+
+      {/* Mobile navigation drawer */}
+      {isMobile && mobileNavOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            top: 50,
+            zIndex: 40,
+            background: 'rgba(4,7,19,0.98)',
+            backdropFilter: 'blur(16px)',
+            borderTop: '1px solid rgba(140,160,255,0.14)',
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch' as const,
+          }}
+          onClick={() => setMobileNavOpen(false)}
+        >
+          {/* Inner: stop propagation so clicks on items don't close via the outer div */}
+          <div onClick={e => e.stopPropagation()}>
+
+            {/* Status row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px', borderBottom: '1px solid rgba(140,160,255,0.10)' }}>
+              <HealthBadge />
+              <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: apiKey ? '#4ade80' : '#fbbf24', display: 'inline-block' }} />
+              <span style={{ color: apiKey ? '#4ade80' : '#fbbf24', fontWeight: 600, fontSize: 13 }}>
+                {apiKey ? t('auth_admin') : t('auth_no_auth')}
+              </span>
+            </div>
+
+            {/* Nav items */}
+            <div>
+              {navDrawerBtn('home',   t('nav_home'))}
+              {navDrawerBtn('system', t('nav_system'))}
+
+              {/* Sources section */}
+              <div style={{ padding: '10px 20px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase' as const }}>
+                {t('nav_sources')}
+              </div>
+              {sourceTabs.map((tid, i) => {
+                const active = tab === tid;
+                return (
+                  <button
+                    key={tid}
+                    onClick={() => { setTab(tid); setMobileNavOpen(false); }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      width: '100%',
+                      background: active ? 'rgba(85,243,255,0.08)' : 'transparent',
+                      border: 'none',
+                      borderLeft: active ? '3px solid #55f3ff' : '3px solid transparent',
+                      color: active ? '#55f3ff' : 'rgba(233,238,255,0.75)',
+                      padding: '13px 20px 13px 28px',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      fontWeight: active ? 700 : 400,
+                      textAlign: 'left' as const,
+                    }}
+                  >
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: sourceColors[i], flexShrink: 0 }} />
+                    {sourceLabels[i]}
+                  </button>
+                );
+              })}
+
+              {navDrawerBtn('events',       t('nav_events'))}
+              {navDrawerBtn('metrics',      t('nav_metrics'))}
+              {navDrawerBtn('correlations', t('nav_correlations'))}
+              {navDrawerBtn('alerts',       t('nav_alerts'))}
+              {navDrawerBtn('connectors',   t('nav_connectors'))}
+              {navDrawerBtn('dashboards',   t('nav_dashboards'))}
+            </div>
+
+            {/* Bottom actions */}
+            <div style={{ borderTop: '1px solid rgba(140,160,255,0.10)', padding: '14px 20px', display: 'flex', gap: 10 }}>
               <button
-                onClick={() => { setTab('admin'); setGearDdOpen(false); }}
-                style={ddBtn}
+                onClick={() => { setTab('admin'); setMobileNavOpen(false); }}
+                style={{ ...ddBtn, flex: 1, padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(140,160,255,0.20)', justifyContent: 'center', fontSize: 14 }}
               >
-                ⚙ Administration
+                ⚙ Admin
+              </button>
+              <button
+                onClick={() => { logoff(); setMobileNavOpen(false); }}
+                style={{ ...ddBtn, flex: 1, padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(255,93,93,0.25)', color: '#fca5a5', justifyContent: 'center', fontSize: 14 }}
+              >
+                ⏻ Logoff
               </button>
             </div>
-          )}
+          </div>
         </div>
-
-        {/* Logoff */}
-        <button
-          onClick={logoff}
-          title="Logoff"
-          style={{
-            background: 'transparent',
-            border: '1px solid rgba(140,160,255,0.20)',
-            borderRadius: 8,
-            color: 'rgba(233,238,255,0.55)',
-            cursor: 'pointer',
-            fontSize: 15,
-            width: 32,
-            height: 32,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.15s',
-          }}
-        >
-          ⏻
-        </button>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
@@ -1082,7 +1257,7 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
   return (
     <div>
       <div style={S.card}>
-        <div style={{ ...S.grid4, marginBottom: 10 }}>
+        <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
           <label style={S.label}>
             Asset
             <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
@@ -1113,7 +1288,7 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
             </select>
           </label>
         </div>
-        <div style={{ ...S.grid2, marginBottom: 10 }}>
+        <div className="orbit-grid-2" style={{ marginBottom: 10 }}>
           <label style={S.label}>
             From (ISO)
             <input style={S.input} value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -1294,7 +1469,7 @@ function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs?: stri
         <EpsChart namespace="wazuh" from={from} to={to} />
       )}
       <div style={S.card}>
-        <div style={{ ...S.grid4, marginBottom: 10 }}>
+        <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
           <label style={S.label}>
             Asset
             <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
@@ -1326,7 +1501,7 @@ function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs?: stri
             </div>
           </div>
         </div>
-        <div style={{ ...S.grid2 }}>
+        <div className="orbit-grid-2">
           <label style={S.label}>
             From (ISO)
             <input style={S.input} value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -1559,7 +1734,7 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
       </div>
 
       <div style={S.card}>
-        <div style={{ ...S.grid4, marginBottom: 10 }}>
+        <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
           <label style={S.label}>
             Host
             <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
@@ -2466,7 +2641,7 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
         <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>
           {t('corr_desc1')} {t('corr_desc2')}
         </div>
-        <div style={{ ...S.grid4, marginBottom: 10 }}>
+        <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
           <label style={S.label}>
             Asset
             <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
@@ -2811,7 +2986,7 @@ function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
       </div>
 
       <div style={S.card}>
-        <div style={{ ...S.grid3 }}>
+        <div className="orbit-grid-3">
           <div style={S.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ fontWeight: 900 }}>Nagios</div>
@@ -4186,13 +4361,13 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
           {showRuleForm && (
             <div style={{ ...S.card, marginBottom: 16, border: '1px solid rgba(85,243,255,0.25)' }}>
               <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 12, fontSize: 14 }}>{t('alerts_form_title')}</div>
-              <div style={{ ...S.grid4, marginBottom: 10 }}>
+              <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
                 <label style={S.label}>Nome<input style={S.input} value={rf.name} onChange={e => setRf(p => ({ ...p, name: e.target.value }))} placeholder={t('alerts_name_ph')} /></label>
                 <label style={S.label}>Asset<input style={S.input} value={rf.asset_id} onChange={e => setRf(p => ({ ...p, asset_id: e.target.value }))} placeholder={t('alerts_asset_ph')} /></label>
                 <label style={S.label}>Namespace<input style={S.input} value={rf.namespace} onChange={e => setRf(p => ({ ...p, namespace: e.target.value }))} placeholder={t('alerts_ns_ph')} /></label>
                 <label style={S.label}>Metric<input style={S.input} value={rf.metric} onChange={e => setRf(p => ({ ...p, metric: e.target.value }))} placeholder="cpu (empty=all)" /></label>
               </div>
-              <div style={{ ...S.grid4, marginBottom: 10 }}>
+              <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
                 <label style={S.label}>{t('alerts_cond_type')}
                   <select style={S.select} value={rf.condKind} onChange={e => setRf(p => ({ ...p, condKind: e.target.value as any }))}>
                     <option value="threshold">{t('alerts_cond_threshold')}</option>
@@ -4214,7 +4389,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                   </label>
                 </>}
               </div>
-              <div style={{ ...S.grid4, marginBottom: 12 }}>
+              <div className="orbit-grid-4" style={{ marginBottom: 12 }}>
                 <label style={S.label}>{t('alerts_window_min')}<input style={S.input} type="number" value={rf.windowMin} onChange={e => setRf(p => ({ ...p, windowMin: e.target.value }))} placeholder="5" /></label>
                 <label style={S.label}>{t('severity')}
                   <select style={S.select} value={rf.severity} onChange={e => setRf(p => ({ ...p, severity: e.target.value }))}>
@@ -4364,7 +4539,7 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
           {showChForm && (
             <div style={{ ...S.card, marginBottom: 16, border: '1px solid rgba(85,243,255,0.25)' }}>
               <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 12, fontSize: 14 }}>{t('alerts_channel_title')}</div>
-              <div style={{ ...S.grid4, marginBottom: 10 }}>
+              <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
                 <label style={S.label}>ID (slug)<input style={S.input} value={cf.id} onChange={e => setCf(p => ({ ...p, id: e.target.value }))} placeholder="telegram-ops" /></label>
                 <label style={S.label}>Nome<input style={S.input} value={cf.name} onChange={e => setCf(p => ({ ...p, name: e.target.value }))} placeholder="Telegram NOC" /></label>
                 <label style={S.label}>{t('type')}
@@ -4375,13 +4550,13 @@ function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                 </label>
               </div>
               {cf.kind === 'webhook' && (
-                <div style={{ ...S.grid2, marginBottom: 10 }}>
+                <div className="orbit-grid-2" style={{ marginBottom: 10 }}>
                   <label style={S.label}>URL<input style={S.input} value={cf.url} onChange={e => setCf(p => ({ ...p, url: e.target.value }))} placeholder="https://hooks.example.com/..." /></label>
                   <label style={S.label}>{t('headers_json')}<textarea style={{ ...S.input, height: 60, resize: 'vertical' }} value={cf.headers} onChange={e => setCf(p => ({ ...p, headers: e.target.value }))} placeholder='{"Authorization":"Bearer ..."}'  /></label>
                 </div>
               )}
               {cf.kind === 'telegram' && (
-                <div style={{ ...S.grid2, marginBottom: 10 }}>
+                <div className="orbit-grid-2" style={{ marginBottom: 10 }}>
                   <label style={S.label}>Bot Token<input style={S.input} value={cf.bot_token} onChange={e => setCf(p => ({ ...p, bot_token: e.target.value }))} placeholder="1234567890:AAH..." /></label>
                   <label style={S.label}>Chat ID<input style={S.input} value={cf.chat_id} onChange={e => setCf(p => ({ ...p, chat_id: e.target.value }))} placeholder="-1001234567890" /></label>
                 </div>
@@ -4943,7 +5118,7 @@ function ConnectorsTab() {
       {subtab === 'create' && (
         <div style={{ ...S.card, border: '1px solid rgba(85,243,255,0.20)' }}>
           <div style={{ fontWeight: 700, color: '#55f3ff', marginBottom: 16, fontSize: 15 }}>{t('conn_new_title')}</div>
-          <div style={{ ...S.grid2, marginBottom: 12 }}>
+          <div className="orbit-grid-2" style={{ marginBottom: 12 }}>
             <label style={S.label}>ID (slug)
               <input style={S.input} value={cf.id} onChange={e => setCf(p => ({ ...p, id: e.target.value }))} placeholder="nagios-perf" />
             </label>
@@ -4951,7 +5126,7 @@ function ConnectorsTab() {
               <input style={S.input} value={cf.source_id} onChange={e => setCf(p => ({ ...p, source_id: e.target.value }))} placeholder="same as ID if not provided" />
             </label>
           </div>
-          <div style={{ ...S.grid4, marginBottom: 12 }}>
+          <div className="orbit-grid-4" style={{ marginBottom: 12 }}>
             <label style={S.label}>{t('mode')}
               <select style={S.select} value={cf.mode} onChange={e => setCf(p => ({ ...p, mode: e.target.value }))}>
                 <option value="push">push</option>
@@ -5004,7 +5179,7 @@ function ConnectorsTab() {
             Paste an example payload. Claude will analyze the structure and generate the mapping spec automatically.
           </div>
 
-          <div style={{ ...S.grid2, marginBottom: 12 }}>
+          <div className="orbit-grid-2" style={{ marginBottom: 12 }}>
             <label style={S.label}>API Key Anthropic
               <input style={{ ...S.input, fontFamily: 'monospace' }} type="password" value={af.aiKey}
                 onChange={e => setAf(p => ({ ...p, aiKey: e.target.value }))} placeholder="sk-ant-..." />
@@ -5013,7 +5188,7 @@ function ConnectorsTab() {
               <input style={S.input} value={af.aiModel} onChange={e => setAf(p => ({ ...p, aiModel: e.target.value }))} placeholder="claude-sonnet-4-6" />
             </label>
           </div>
-          <div style={{ ...S.grid4, marginBottom: 12 }}>
+          <div className="orbit-grid-4" style={{ marginBottom: 12 }}>
             <label style={S.label}>Source Type (hint)
               <input style={S.input} value={af.sourceType} onChange={e => setAf(p => ({ ...p, sourceType: e.target.value }))} placeholder="nagios, wazuh, snmp…" />
             </label>
@@ -5103,6 +5278,7 @@ class ErrorBoundary extends React.Component<
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
 export function App() {
+  const isMobile = useIsMobile();
   const [tab, setTab]         = React.useState<Tab>('home');
   const [assets, setAssets]   = React.useState<AssetOpt[]>([]);
   const [needsKey, setNeedsKey] = React.useState(false);
@@ -5118,7 +5294,7 @@ export function App() {
     <ErrorBoundary>
     <div style={S.root}>
       <TopBar tab={tab} setTab={setTab} />
-      <div style={{ flex: 1, minWidth: 0, padding: '22px 24px' }}>
+      <div style={{ flex: 1, minWidth: 0, padding: isMobile ? '14px 12px' : '22px 24px' }}>
         {needsKey && tab !== 'admin' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', marginBottom: 18, background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.35)', borderRadius: 12, fontSize: 13, color: '#fbbf24' }}>
             <span style={{ fontSize: 18 }}>⚠</span>
