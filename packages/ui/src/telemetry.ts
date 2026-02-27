@@ -30,7 +30,7 @@ export function initTelemetry(): void {
   // The API (orbit-core backend) is on the same origin under /orbit-core/.
   // For local dev with the Vite proxy the target is http://localhost:3000.
   const apiBase = import.meta.env.VITE_API_BASE ?? '/orbit-core';
-  const apiKey  = import.meta.env.VITE_API_KEY ?? '';
+  const apiKey  = import.meta.env.VITE_ORBIT_API_KEY ?? '';
 
   const exporter = new OTLPTraceExporter({
     url: `${apiBase}/otlp/v1/traces`,
