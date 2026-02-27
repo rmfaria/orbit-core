@@ -18,6 +18,9 @@ orbit-core collects telemetry from your existing tools (Nagios, Wazuh, Fortigate
 - **Connectors** — pull or push data from any HTTP source via a DSL-based mapping layer
 - **Anomaly correlation** — Z-score correlation across namespaces
 
+  
+<img width="1408" height="798" alt="Captura de Tela 2026-02-26 às 22 33 17" src="https://github.com/user-attachments/assets/b05dd61c-84f2-481f-975c-d43a8a7f3e9c" />
+
 ---
 
 ## Architecture
