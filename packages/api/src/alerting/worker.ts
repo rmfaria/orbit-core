@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import pino from 'pino';
 import { evaluate } from './evaluate.js';
 import { sendWebhook, sendTelegram, type NotifyPayload } from './notify.js';
+import { heartbeat, workerError } from '../worker-registry.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 'alerts' });
 
@@ -98,7 +99,7 @@ async function run(pool: Pool): Promise<void> {
 }
 
 async function runSafe(pool: Pool): Promise<void> {
-  try { await run(pool); } catch (e) { logger.error({ err: e }, 'alert worker run failed'); }
+  try { await run(pool); heartbeat('alerts'); } catch (e) { logger.error({ err: e }, 'alert worker run failed'); workerError('alerts'); }
 }
 
 export function startAlertWorker(pool: Pool): () => void {

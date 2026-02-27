@@ -20,7 +20,7 @@ type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'home' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'connectors' | 'admin';
+type Tab        = 'home' | 'system' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'connectors' | 'admin';
 
 type CorrelationRow = {
   event_key:    string;
@@ -377,6 +377,221 @@ const S = {
   td: { padding: '10px 10px', borderBottom: '1px solid rgba(140,160,255,0.10)' } as React.CSSProperties,
 };
 
+// ─── SYSTEM TAB ───────────────────────────────────────────────────────────────
+
+interface SysData {
+  ok: boolean;
+  environment: 'container' | 'vps' | 'unknown';
+  cpu:     { count: number; model: string; load: [number, number, number] };
+  memory:  { total_mb: number; free_mb: number; used_mb: number; percent: number; process_rss_mb: number; process_heap_used_mb: number; process_heap_total_mb: number };
+  network: Array<{ name: string; rx_bytes: number; tx_bytes: number; rx_per_sec: number; tx_per_sec: number }>;
+  db:      { total: number; idle: number; waiting: number; connected: boolean };
+  workers: Record<string, { alive: boolean; last_beat: string | null; beats: number; errors: number }>;
+  process: { pid: number; uptime_sec: number; node_version: string; started_at: string };
+}
+
+function fmtBytes(b: number): string {
+  if (b < 1024)       return `${b} B/s`;
+  if (b < 1048576)    return `${(b / 1024).toFixed(1)} KB/s`;
+  return `${(b / 1048576).toFixed(2)} MB/s`;
+}
+function fmtUptime(s: number): string {
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${Math.floor(s % 60)}s`;
+}
+
+function SysCard({ title, children, accent }: { title: string; children: React.ReactNode; accent?: string }) {
+  return (
+    <div style={{ background: 'rgba(8,12,28,0.65)', border: `1px solid ${accent ?? 'rgba(140,160,255,0.16)'}`, borderRadius: 16, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', color: accent ?? 'rgba(233,238,255,0.45)', textTransform: 'uppercase' }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function Bar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+      <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: color, borderRadius: 999, transition: 'width 0.5s ease' }} />
+    </div>
+  );
+}
+
+function WorkerPill({ name, w }: { name: string; w: SysData['workers'][string] }) {
+  const c = w.alive ? '#4ade80' : '#ff5dd6';
+  const ago = w.last_beat ? Math.round((Date.now() - new Date(w.last_beat).getTime()) / 1000) : null;
+  return (
+    <div style={{ background: 'rgba(3,6,18,0.5)', border: `1px solid ${w.alive ? 'rgba(74,222,128,0.22)' : 'rgba(255,93,214,0.22)'}`, borderRadius: 12, padding: '12px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, flexShrink: 0, boxShadow: `0 0 6px ${c}` }} />
+        <span style={{ fontWeight: 700, fontSize: 13, color: '#e9eeff' }}>{name}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: c, fontWeight: 600 }}>{w.alive ? 'OK' : 'STALE'}</span>
+      </div>
+      <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.5)', lineHeight: 1.6 }}>
+        <div>beats: <span style={{ color: '#94a3b8' }}>{w.beats}</span></div>
+        <div>errors: <span style={{ color: w.errors > 0 ? '#ff5dd6' : '#94a3b8' }}>{w.errors}</span></div>
+        {ago !== null && <div>last: <span style={{ color: '#94a3b8' }}>{ago < 60 ? `${ago}s ago` : `${Math.floor(ago / 60)}m ago`}</span></div>}
+      </div>
+    </div>
+  );
+}
+
+function SystemTab() {
+  const [data, setData] = React.useState<SysData | null>(null);
+  const [err,  setErr]  = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const r = await fetch('api/v1/system', { headers: apiGetHeaders() });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (!cancelled) { setData(d); setErr(null); }
+      } catch (e) {
+        if (!cancelled) setErr(String(e));
+      }
+    }
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+
+  if (err)   return <div style={{ padding: 32, color: '#ff5dd6' }}>Erro: {err}</div>;
+  if (!data) return <div style={{ padding: 32, color: 'rgba(233,238,255,0.4)' }}>Carregando sistema…</div>;
+
+  const { cpu, memory, network, db, workers, process: proc } = data;
+  const loadColor = cpu.load[0] > cpu.count * 0.8 ? '#ff5dd6' : cpu.load[0] > cpu.count * 0.5 ? '#fbbf24' : '#4ade80';
+  const memColor  = memory.percent > 85 ? '#ff5dd6' : memory.percent > 65 ? '#fbbf24' : '#55f3ff';
+
+  return (
+    <div style={{ padding: '20px 24px 40px', maxWidth: 1400 }}>
+
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: '#e9eeff' }}>Infraestrutura</div>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: data.environment === 'container' ? 'rgba(155,124,255,0.15)' : 'rgba(85,243,255,0.12)', border: `1px solid ${data.environment === 'container' ? 'rgba(155,124,255,0.4)' : 'rgba(85,243,255,0.35)'}`, color: data.environment === 'container' ? '#c4b5fd' : '#55f3ff', letterSpacing: '0.5px' }}>
+          {data.environment.toUpperCase()}
+        </span>
+        <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.35)', marginLeft: 'auto' }}>atualiza a cada 5s</span>
+      </div>
+
+      {/* Top row: CPU + Memory + Process */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: 14 }}>
+
+        {/* CPU */}
+        <SysCard title="CPU" accent="rgba(85,243,255,0.35)">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 28, fontWeight: 900, color: loadColor }}>{cpu.load[0].toFixed(2)}</span>
+            <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.45)' }}>load avg 1m</span>
+          </div>
+          <Bar pct={(cpu.load[0] / cpu.count) * 100} color={loadColor} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, fontSize: 11 }}>
+            <div style={{ color: 'rgba(233,238,255,0.45)' }}>5m <span style={{ color: '#94a3b8' }}>{cpu.load[1].toFixed(2)}</span></div>
+            <div style={{ color: 'rgba(233,238,255,0.45)' }}>15m <span style={{ color: '#94a3b8' }}>{cpu.load[2].toFixed(2)}</span></div>
+            <div style={{ color: 'rgba(233,238,255,0.45)' }}>{cpu.count} vCPU</div>
+          </div>
+          <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.3)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cpu.model}</div>
+        </SysCard>
+
+        {/* Memory */}
+        <SysCard title="Memória" accent="rgba(155,124,255,0.35)">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 28, fontWeight: 900, color: memColor }}>{memory.percent}%</span>
+            <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.45)' }}>{memory.used_mb} / {memory.total_mb} MB</span>
+          </div>
+          <Bar pct={memory.percent} color={memColor} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 11 }}>
+            <div style={{ color: 'rgba(233,238,255,0.45)' }}>livre <span style={{ color: '#94a3b8' }}>{memory.free_mb} MB</span></div>
+            <div style={{ color: 'rgba(233,238,255,0.45)' }}>RSS <span style={{ color: '#94a3b8' }}>{memory.process_rss_mb} MB</span></div>
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.45)' }}>
+            heap <span style={{ color: '#94a3b8' }}>{memory.process_heap_used_mb}</span> / <span style={{ color: '#94a3b8' }}>{memory.process_heap_total_mb} MB</span>
+          </div>
+        </SysCard>
+
+        {/* Process */}
+        <SysCard title="Processo" accent="rgba(74,222,128,0.30)">
+          <div style={{ fontSize: 28, fontWeight: 900, color: '#4ade80' }}>{fmtUptime(proc.uptime_sec)}</div>
+          <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.5)', lineHeight: 2 }}>
+            <div>PID <span style={{ color: '#94a3b8' }}>{proc.pid}</span></div>
+            <div>Node <span style={{ color: '#94a3b8' }}>{proc.node_version}</span></div>
+            <div>iniciado <span style={{ color: '#94a3b8' }}>{new Date(proc.started_at).toLocaleString('pt-BR')}</span></div>
+          </div>
+        </SysCard>
+      </div>
+
+      {/* Middle row: Network + DB pool */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
+
+        {/* Network */}
+        <SysCard title="Rede" accent="rgba(251,191,36,0.30)">
+          {network.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.35)' }}>/proc/net/dev não disponível neste ambiente</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {network.map(iface => (
+                <div key={iface.name}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontSize: 12 }}>
+                    <span style={{ fontWeight: 700, color: '#e9eeff' }}>{iface.name}</span>
+                    <span style={{ color: 'rgba(233,238,255,0.4)', fontSize: 10 }}>
+                      ↓ {fmtBytes(iface.rx_per_sec)} &nbsp; ↑ {fmtBytes(iface.tx_per_sec)}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: '#4ade80', marginBottom: 2 }}>↓ RX {fmtBytes(iface.rx_per_sec)}</div>
+                      <Bar pct={Math.min(100, (iface.rx_per_sec / 125000) * 100)} color="#4ade80" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: '#55f3ff', marginBottom: 2 }}>↑ TX {fmtBytes(iface.tx_per_sec)}</div>
+                      <Bar pct={Math.min(100, (iface.tx_per_sec / 125000) * 100)} color="#55f3ff" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </SysCard>
+
+        {/* DB pool */}
+        <SysCard title="PostgreSQL Pool" accent={db.connected ? 'rgba(74,222,128,0.30)' : 'rgba(255,93,214,0.35)'}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: db.connected ? '#4ade80' : '#ff5dd6', boxShadow: `0 0 8px ${db.connected ? '#4ade80' : '#ff5dd6'}` }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: db.connected ? '#4ade80' : '#ff5dd6' }}>{db.connected ? 'Conectado' : 'Desconectado'}</span>
+          </div>
+          <Bar pct={db.total > 0 ? ((db.total - db.idle) / db.total) * 100 : 0} color="#4ade80" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 11, marginTop: 4 }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: '#e9eeff' }}>{db.total}</div>
+              <div style={{ color: 'rgba(233,238,255,0.45)' }}>total</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: '#4ade80' }}>{db.idle}</div>
+              <div style={{ color: 'rgba(233,238,255,0.45)' }}>idle</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: db.waiting > 0 ? '#fbbf24' : '#e9eeff' }}>{db.waiting}</div>
+              <div style={{ color: 'rgba(233,238,255,0.45)' }}>waiting</div>
+            </div>
+          </div>
+        </SysCard>
+      </div>
+
+      {/* Workers */}
+      <SysCard title="Workers" accent="rgba(251,191,36,0.30)">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          {Object.entries(workers).map(([name, w]) => (
+            <WorkerPill key={name} name={name} w={w} />
+          ))}
+        </div>
+      </SysCard>
+    </div>
+  );
+}
+
 // ─── TOP BAR ──────────────────────────────────────────────────────────────────
 
 function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
@@ -402,17 +617,20 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
         key={t}
         onClick={() => setTab(t)}
         style={{
-          background: 'transparent',
-          border: 'none',
-          borderBottom: `2px solid ${active ? '#55f3ff' : 'transparent'}`,
-          color: active ? '#55f3ff' : 'rgba(233,238,255,0.65)',
-          padding: '0 14px',
-          height: 50,
+          background: active ? 'rgba(85,243,255,0.12)' : 'transparent',
+          border: active ? '1px solid rgba(85,243,255,0.28)' : '1px solid transparent',
+          borderRadius: 8,
+          color: active ? '#55f3ff' : 'rgba(233,238,255,0.60)',
+          padding: '5px 12px',
+          margin: '0 2px',
           cursor: 'pointer',
           fontSize: 13,
           fontWeight: active ? 700 : 500,
           transition: 'all 0.15s',
           whiteSpace: 'nowrap' as const,
+          height: 34,
+          display: 'flex',
+          alignItems: 'center',
         }}
       >
         {label}
@@ -470,18 +688,20 @@ function TopBar({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
       {/* Nav tabs */}
       <nav style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
         {navTabBtn('home', 'Home')}
+        {navTabBtn('system', '⬡ Sistema')}
 
         {/* Fontes dropdown */}
         <div data-dd="fontes" style={{ position: 'relative' }}>
           <button
             onClick={() => setFontesDdOpen(x => !x)}
             style={{
-              background: 'transparent',
-              border: 'none',
-              borderBottom: `2px solid ${isFontesActive ? '#55f3ff' : 'transparent'}`,
-              color: isFontesActive ? '#55f3ff' : 'rgba(233,238,255,0.65)',
-              padding: '0 14px',
-              height: 50,
+              background: isFontesActive ? 'rgba(85,243,255,0.12)' : 'transparent',
+              border: isFontesActive ? '1px solid rgba(85,243,255,0.28)' : '1px solid transparent',
+              borderRadius: 8,
+              color: isFontesActive ? '#55f3ff' : 'rgba(233,238,255,0.60)',
+              padding: '5px 12px',
+              margin: '0 2px',
+              height: 34,
               cursor: 'pointer',
               fontSize: 13,
               fontWeight: isFontesActive ? 700 : 500,
@@ -4586,6 +4806,7 @@ export function App() {
           </div>
         )}
         {tab === 'home'          && <HomeTab        assets={assets} setTab={setTab} />}
+        {tab === 'system'        && <SystemTab />}
         {tab === 'dashboards'    && <DashboardsTab  assets={assets} />}
         {tab === 'src-nagios'    && <NagiosTab      assets={assets} />}
         {tab === 'src-wazuh'     && <EventsTab      key="src-wazuh"     assets={assets} defaultNs="wazuh" />}

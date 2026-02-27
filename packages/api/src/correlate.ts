@@ -12,6 +12,7 @@
 
 import type { Pool } from 'pg';
 import pino from 'pino';
+import { heartbeat, workerError } from './worker-registry.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 'correlate' });
 
@@ -172,8 +173,10 @@ async function runSafe(pool: Pool): Promise<void> {
   try {
     await runCorrelation(pool);
     logger.debug({ ms: Date.now() - t0 }, 'correlate: job finished');
+    heartbeat('correlate');
   } catch (err) {
     logger.error({ err }, 'correlate: job failed');
+    workerError('correlate');
   }
 }
 

@@ -12,6 +12,7 @@
 
 import type { Pool } from 'pg';
 import pino from 'pino';
+import { heartbeat, workerError } from './worker-registry.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 'rollup' });
 
@@ -105,8 +106,10 @@ async function rollup1h(pool: Pool): Promise<void> {
 async function runSafe(name: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
+    heartbeat('rollup');
   } catch (err) {
     logger.error({ err, job: name }, 'rollup job failed');
+    workerError('rollup');
   }
 }
 

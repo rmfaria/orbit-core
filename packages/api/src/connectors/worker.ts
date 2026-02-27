@@ -17,6 +17,7 @@ import type { Pool } from 'pg';
 import pino from 'pino';
 import { applySpec, type ConnectorSpec } from './dsl.js';
 import { ingestMapped, logRun } from './ingest.js';
+import { heartbeat, workerError } from '../worker-registry.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 'connector-worker' });
 
@@ -101,7 +102,7 @@ export function startConnectorWorker(pool: Pool): () => void {
   }
 
   function tickSafe(): void {
-    tick().catch(err => logger.error({ err }, 'connector worker tick failed'));
+    tick().then(() => heartbeat('connectors')).catch(err => { logger.error({ err }, 'connector worker tick failed'); workerError('connectors'); });
   }
 
   const tInit     = setTimeout(tickSafe, INIT_DELAY_MS);
