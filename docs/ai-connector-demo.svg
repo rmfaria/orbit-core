@@ -37,35 +37,414 @@
       </feMerge>
     </filter>
 
-    <!-- Typing clip - input line 1 (local coords within translate group) -->
-    <clipPath id="clipType1">
-      <rect x="0" y="0" height="24" width="0">
-        <animate attributeName="width"
-          values="0;0;0;460;460;460;460;0"
-          keyTimes="0;0.155;0.17;0.30;0.72;0.93;0.95;1.0"
-          dur="16s" repeatCount="indefinite"/>
-      </rect>
-    </clipPath>
+    <style>
+      /*
+       * All animated elements start opacity:0.
+       * Each gets a @keyframes rule with percentages matching the 16s cycle.
+       * animation-fill-mode: both ensures the element stays hidden before/after.
+       *
+       * Timing reference (time / 16s = %):
+       *   Phase 1:  0–1.5s   =>  0%–9.4%   visible 5%–94%
+       *   Phase 2:  1.5–2.5s => 9.4%–15.6% visible 10%–94%
+       *   Phase 3:  2.5–5s   => 15.6%–31%  box 16%–94%, line1 reveal 17%→30%, line2 22%→31%
+       *   Phase 4:  5–7s     => 31%–44%    visible 32%–94%, bar fills 33%→44%
+       *   Phase 5:  7–11.5s  => 44%–72%    block 44%–94%, lines appear 47%,50%,53%,56%,59%,62%,65%
+       *   Phase 6:  11.5–12.5s=>72%–78%   badges 72%–94%
+       *   Phase 7:  12.5–13.5s=>78%–84%   78%–94%
+       *   Phase 8:  13.5–15s =>84%–94%    84%–94%
+       *   Fade all: 94%→97%
+       */
 
-    <!-- Typing clip - input line 2 (local coords within translate group) -->
-    <clipPath id="clipType2">
-      <rect x="0" y="0" height="24" width="0">
-        <animate attributeName="width"
-          values="0;0;0;380;380;380;380;0"
-          keyTimes="0;0.215;0.235;0.30;0.72;0.93;0.95;1.0"
-          dur="16s" repeatCount="indefinite"/>
-      </rect>
-    </clipPath>
+      /* ── Phase 1: command line ── */
+      .p1 {
+        opacity: 0;
+        animation: fade-p1 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p1 {
+        0%   { opacity: 0; }
+        5%   { opacity: 0; }
+        7%   { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 1: blinking cursor ── */
+      .cursor-p1 {
+        opacity: 0;
+        animation: blink-cursor 1s infinite, show-p1 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes show-p1 {
+        0%   { opacity: 0; }
+        5%   { opacity: 0; }
+        7%   { opacity: 1; }
+        9%   { opacity: 1; }
+        10%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+      @keyframes blink-cursor {
+        0%   { opacity: 0.9; }
+        45%  { opacity: 0.9; }
+        55%  { opacity: 0; }
+        95%  { opacity: 0; }
+        100% { opacity: 0.9; }
+      }
+
+      /* ── Phase 2: subtitle ── */
+      .p2 {
+        opacity: 0;
+        animation: fade-p2 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p2 {
+        0%   { opacity: 0; }
+        10%  { opacity: 0; }
+        12%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 3: input box ── */
+      .p3-box {
+        opacity: 0;
+        animation: fade-p3box 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p3box {
+        0%   { opacity: 0; }
+        16%  { opacity: 0; }
+        17%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 3: typing line 1 reveal ── */
+      .p3-line1 {
+        opacity: 0;
+        clip-path: inset(0 100% 0 0);
+        animation: fade-p3box 16s infinite, type-line1 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes type-line1 {
+        0%   { clip-path: inset(0 100% 0 0); }
+        17%  { clip-path: inset(0 100% 0 0); }
+        30%  { clip-path: inset(0 0% 0 0); }
+        100% { clip-path: inset(0 0% 0 0); }
+      }
+
+      /* ── Phase 3: typing line 2 reveal ── */
+      .p3-line2 {
+        opacity: 0;
+        clip-path: inset(0 100% 0 0);
+        animation: fade-p3box 16s infinite, type-line2 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes type-line2 {
+        0%   { clip-path: inset(0 100% 0 0); }
+        22%  { clip-path: inset(0 100% 0 0); }
+        31%  { clip-path: inset(0 0% 0 0); }
+        100% { clip-path: inset(0 0% 0 0); }
+      }
+
+      /* ── Phase 3: input cursor (blinks while typing) ── */
+      .cursor-p3 {
+        opacity: 0;
+        animation: show-cursor-p3 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes show-cursor-p3 {
+        0%   { opacity: 0; }
+        16%  { opacity: 0; }
+        17%  { opacity: 0.85; }
+        20%  { opacity: 0; }
+        21%  { opacity: 0.85; }
+        25%  { opacity: 0; }
+        26%  { opacity: 0.85; }
+        31%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 4: generating label + track ── */
+      .p4 {
+        opacity: 0;
+        animation: fade-p4 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p4 {
+        0%   { opacity: 0; }
+        32%  { opacity: 0; }
+        34%  { opacity: 1; }
+        71%  { opacity: 1; }
+        72%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 4: progress bar fill (scaleX 0→1) ── */
+      .p4-bar-fill {
+        opacity: 0;
+        transform: scaleX(0);
+        transform-origin: left center;
+        animation: fade-p4 16s infinite, grow-bar 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes grow-bar {
+        0%   { transform: scaleX(0); }
+        33%  { transform: scaleX(0); }
+        44%  { transform: scaleX(1); }
+        100% { transform: scaleX(1); }
+      }
+
+      /* ── Phase 4: checkmark (appears when bar full) ── */
+      .p4-check {
+        opacity: 0;
+        animation: fade-p4check 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p4check {
+        0%   { opacity: 0; }
+        44%  { opacity: 0; }
+        46%  { opacity: 1; }
+        71%  { opacity: 1; }
+        72%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 5: code block shell ── */
+      .p5-block {
+        opacity: 0;
+        animation: fade-p5 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p5 {
+        0%   { opacity: 0; }
+        44%  { opacity: 0; }
+        46%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 5: code line 1 ── */
+      .p5-l1 {
+        opacity: 0;
+        animation: fade-p5l1 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p5l1 {
+        0%   { opacity: 0; }
+        46%  { opacity: 0; }
+        49%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 5: code line 2 ── */
+      .p5-l2 {
+        opacity: 0;
+        animation: fade-p5l2 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p5l2 {
+        0%   { opacity: 0; }
+        49%  { opacity: 0; }
+        52%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 5: code line 3 ── */
+      .p5-l3 {
+        opacity: 0;
+        animation: fade-p5l3 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p5l3 {
+        0%   { opacity: 0; }
+        52%  { opacity: 0; }
+        55%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 5: code line 4 ── */
+      .p5-l4 {
+        opacity: 0;
+        animation: fade-p5l4 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p5l4 {
+        0%   { opacity: 0; }
+        55%  { opacity: 0; }
+        58%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 5: code line 5 ── */
+      .p5-l5 {
+        opacity: 0;
+        animation: fade-p5l5 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p5l5 {
+        0%   { opacity: 0; }
+        58%  { opacity: 0; }
+        61%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 5: code line 6 ── */
+      .p5-l6 {
+        opacity: 0;
+        animation: fade-p5l6 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p5l6 {
+        0%   { opacity: 0; }
+        61%  { opacity: 0; }
+        64%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 6: badge background clearout ── */
+      .p6-clear {
+        opacity: 0;
+        animation: fade-p6clear 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p6clear {
+        0%   { opacity: 0; }
+        71%  { opacity: 0; }
+        72%  { opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 6: badge 1 ── */
+      .p6-b1 {
+        opacity: 0;
+        animation: fade-p6b1 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p6b1 {
+        0%   { opacity: 0; }
+        72%  { opacity: 0; }
+        73.5%{ opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 6: badge 2 ── */
+      .p6-b2 {
+        opacity: 0;
+        animation: fade-p6b2 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p6b2 {
+        0%   { opacity: 0; }
+        73.5%{ opacity: 0; }
+        75.5%{ opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 6: badge 3 ── */
+      .p6-b3 {
+        opacity: 0;
+        animation: fade-p6b3 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p6b3 {
+        0%   { opacity: 0; }
+        75.5%{ opacity: 0; }
+        77.5%{ opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 7: approve command ── */
+      .p7 {
+        opacity: 0;
+        animation: fade-p7 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p7 {
+        0%   { opacity: 0; }
+        78%  { opacity: 0; }
+        79.5%{ opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 7: blinking cursor after approve ── */
+      .cursor-p7 {
+        opacity: 0;
+        animation: blink-cursor 1s infinite, show-p7cursor 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes show-p7cursor {
+        0%   { opacity: 0; }
+        78%  { opacity: 0; }
+        79.5%{ opacity: 1; }
+        84%  { opacity: 1; }
+        84.1%{ opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 8: success bar ── */
+      .p8 {
+        opacity: 0;
+        animation: fade-p8 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes fade-p8 {
+        0%   { opacity: 0; }
+        84%  { opacity: 0; }
+        85.5%{ opacity: 1; }
+        93%  { opacity: 1; }
+        97%  { opacity: 0; }
+        100% { opacity: 0; }
+      }
+
+      /* ── Phase 8: pulsing live dot ── */
+      .p8-dot {
+        opacity: 0;
+        animation: pulse-dot 16s infinite;
+        animation-fill-mode: both;
+      }
+      @keyframes pulse-dot {
+        0%    { opacity: 0;    r: 4; }
+        84%   { opacity: 0;    r: 4; }
+        85.5% { opacity: 0.85; r: 4; }
+        87%   { opacity: 0.35; r: 7; }
+        89%   { opacity: 0.85; r: 4; }
+        91%   { opacity: 0.35; r: 7; }
+        93%   { opacity: 0.35; r: 4; }
+        97%   { opacity: 0;    r: 4; }
+        100%  { opacity: 0;    r: 4; }
+      }
+    </style>
   </defs>
 
   <!-- BACKGROUND -->
   <rect width="800" height="460" fill="url(#bgGrad)"/>
-
-  <!-- WINDOW SHELL
-       Chrome: y=22 h=40 -> y=22..62
-       Body: y=62 h=354 -> y=62..416
-       Status bar: y=416 h=22 -> y=416..438
-       Total window height: 416 (y=22..438) -->
 
   <!-- Drop shadow -->
   <rect x="28" y="30" width="744" height="410" rx="12" fill="rgba(0,0,0,0.6)"/>
@@ -105,7 +484,7 @@
         font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
         font-size="13" font-weight="500" fill="rgba(233,238,255,0.78)">orbit-core &#xB7; AI Connector Generator</text>
 
-  <!-- AI-powered badge (permanent, top-right) -->
+  <!-- AI-powered badge (permanent, always visible) -->
   <rect x="662" y="28" width="108" height="26" rx="13"
         fill="rgba(85,243,255,0.08)" stroke="#55f3ff" stroke-width="1" stroke-opacity="0.55"/>
   <text x="716" y="45.5" text-anchor="middle"
@@ -123,23 +502,11 @@
         font-size="10" fill="rgba(233,238,255,0.38)">AI &#xB7; Claude</text>
 
   <!-- ================================================================
-       CONTENT AREA (y=72..410)
-       Layout:
-         y=96   Phase 1+7: command line
-         y=120  Phase 2: subtitle / Phase 8: success bar
-         y=136..204  Phase 3: input box
-         y=216  Phase 4: generating label
-         y=230..244  Phase 4: progress bar
-         y=258..408  Phase 5: code block
-         y=215..246  Phase 6: file badges (overlays progress area)
+       ANIMATED CONTENT
        ================================================================ -->
 
-  <!-- PHASE 1 (0s-1.5s): command appears -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.04;0.07;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <!-- PHASE 1: command line -->
+  <g class="p1">
     <text x="46" y="96"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="15.5">
@@ -149,20 +516,12 @@
       <tspan fill="rgba(233,238,255,0.92)"> new</tspan>
       <tspan fill="#fbbf24"> --ai</tspan>
     </text>
-    <!-- blinking cursor -->
-    <rect x="372" y="79" width="9" height="19" rx="1.5" fill="#55f3ff">
-      <animate attributeName="opacity"
-        values="0.9;0.9;0;0;0.9" keyTimes="0;0.45;0.55;0.95;1.0"
-        dur="1s" repeatCount="indefinite"/>
-    </rect>
+    <!-- blinking cursor (uses combined blink + show animation) -->
+    <rect class="cursor-p1" x="372" y="79" width="9" height="19" rx="1.5" fill="#55f3ff"/>
   </g>
 
-  <!-- PHASE 2 (1.5s-2.5s): subtitle appears -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.09;0.12;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <!-- PHASE 2: subtitle -->
+  <g class="p2">
     <text x="46" y="122"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13.5" fill="rgba(233,238,255,0.52)">
@@ -170,13 +529,9 @@
     </text>
   </g>
 
-  <!-- PHASE 3 (2.5s-5s): input box + typing reveal -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.155;0.175;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
-
+  <!-- PHASE 3: input box + typing reveal -->
+  <!-- Box chrome (always shown once phase 3 starts) -->
+  <g class="p3-box">
     <!-- Input box -->
     <rect x="46" y="134" width="708" height="68" rx="8"
           fill="rgba(85,243,255,0.035)" stroke="#55f3ff" stroke-width="1.5" stroke-opacity="0.55"/>
@@ -186,42 +541,28 @@
     <!-- Left accent bar -->
     <rect x="46" y="134" width="3" height="68" rx="2"
           fill="#55f3ff" opacity="0.45"/>
-
-    <!-- Typing line 1 (revealed left-to-right via clipPath) -->
-    <g clip-path="url(#clipType1)" transform="translate(46,134)">
-      <text x="18" y="29"
-            font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-            font-size="14.5">
-        <tspan fill="#55f3ff">&gt; </tspan>
-        <tspan fill="rgba(233,238,255,0.92)">Zabbix API &#x2014; /api/jsonrpc endpoint, JSON array</tspan>
-      </text>
-    </g>
-
-    <!-- Typing line 2 (revealed left-to-right via clipPath) -->
-    <g clip-path="url(#clipType2)" transform="translate(46,134)">
-      <text x="18" y="55"
-            font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-            font-size="14.5" fill="rgba(233,238,255,0.68)">
-        &#160;&#160; with host, key_, lastvalue, units per metric
-      </text>
-    </g>
-
-    <!-- Typing cursor (blinks during phase 3) -->
-    <rect x="64" y="143" width="8.5" height="17" rx="1.5" fill="#55f3ff" opacity="0">
-      <animate attributeName="opacity"
-        values="0;0;0.85;0;0.85;0;0;0"
-        keyTimes="0;0.155;0.175;0.21;0.25;0.31;0.33;1.0"
-        dur="16s" repeatCount="indefinite"/>
-    </rect>
   </g>
 
-  <!-- PHASE 4 (5s-7s): generating + progress bar -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.31;0.34;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <!-- Typing line 1 — revealed left-to-right via clip-path animation -->
+  <text class="p3-line1" x="64" y="163"
+        font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
+        font-size="14.5">
+    <tspan fill="#55f3ff">&gt; </tspan>
+    <tspan fill="rgba(233,238,255,0.92)">Zabbix API &#x2014; /api/jsonrpc endpoint, JSON array</tspan>
+  </text>
 
+  <!-- Typing line 2 — revealed left-to-right via clip-path animation -->
+  <text class="p3-line2" x="64" y="189"
+        font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
+        font-size="14.5" fill="rgba(233,238,255,0.68)">
+    &#160;&#160; with host, key_, lastvalue, units per metric
+  </text>
+
+  <!-- Typing cursor (blinks during phase 3) -->
+  <rect class="cursor-p3" x="64" y="143" width="8.5" height="17" rx="1.5" fill="#55f3ff"/>
+
+  <!-- PHASE 4: generating + progress bar -->
+  <g class="p4">
     <!-- "Generating connector..." label -->
     <text x="46" y="222"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
@@ -233,15 +574,7 @@
     <rect x="46" y="231" width="594" height="12" rx="6"
           fill="rgba(255,255,255,0.07)"/>
 
-    <!-- Progress fill (animated width 0->594) -->
-    <rect x="46" y="231" width="0" height="12" rx="6" fill="url(#progressGrad)">
-      <animate attributeName="width"
-        values="0;0;0;594;594;594;0"
-        keyTimes="0;0.31;0.33;0.44;0.72;0.93;1.0"
-        dur="16s" repeatCount="indefinite"/>
-    </rect>
-
-    <!-- Shine overlay on bar -->
+    <!-- Shine overlay on bar (static decorative layer) -->
     <rect x="46" y="231" width="594" height="5" rx="6"
           fill="rgba(255,255,255,0.07)"/>
 
@@ -249,27 +582,22 @@
     <text x="650" y="242"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13" fill="rgba(233,238,255,0.35)">[&#160;&#160;&#160;]</text>
-
-    <!-- Checkmark appears when bar is full -->
-    <g opacity="0">
-      <animate attributeName="opacity"
-        values="0;0;0;0;1;1;0"
-        keyTimes="0;0.31;0.33;0.44;0.46;0.93;1.0"
-        dur="16s" repeatCount="indefinite"/>
-      <text x="650" y="242"
-            font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-            font-size="13" font-weight="600" fill="#4ade80">&#x2713; 100%</text>
-    </g>
   </g>
 
-  <!-- PHASE 5 (7s-11.5s): code block shell -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.43;0.46;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <!-- Progress fill: separate element so scaleX can be applied independently -->
+  <rect class="p4-bar-fill" x="46" y="231" width="594" height="12" rx="6"
+        fill="url(#progressGrad)"/>
 
-    <!-- Ambient radial glow behind block -->
+  <!-- Checkmark / 100% (appears when bar is full) -->
+  <g class="p4-check">
+    <text x="650" y="242"
+          font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
+          font-size="13" font-weight="600" fill="#4ade80">&#x2713; 100%</text>
+  </g>
+
+  <!-- PHASE 5: code block shell -->
+  <g class="p5-block">
+    <!-- Ambient glow -->
     <ellipse cx="400" cy="332" rx="310" ry="86" fill="url(#codeGlow)"/>
 
     <!-- Block background -->
@@ -280,7 +608,7 @@
     <rect x="46" y="258" width="708" height="34" rx="9" fill="url(#codeHeaderGrad)"/>
     <rect x="46" y="278" width="708" height="14" fill="url(#codeHeaderGrad)"/>
 
-    <!-- Header separator line -->
+    <!-- Header separator -->
     <line x1="46" y1="292" x2="754" y2="292" stroke="rgba(255,255,255,0.09)" stroke-width="1"/>
 
     <!-- Filename -->
@@ -301,11 +629,7 @@
   </g>
 
   <!-- Code line 1: { -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.46;0.49;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p5-l1">
     <text x="65" y="311"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">1</text>
@@ -315,11 +639,7 @@
   </g>
 
   <!-- Code line 2: "name", "type" -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.49;0.52;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p5-l2">
     <text x="65" y="328"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">2</text>
@@ -339,11 +659,7 @@
   </g>
 
   <!-- Code line 3: "cron", "pull_url" -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.52;0.55;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p5-l3">
     <text x="65" y="346"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">3</text>
@@ -363,11 +679,7 @@
   </g>
 
   <!-- Code line 4: "mapping": { -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.55;0.58;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p5-l4">
     <text x="65" y="363"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">4</text>
@@ -381,11 +693,7 @@
   </g>
 
   <!-- Code line 5: asset_id, metric, value -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.58;0.61;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p5-l5">
     <text x="65" y="381"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">5</text>
@@ -408,11 +716,7 @@
   </g>
 
   <!-- Code line 6: closing braces -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.61;0.64;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p5-l6">
     <text x="65" y="398"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">6</text>
@@ -421,24 +725,14 @@
           font-size="13.5" fill="rgba(233,238,255,0.6)">  }  }</text>
   </g>
 
-  <!-- PHASE 6 (11.5s): file output badges
-       These appear in the space between progress bar and code block -->
-
+  <!-- PHASE 6: file badges -->
   <!-- Background clearout for badge row -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.715;0.73;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p6-clear">
     <rect x="46" y="212" width="708" height="42" fill="url(#bodyGrad)"/>
   </g>
 
   <!-- Badge 1: connector_spec.json -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.715;0.735;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p6-b1">
     <rect x="46" y="218" width="200" height="28" rx="14"
           fill="rgba(74,222,128,0.11)" stroke="#4ade80" stroke-width="1.3"/>
     <text x="146" y="236.5" text-anchor="middle"
@@ -447,11 +741,7 @@
   </g>
 
   <!-- Badge 2: agent.py -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.735;0.755;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p6-b2">
     <rect x="256" y="218" width="110" height="28" rx="14"
           fill="rgba(74,222,128,0.11)" stroke="#4ade80" stroke-width="1.3"/>
     <text x="311" y="236.5" text-anchor="middle"
@@ -460,11 +750,7 @@
   </g>
 
   <!-- Badge 3: README.md -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.755;0.775;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
+  <g class="p6-b3">
     <rect x="376" y="218" width="124" height="28" rx="14"
           fill="rgba(74,222,128,0.11)" stroke="#4ade80" stroke-width="1.3"/>
     <text x="438" y="236.5" text-anchor="middle"
@@ -472,14 +758,8 @@
           font-size="12" font-weight="600" fill="#4ade80">&#x2713; README.md</text>
   </g>
 
-  <!-- PHASE 7 (12.5s): approve command
-       Overlays the command line at y=96 -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.775;0.795;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
-
+  <!-- PHASE 7: approve command (overlays command line area) -->
+  <g class="p7">
     <!-- Clear previous command -->
     <rect x="46" y="75" width="708" height="30" fill="url(#bodyGrad)"/>
 
@@ -494,21 +774,11 @@
     </text>
 
     <!-- Blinking cursor after approve command -->
-    <rect x="467" y="79" width="9" height="19" rx="1.5" fill="#55f3ff">
-      <animate attributeName="opacity"
-        values="0.9;0.9;0;0;0.9" keyTimes="0;0.45;0.55;0.95;1.0"
-        dur="1s" repeatCount="indefinite"/>
-    </rect>
+    <rect class="cursor-p7" x="467" y="79" width="9" height="19" rx="1.5" fill="#55f3ff"/>
   </g>
 
-  <!-- PHASE 8 (13.5s): success line with glow
-       Appears where subtitle was (y=120) -->
-  <g opacity="0">
-    <animate attributeName="opacity"
-      values="0;0;1;1;0"
-      keyTimes="0;0.835;0.855;0.93;0.97"
-      dur="16s" repeatCount="indefinite"/>
-
+  <!-- PHASE 8: success line with glow (appears where subtitle was) -->
+  <g class="p8">
     <!-- Background clearout -->
     <rect x="46" y="108" width="708" height="34" fill="url(#bodyGrad)"/>
 
@@ -531,17 +801,8 @@
       <tspan fill="rgba(233,238,255,0.82)"> ingested</tspan>
     </text>
 
-    <!-- Live pulse dot -->
-    <circle cx="700" cy="124" r="4.5" fill="#4ade80">
-      <animate attributeName="r"
-        values="4;4;7;4;7;4;4;4"
-        keyTimes="0;0.835;0.87;0.89;0.91;0.93;0.97;1.0"
-        dur="16s" repeatCount="indefinite"/>
-      <animate attributeName="opacity"
-        values="0;0;0.85;0.35;0.85;0.35;0;0"
-        keyTimes="0;0.835;0.87;0.89;0.91;0.93;0.97;1.0"
-        dur="16s" repeatCount="indefinite"/>
-    </circle>
+    <!-- Live pulse dot (CSS animates r and opacity via keyframes) -->
+    <circle class="p8-dot" cx="700" cy="124" r="4.5" fill="#4ade80"/>
   </g>
 
 </svg>
