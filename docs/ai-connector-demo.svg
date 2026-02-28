@@ -1,34 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  orbit-core — AI Connector Generator demo
+  Animation: CSS @keyframes with opacity + stroke-dashoffset only
+  (clip-path / scaleX / r transitions removed — incompatible with <img> sandbox)
+  Creator: Rodrigo Menchio <rodrigomenchio@gmail.com>
+  SPDX-License-Identifier: Apache-2.0
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 460" width="800" height="460">
   <defs>
-    <!-- Gradients -->
     <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#04070f"/>
+      <stop offset="0%"   stop-color="#04070f"/>
       <stop offset="100%" stop-color="#0a1020"/>
     </linearGradient>
     <linearGradient id="chromeGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#181f32"/>
+      <stop offset="0%"   stop-color="#181f32"/>
       <stop offset="100%" stop-color="#111827"/>
     </linearGradient>
     <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0d1526"/>
+      <stop offset="0%"   stop-color="#0d1526"/>
       <stop offset="100%" stop-color="#080e1c"/>
     </linearGradient>
     <linearGradient id="progressGrad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#55f3ff"/>
-      <stop offset="50%" stop-color="#8b6fff"/>
+      <stop offset="0%"   stop-color="#55f3ff"/>
+      <stop offset="50%"  stop-color="#8b6fff"/>
       <stop offset="100%" stop-color="#9b7cff"/>
     </linearGradient>
     <linearGradient id="codeHeaderGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#151d35"/>
+      <stop offset="0%"   stop-color="#151d35"/>
       <stop offset="100%" stop-color="#0f1628"/>
     </linearGradient>
     <radialGradient id="codeGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="rgba(85,243,255,0.07)"/>
+      <stop offset="0%"   stop-color="rgba(85,243,255,0.07)"/>
       <stop offset="100%" stop-color="rgba(85,243,255,0)"/>
     </radialGradient>
-
-    <!-- Filters -->
     <filter id="successGlow" x="-5%" y="-80%" width="110%" height="260%">
       <feGaussianBlur stdDeviation="3.5" result="blur"/>
       <feMerge>
@@ -39,411 +43,252 @@
 
     <style>
       /*
-       * All animated elements start opacity:0.
-       * Each gets a @keyframes rule with percentages matching the 16s cycle.
-       * animation-fill-mode: both ensures the element stays hidden before/after.
-       *
-       * Timing reference (time / 16s = %):
-       *   Phase 1:  0–1.5s   =>  0%–9.4%   visible 5%–94%
-       *   Phase 2:  1.5–2.5s => 9.4%–15.6% visible 10%–94%
-       *   Phase 3:  2.5–5s   => 15.6%–31%  box 16%–94%, line1 reveal 17%→30%, line2 22%→31%
-       *   Phase 4:  5–7s     => 31%–44%    visible 32%–94%, bar fills 33%→44%
-       *   Phase 5:  7–11.5s  => 44%–72%    block 44%–94%, lines appear 47%,50%,53%,56%,59%,62%,65%
-       *   Phase 6:  11.5–12.5s=>72%–78%   badges 72%–94%
-       *   Phase 7:  12.5–13.5s=>78%–84%   78%–94%
-       *   Phase 8:  13.5–15s =>84%–94%    84%–94%
-       *   Fade all: 94%→97%
+       * TIMING (total: 18s loop)
+       *  Phase 1  cmd line        0 – 2s      0%–11%
+       *  Phase 2  subtitle        1.5–3s      8%–17%
+       *  Phase 3  input box       2.5–6s      14%–33%  (3 staggered text chunks)
+       *  Phase 4  progress bar    6–9s        33%–50%  (stroke-dashoffset reveal)
+       *  Phase 5  code block      9–14s       50%–78%  (6 lines cascade)
+       *  Phase 6  badges          14–15.5s    78%–86%
+       *  Phase 7  approve cmd     15.5–17s    86%–94%
+       *  Phase 8  success bar     16.5–17.5s  92%–97%
+       *  Fade-out                 17–18s      94%–100%
        */
 
+      /* ── base rule: all animated groups start hidden ── */
+      .p1,.p2,.p3-box,.p3-l1,.p3-l2,.p3-l3,
+      .p4,.p4-prog,.p4-check,
+      .p5-shell,.p5-l1,.p5-l2,.p5-l3,.p5-l4,.p5-l5,.p5-l6,
+      .p6-clear,.p6-b1,.p6-b2,.p6-b3,
+      .p7,.p8 { opacity: 0; }
+
       /* ── Phase 1: command line ── */
-      .p1 {
-        opacity: 0;
-        animation: fade-p1 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p1 {
-        0%   { opacity: 0; }
-        5%   { opacity: 0; }
-        7%   { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      .p1 { animation: show-p1 18s infinite; }
+      @keyframes show-p1 {
+        0%,5%  { opacity:0 }
+        7%     { opacity:1 }
+        92%    { opacity:1 }
+        96%    { opacity:0 }
+        100%   { opacity:0 }
       }
 
       /* ── Phase 1: blinking cursor ── */
-      .cursor-p1 {
+      .cur1 {
         opacity: 0;
-        animation: blink-cursor 1s infinite, show-p1 16s infinite;
-        animation-fill-mode: both;
+        animation: blink 0.9s 0.9s infinite, hide-cur1 18s infinite;
       }
-      @keyframes show-p1 {
-        0%   { opacity: 0; }
-        5%   { opacity: 0; }
-        7%   { opacity: 1; }
-        9%   { opacity: 1; }
-        10%  { opacity: 0; }
-        100% { opacity: 0; }
+      @keyframes blink {
+        0%,45%  { opacity:0.85 }
+        55%,100%{ opacity:0   }
       }
-      @keyframes blink-cursor {
-        0%   { opacity: 0.9; }
-        45%  { opacity: 0.9; }
-        55%  { opacity: 0; }
-        95%  { opacity: 0; }
-        100% { opacity: 0.9; }
+      @keyframes hide-cur1 {
+        0%,7%  { opacity:0 }
+        8%     { opacity:1 }
+        11%    { opacity:1 }
+        12%    { opacity:0 }
+        100%   { opacity:0 }
       }
 
       /* ── Phase 2: subtitle ── */
-      .p2 {
-        opacity: 0;
-        animation: fade-p2 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p2 {
-        0%   { opacity: 0; }
-        10%  { opacity: 0; }
-        12%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      .p2 { animation: show-p2 18s infinite; }
+      @keyframes show-p2 {
+        0%,8%   { opacity:0 }
+        11%     { opacity:1 }
+        92%     { opacity:1 }
+        96%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 3: input box ── */
-      .p3-box {
-        opacity: 0;
-        animation: fade-p3box 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p3box {
-        0%   { opacity: 0; }
-        16%  { opacity: 0; }
-        17%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      /* ── Phase 3: input box chrome ── */
+      .p3-box { animation: show-p3box 18s infinite; }
+      @keyframes show-p3box {
+        0%,13%  { opacity:0 }
+        15%     { opacity:1 }
+        92%     { opacity:1 }
+        96%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 3: typing line 1 reveal ── */
-      .p3-line1 {
-        opacity: 0;
-        clip-path: inset(0 100% 0 0);
-        animation: fade-p3box 16s infinite, type-line1 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes type-line1 {
-        0%   { clip-path: inset(0 100% 0 0); }
-        17%  { clip-path: inset(0 100% 0 0); }
-        30%  { clip-path: inset(0 0% 0 0); }
-        100% { clip-path: inset(0 0% 0 0); }
+      /* ── Phase 3: text line 1 (staggered) ── */
+      .p3-l1 { animation: show-p3l1 18s infinite; }
+      @keyframes show-p3l1 {
+        0%,15%  { opacity:0 }
+        18%     { opacity:1 }
+        92%     { opacity:1 }
+        96%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 3: typing line 2 reveal ── */
-      .p3-line2 {
-        opacity: 0;
-        clip-path: inset(0 100% 0 0);
-        animation: fade-p3box 16s infinite, type-line2 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes type-line2 {
-        0%   { clip-path: inset(0 100% 0 0); }
-        22%  { clip-path: inset(0 100% 0 0); }
-        31%  { clip-path: inset(0 0% 0 0); }
-        100% { clip-path: inset(0 0% 0 0); }
+      /* ── Phase 3: text line 2 ── */
+      .p3-l2 { animation: show-p3l2 18s infinite; }
+      @keyframes show-p3l2 {
+        0%,20%  { opacity:0 }
+        23%     { opacity:1 }
+        92%     { opacity:1 }
+        96%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 3: input cursor (blinks while typing) ── */
-      .cursor-p3 {
-        opacity: 0;
-        animation: show-cursor-p3 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes show-cursor-p3 {
-        0%   { opacity: 0; }
-        16%  { opacity: 0; }
-        17%  { opacity: 0.85; }
-        20%  { opacity: 0; }
-        21%  { opacity: 0.85; }
-        25%  { opacity: 0; }
-        26%  { opacity: 0.85; }
-        31%  { opacity: 0; }
-        100% { opacity: 0; }
+      /* ── Phase 3: text line 3 ── */
+      .p3-l3 { animation: show-p3l3 18s infinite; }
+      @keyframes show-p3l3 {
+        0%,24%  { opacity:0 }
+        27%     { opacity:1 }
+        92%     { opacity:1 }
+        96%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 4: generating label + track ── */
-      .p4 {
+      /* ── Phase 3: cursor ── */
+      .cur3 {
         opacity: 0;
-        animation: fade-p4 16s infinite;
-        animation-fill-mode: both;
+        animation: blink 0.7s infinite, hide-cur3 18s infinite;
       }
-      @keyframes fade-p4 {
-        0%   { opacity: 0; }
-        32%  { opacity: 0; }
-        34%  { opacity: 1; }
-        71%  { opacity: 1; }
-        72%  { opacity: 0; }
-        100% { opacity: 0; }
+      @keyframes hide-cur3 {
+        0%,13%  { opacity:0 }
+        14%     { opacity:1 }
+        32%     { opacity:1 }
+        33%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 4: progress bar fill (scaleX 0→1) ── */
-      .p4-bar-fill {
-        opacity: 0;
-        transform: scaleX(0);
-        transform-origin: left center;
-        animation: fade-p4 16s infinite, grow-bar 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes grow-bar {
-        0%   { transform: scaleX(0); }
-        33%  { transform: scaleX(0); }
-        44%  { transform: scaleX(1); }
-        100% { transform: scaleX(1); }
+      /* ── Phase 4: label + bar track ── */
+      .p4 { animation: show-p4 18s infinite; }
+      @keyframes show-p4 {
+        0%,32%  { opacity:0 }
+        34%     { opacity:1 }
+        77%     { opacity:1 }
+        79%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 4: checkmark (appears when bar full) ── */
-      .p4-check {
-        opacity: 0;
-        animation: fade-p4check 16s infinite;
-        animation-fill-mode: both;
+      /* ── Phase 4: progress line (stroke-dashoffset reveal) ── */
+      .p4-prog {
+        stroke-dasharray: 594;
+        stroke-dashoffset: 594;
+        animation: show-p4 18s infinite, draw-prog 18s infinite;
       }
-      @keyframes fade-p4check {
-        0%   { opacity: 0; }
-        44%  { opacity: 0; }
-        46%  { opacity: 1; }
-        71%  { opacity: 1; }
-        72%  { opacity: 0; }
-        100% { opacity: 0; }
+      @keyframes draw-prog {
+        0%,33%  { stroke-dashoffset:594 }
+        50%     { stroke-dashoffset:0   }
+        100%    { stroke-dashoffset:0   }
+      }
+
+      /* ── Phase 4: checkmark ── */
+      .p4-check { animation: show-p4check 18s infinite; }
+      @keyframes show-p4check {
+        0%,50%  { opacity:0 }
+        52%     { opacity:1 }
+        77%     { opacity:1 }
+        79%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
       /* ── Phase 5: code block shell ── */
-      .p5-block {
-        opacity: 0;
-        animation: fade-p5 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p5 {
-        0%   { opacity: 0; }
-        44%  { opacity: 0; }
-        46%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      .p5-shell { animation: show-p5 18s infinite; }
+      @keyframes show-p5 {
+        0%,50%  { opacity:0 }
+        52%     { opacity:1 }
+        92%     { opacity:1 }
+        96%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 5: code line 1 ── */
-      .p5-l1 {
-        opacity: 0;
-        animation: fade-p5l1 16s infinite;
-        animation-fill-mode: both;
+      /* ── Phase 5: code lines cascade (6 lines, 0.6s apart) ── */
+      .p5-l1 { animation: show-cl1 18s infinite; }
+      @keyframes show-cl1 {
+        0%,52%  { opacity:0 } 54%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
       }
-      @keyframes fade-p5l1 {
-        0%   { opacity: 0; }
-        46%  { opacity: 0; }
-        49%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      .p5-l2 { animation: show-cl2 18s infinite; }
+      @keyframes show-cl2 {
+        0%,55%  { opacity:0 } 57%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
       }
-
-      /* ── Phase 5: code line 2 ── */
-      .p5-l2 {
-        opacity: 0;
-        animation: fade-p5l2 16s infinite;
-        animation-fill-mode: both;
+      .p5-l3 { animation: show-cl3 18s infinite; }
+      @keyframes show-cl3 {
+        0%,58%  { opacity:0 } 60%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
       }
-      @keyframes fade-p5l2 {
-        0%   { opacity: 0; }
-        49%  { opacity: 0; }
-        52%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      .p5-l4 { animation: show-cl4 18s infinite; }
+      @keyframes show-cl4 {
+        0%,61%  { opacity:0 } 63%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
+      }
+      .p5-l5 { animation: show-cl5 18s infinite; }
+      @keyframes show-cl5 {
+        0%,64%  { opacity:0 } 66%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
+      }
+      .p5-l6 { animation: show-cl6 18s infinite; }
+      @keyframes show-cl6 {
+        0%,67%  { opacity:0 } 69%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
       }
 
-      /* ── Phase 5: code line 3 ── */
-      .p5-l3 {
-        opacity: 0;
-        animation: fade-p5l3 16s infinite;
-        animation-fill-mode: both;
+      /* ── Phase 6: badges ── */
+      .p6-clear { animation: show-p6c 18s infinite; }
+      @keyframes show-p6c {
+        0%,77%  { opacity:0 } 78%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
       }
-      @keyframes fade-p5l3 {
-        0%   { opacity: 0; }
-        52%  { opacity: 0; }
-        55%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      .p6-b1 { animation: show-b1 18s infinite; }
+      @keyframes show-b1 {
+        0%,78%  { opacity:0 } 80%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
       }
-
-      /* ── Phase 5: code line 4 ── */
-      .p5-l4 {
-        opacity: 0;
-        animation: fade-p5l4 16s infinite;
-        animation-fill-mode: both;
+      .p6-b2 { animation: show-b2 18s infinite; }
+      @keyframes show-b2 {
+        0%,81%  { opacity:0 } 83%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
       }
-      @keyframes fade-p5l4 {
-        0%   { opacity: 0; }
-        55%  { opacity: 0; }
-        58%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      .p6-b3 { animation: show-b3 18s infinite; }
+      @keyframes show-b3 {
+        0%,83%  { opacity:0 } 85%  { opacity:1 } 92% { opacity:1 } 96% { opacity:0 } 100% { opacity:0 }
       }
 
-      /* ── Phase 5: code line 5 ── */
-      .p5-l5 {
-        opacity: 0;
-        animation: fade-p5l5 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p5l5 {
-        0%   { opacity: 0; }
-        58%  { opacity: 0; }
-        61%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      /* ── Phase 7: approve ── */
+      .p7 { animation: show-p7 18s infinite; }
+      @keyframes show-p7 {
+        0%,85%  { opacity:0 }
+        87%     { opacity:1 }
+        95%     { opacity:1 }
+        97%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 5: code line 6 ── */
-      .p5-l6 {
+      /* ── Phase 7: cursor ── */
+      .cur7 {
         opacity: 0;
-        animation: fade-p5l6 16s infinite;
-        animation-fill-mode: both;
+        animation: blink 0.9s infinite, hide-cur7 18s infinite;
       }
-      @keyframes fade-p5l6 {
-        0%   { opacity: 0; }
-        61%  { opacity: 0; }
-        64%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      @keyframes hide-cur7 {
+        0%,86%  { opacity:0 }
+        87%     { opacity:1 }
+        92%     { opacity:1 }
+        93%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 6: badge background clearout ── */
-      .p6-clear {
-        opacity: 0;
-        animation: fade-p6clear 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p6clear {
-        0%   { opacity: 0; }
-        71%  { opacity: 0; }
-        72%  { opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
+      /* ── Phase 8: success ── */
+      .p8 { animation: show-p8 18s infinite; }
+      @keyframes show-p8 {
+        0%,91%  { opacity:0 }
+        93%     { opacity:1 }
+        97%     { opacity:1 }
+        99%     { opacity:0 }
+        100%    { opacity:0 }
       }
 
-      /* ── Phase 6: badge 1 ── */
-      .p6-b1 {
-        opacity: 0;
-        animation: fade-p6b1 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p6b1 {
-        0%   { opacity: 0; }
-        72%  { opacity: 0; }
-        73.5%{ opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
-      }
-
-      /* ── Phase 6: badge 2 ── */
-      .p6-b2 {
-        opacity: 0;
-        animation: fade-p6b2 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p6b2 {
-        0%   { opacity: 0; }
-        73.5%{ opacity: 0; }
-        75.5%{ opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
-      }
-
-      /* ── Phase 6: badge 3 ── */
-      .p6-b3 {
-        opacity: 0;
-        animation: fade-p6b3 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p6b3 {
-        0%   { opacity: 0; }
-        75.5%{ opacity: 0; }
-        77.5%{ opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
-      }
-
-      /* ── Phase 7: approve command ── */
-      .p7 {
-        opacity: 0;
-        animation: fade-p7 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p7 {
-        0%   { opacity: 0; }
-        78%  { opacity: 0; }
-        79.5%{ opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
-      }
-
-      /* ── Phase 7: blinking cursor after approve ── */
-      .cursor-p7 {
-        opacity: 0;
-        animation: blink-cursor 1s infinite, show-p7cursor 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes show-p7cursor {
-        0%   { opacity: 0; }
-        78%  { opacity: 0; }
-        79.5%{ opacity: 1; }
-        84%  { opacity: 1; }
-        84.1%{ opacity: 0; }
-        100% { opacity: 0; }
-      }
-
-      /* ── Phase 8: success bar ── */
-      .p8 {
-        opacity: 0;
-        animation: fade-p8 16s infinite;
-        animation-fill-mode: both;
-      }
-      @keyframes fade-p8 {
-        0%   { opacity: 0; }
-        84%  { opacity: 0; }
-        85.5%{ opacity: 1; }
-        93%  { opacity: 1; }
-        97%  { opacity: 0; }
-        100% { opacity: 0; }
-      }
-
-      /* ── Phase 8: pulsing live dot ── */
+      /* ── Phase 8: pulsing dot (opacity only) ── */
       .p8-dot {
         opacity: 0;
-        animation: pulse-dot 16s infinite;
-        animation-fill-mode: both;
+        animation: pulse-dot 18s infinite;
       }
       @keyframes pulse-dot {
-        0%    { opacity: 0;    r: 4; }
-        84%   { opacity: 0;    r: 4; }
-        85.5% { opacity: 0.85; r: 4; }
-        87%   { opacity: 0.35; r: 7; }
-        89%   { opacity: 0.85; r: 4; }
-        91%   { opacity: 0.35; r: 7; }
-        93%   { opacity: 0.35; r: 4; }
-        97%   { opacity: 0;    r: 4; }
-        100%  { opacity: 0;    r: 4; }
+        0%,91%  { opacity:0    }
+        92%     { opacity:0.9  }
+        93.5%   { opacity:0.3  }
+        95%     { opacity:0.9  }
+        96.5%   { opacity:0.3  }
+        98%     { opacity:0    }
+        100%    { opacity:0    }
       }
     </style>
   </defs>
 
-  <!-- BACKGROUND -->
+  <!-- ── BACKGROUND ── -->
   <rect width="800" height="460" fill="url(#bgGrad)"/>
 
   <!-- Drop shadow -->
@@ -455,9 +300,7 @@
 
   <!-- Chrome bar -->
   <rect x="22" y="22" width="756" height="40" rx="12" fill="url(#chromeGrad)"/>
-  <rect x="22" y="50" width="756" height="12" fill="url(#chromeGrad)"/>
-
-  <!-- Chrome/body separator -->
+  <rect x="22" y="50" width="756" height="12"          fill="url(#chromeGrad)"/>
   <line x1="22" y1="62" x2="778" y2="62" stroke="rgba(255,255,255,0.09)" stroke-width="1"/>
 
   <!-- Window body -->
@@ -467,7 +310,7 @@
   <rect x="22" y="416" width="756" height="22" fill="rgba(12,18,36,0.97)"/>
   <line x1="22" y1="416" x2="778" y2="416" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>
 
-  <!-- Window outer frame -->
+  <!-- Frame -->
   <rect x="22" y="22" width="756" height="416" rx="12"
         fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>
 
@@ -479,12 +322,12 @@
   <circle cx="100" cy="42" r="7" fill="#28c840"/>
   <circle cx="100" cy="42" r="7" fill="none" stroke="rgba(0,0,0,0.2)" stroke-width="1"/>
 
-  <!-- Window title -->
+  <!-- Title -->
   <text x="400" y="47" text-anchor="middle"
         font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
         font-size="13" font-weight="500" fill="rgba(233,238,255,0.78)">orbit-core &#xB7; AI Connector Generator</text>
 
-  <!-- AI-powered badge (permanent, always visible) -->
+  <!-- AI badge (permanent) -->
   <rect x="662" y="28" width="108" height="26" rx="13"
         fill="rgba(85,243,255,0.08)" stroke="#55f3ff" stroke-width="1" stroke-opacity="0.55"/>
   <text x="716" y="45.5" text-anchor="middle"
@@ -492,7 +335,7 @@
         font-size="11.5" fill="#55f3ff">&#x2728; AI-powered</text>
 
   <!-- Status bar content -->
-  <circle cx="38" cy="427" r="3.5" fill="#4ade80" opacity="0.75"/>
+  <circle cx="38"  cy="427" r="3.5" fill="#4ade80" opacity="0.75"/>
   <text x="48" y="431"
         font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
         font-size="10" fill="rgba(233,238,255,0.38)">orbit-core v1.4.0</text>
@@ -505,7 +348,7 @@
        ANIMATED CONTENT
        ================================================================ -->
 
-  <!-- PHASE 1: command line -->
+  <!-- PHASE 1: command prompt -->
   <g class="p1">
     <text x="46" y="96"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
@@ -516,253 +359,194 @@
       <tspan fill="rgba(233,238,255,0.92)"> new</tspan>
       <tspan fill="#fbbf24"> --ai</tspan>
     </text>
-    <!-- blinking cursor (uses combined blink + show animation) -->
-    <rect class="cursor-p1" x="372" y="79" width="9" height="19" rx="1.5" fill="#55f3ff"/>
   </g>
+  <rect class="cur1" x="374" y="79" width="9" height="19" rx="1.5" fill="#55f3ff"/>
 
-  <!-- PHASE 2: subtitle -->
+  <!-- PHASE 2: hint subtitle -->
   <g class="p2">
     <text x="46" y="122"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13.5" fill="rgba(233,238,255,0.52)">
-      &#160;&#160;&#x2728; Describe your source &#x2014; AI will write the full connector:
+      &#160;&#160;&#x2728; Describe your data source &#x2014; AI will write the full connector:
     </text>
   </g>
 
-  <!-- PHASE 3: input box + typing reveal -->
-  <!-- Box chrome (always shown once phase 3 starts) -->
+  <!-- PHASE 3: input box chrome -->
   <g class="p3-box">
-    <!-- Input box -->
-    <rect x="46" y="134" width="708" height="68" rx="8"
+    <rect x="46" y="134" width="708" height="78" rx="8"
           fill="rgba(85,243,255,0.035)" stroke="#55f3ff" stroke-width="1.5" stroke-opacity="0.55"/>
-    <!-- Top highlight rim -->
-    <rect x="46" y="134" width="708" height="3" rx="8"
-          fill="rgba(85,243,255,0.12)"/>
-    <!-- Left accent bar -->
-    <rect x="46" y="134" width="3" height="68" rx="2"
-          fill="#55f3ff" opacity="0.45"/>
+    <rect x="46" y="134" width="708" height="3"  rx="8" fill="rgba(85,243,255,0.12)"/>
+    <rect x="46" y="134" width="3"   height="78" rx="2" fill="#55f3ff" opacity="0.45"/>
   </g>
 
-  <!-- Typing line 1 — revealed left-to-right via clip-path animation -->
-  <text class="p3-line1" x="64" y="163"
+  <!-- Phase 3 text lines — staggered fade-in (no clip-path) -->
+  <text class="p3-l1" x="64" y="160"
         font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
         font-size="14.5">
     <tspan fill="#55f3ff">&gt; </tspan>
-    <tspan fill="rgba(233,238,255,0.92)">Zabbix API &#x2014; /api/jsonrpc endpoint, JSON array</tspan>
+    <tspan fill="rgba(233,238,255,0.92)">Zabbix API &#x2014; /api/jsonrpc endpoint,</tspan>
   </text>
-
-  <!-- Typing line 2 — revealed left-to-right via clip-path animation -->
-  <text class="p3-line2" x="64" y="189"
+  <text class="p3-l2" x="64" y="181"
         font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-        font-size="14.5" fill="rgba(233,238,255,0.68)">
-    &#160;&#160; with host, key_, lastvalue, units per metric
+        font-size="14.5" fill="rgba(233,238,255,0.78)">
+    &#160;&#160;&#160;&#160;JSON array with host, key_, lastvalue fields.
   </text>
+  <text class="p3-l3" x="64" y="201"
+        font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
+        font-size="13" fill="rgba(233,238,255,0.45)">
+    &#160;&#160;&#160;&#160;Pull every 5 minutes, ingest as metrics.
+  </text>
+  <rect class="cur3" x="64" y="142" width="8.5" height="17" rx="1.5" fill="#55f3ff"/>
 
-  <!-- Typing cursor (blinks during phase 3) -->
-  <rect class="cursor-p3" x="64" y="143" width="8.5" height="17" rx="1.5" fill="#55f3ff"/>
-
-  <!-- PHASE 4: generating + progress bar -->
+  <!-- PHASE 4: generating label + bar track -->
   <g class="p4">
-    <!-- "Generating connector..." label -->
-    <text x="46" y="222"
+    <text x="46" y="232"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="14" fill="rgba(233,238,255,0.68)">
       &#160;&#160;Generating connector<tspan fill="#55f3ff">...</tspan>
     </text>
-
-    <!-- Progress bar track -->
-    <rect x="46" y="231" width="594" height="12" rx="6"
-          fill="rgba(255,255,255,0.07)"/>
-
-    <!-- Shine overlay on bar (static decorative layer) -->
-    <rect x="46" y="231" width="594" height="5" rx="6"
-          fill="rgba(255,255,255,0.07)"/>
-
-    <!-- Bracket labels -->
-    <text x="650" y="242"
+    <!-- track -->
+    <rect x="46" y="241" width="594" height="12" rx="6" fill="rgba(255,255,255,0.07)"/>
+    <rect x="46" y="241" width="594" height="5"  rx="6" fill="rgba(255,255,255,0.06)"/>
+    <!-- bracket -->
+    <text x="650" y="252"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13" fill="rgba(233,238,255,0.35)">[&#160;&#160;&#160;]</text>
   </g>
 
-  <!-- Progress fill: separate element so scaleX can be applied independently -->
-  <rect class="p4-bar-fill" x="46" y="231" width="594" height="12" rx="6"
-        fill="url(#progressGrad)"/>
+  <!-- Progress fill via stroke-dashoffset (draw left-to-right) -->
+  <line class="p4-prog"
+        x1="52" y1="247" x2="634" y2="247"
+        stroke="url(#progressGrad)" stroke-width="12" stroke-linecap="round"/>
 
-  <!-- Checkmark / 100% (appears when bar is full) -->
+  <!-- Checkmark (after bar full) -->
   <g class="p4-check">
-    <text x="650" y="242"
+    <text x="650" y="252"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13" font-weight="600" fill="#4ade80">&#x2713; 100%</text>
   </g>
 
   <!-- PHASE 5: code block shell -->
-  <g class="p5-block">
-    <!-- Ambient glow -->
-    <ellipse cx="400" cy="332" rx="310" ry="86" fill="url(#codeGlow)"/>
-
-    <!-- Block background -->
-    <rect x="46" y="258" width="708" height="148" rx="9"
+  <g class="p5-shell">
+    <ellipse cx="400" cy="340" rx="310" ry="80" fill="url(#codeGlow)"/>
+    <rect x="46" y="268" width="708" height="148" rx="9"
           fill="rgba(5,10,22,0.96)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
-
-    <!-- Header bar -->
-    <rect x="46" y="258" width="708" height="34" rx="9" fill="url(#codeHeaderGrad)"/>
-    <rect x="46" y="278" width="708" height="14" fill="url(#codeHeaderGrad)"/>
-
-    <!-- Header separator -->
-    <line x1="46" y1="292" x2="754" y2="292" stroke="rgba(255,255,255,0.09)" stroke-width="1"/>
-
-    <!-- Filename -->
-    <text x="66" y="279"
+    <!-- header -->
+    <rect x="46" y="268" width="708" height="34" rx="9" fill="url(#codeHeaderGrad)"/>
+    <rect x="46" y="288" width="708" height="14"        fill="url(#codeHeaderGrad)"/>
+    <line x1="46" y1="302" x2="754" y2="302" stroke="rgba(255,255,255,0.09)" stroke-width="1"/>
+    <text x="66" y="289"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="12.5" fill="rgba(233,238,255,0.72)">connector_spec.json</text>
-
-    <!-- JSON badge -->
-    <rect x="669" y="263" width="68" height="20" rx="4"
+    <rect x="669" y="273" width="68" height="20" rx="4"
           fill="rgba(155,124,255,0.18)" stroke="#9b7cff" stroke-width="1" stroke-opacity="0.55"/>
-    <text x="703" y="277" text-anchor="middle"
+    <text x="703" y="287" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="11" font-weight="600" fill="#9b7cff">JSON</text>
-
-    <!-- Line number gutter -->
-    <rect x="46" y="292" width="38" height="114" fill="rgba(255,255,255,0.018)"/>
-    <line x1="84" y1="292" x2="84" y2="406" stroke="rgba(255,255,255,0.055)" stroke-width="1"/>
+    <!-- gutter -->
+    <rect x="46" y="302" width="38" height="114" fill="rgba(255,255,255,0.018)"/>
+    <line x1="84" y1="302" x2="84" y2="416" stroke="rgba(255,255,255,0.055)" stroke-width="1"/>
   </g>
 
-  <!-- Code line 1: { -->
+  <!-- Code lines cascade -->
   <g class="p5-l1">
-    <text x="65" y="311"
+    <text x="65" y="321" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-          font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">1</text>
-    <text x="96" y="311"
+          font-size="11" fill="rgba(233,238,255,0.3)">1</text>
+    <text x="96" y="321"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13.5" fill="rgba(233,238,255,0.6)">{</text>
   </g>
-
-  <!-- Code line 2: "name", "type" -->
   <g class="p5-l2">
-    <text x="65" y="328"
+    <text x="65" y="338" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-          font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">2</text>
-    <text x="96" y="328"
+          font-size="11" fill="rgba(233,238,255,0.3)">2</text>
+    <text x="96" y="338"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13">
-      <tspan fill="rgba(233,238,255,0.6)">  </tspan>
-      <tspan fill="#9b7cff">"name"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">: </tspan>
-      <tspan fill="#4ade80">"zabbix-metrics"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">,  </tspan>
-      <tspan fill="#9b7cff">"type"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">: </tspan>
-      <tspan fill="#4ade80">"metric"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">,</tspan>
+      <tspan fill="#9b7cff">"name"</tspan><tspan fill="rgba(233,238,255,0.6)">: </tspan>
+      <tspan fill="#4ade80">"zabbix-metrics"</tspan><tspan fill="rgba(233,238,255,0.6)">, </tspan>
+      <tspan fill="#9b7cff">"type"</tspan><tspan fill="rgba(233,238,255,0.6)">: </tspan>
+      <tspan fill="#4ade80">"metric"</tspan><tspan fill="rgba(233,238,255,0.6)">,</tspan>
     </text>
   </g>
-
-  <!-- Code line 3: "cron", "pull_url" -->
   <g class="p5-l3">
-    <text x="65" y="346"
+    <text x="65" y="355" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-          font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">3</text>
-    <text x="96" y="346"
+          font-size="11" fill="rgba(233,238,255,0.3)">3</text>
+    <text x="96" y="355"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13">
-      <tspan fill="rgba(233,238,255,0.6)">  </tspan>
-      <tspan fill="#9b7cff">"cron"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">: </tspan>
-      <tspan fill="#4ade80">"*/5 * * * *"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">,  </tspan>
-      <tspan fill="#9b7cff">"pull_url"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">: </tspan>
-      <tspan fill="#55f3ff">"http://zabbix/api/jsonrpc"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">,</tspan>
+      <tspan fill="#9b7cff">"cron"</tspan><tspan fill="rgba(233,238,255,0.6)">: </tspan>
+      <tspan fill="#4ade80">"*/5 * * * *"</tspan><tspan fill="rgba(233,238,255,0.6)">, </tspan>
+      <tspan fill="#9b7cff">"pull_url"</tspan><tspan fill="rgba(233,238,255,0.6)">: </tspan>
+      <tspan fill="#55f3ff">"http://zabbix/api/jsonrpc"</tspan><tspan fill="rgba(233,238,255,0.6)">,</tspan>
     </text>
   </g>
-
-  <!-- Code line 4: "mapping": { -->
   <g class="p5-l4">
-    <text x="65" y="363"
+    <text x="65" y="371" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-          font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">4</text>
-    <text x="96" y="363"
+          font-size="11" fill="rgba(233,238,255,0.3)">4</text>
+    <text x="96" y="371"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="13">
-      <tspan fill="rgba(233,238,255,0.6)">  </tspan>
-      <tspan fill="#9b7cff">"mapping"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">: {</tspan>
+      <tspan fill="#9b7cff">"mapping"</tspan><tspan fill="rgba(233,238,255,0.6)">: {</tspan>
     </text>
   </g>
-
-  <!-- Code line 5: asset_id, metric, value -->
   <g class="p5-l5">
-    <text x="65" y="381"
+    <text x="65" y="388" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-          font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">5</text>
-    <text x="96" y="381"
+          font-size="11" fill="rgba(233,238,255,0.3)">5</text>
+    <text x="96" y="388"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="12.5">
       <tspan fill="rgba(233,238,255,0.6)">    </tspan>
-      <tspan fill="#9b7cff">"asset_id"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">: </tspan>
-      <tspan fill="#fbbf24">"$.host"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">,  </tspan>
-      <tspan fill="#9b7cff">"metric"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">: </tspan>
-      <tspan fill="#fbbf24">"$.key_"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">,  </tspan>
-      <tspan fill="#9b7cff">"value"</tspan>
-      <tspan fill="rgba(233,238,255,0.6)">: </tspan>
+      <tspan fill="#9b7cff">"asset_id"</tspan><tspan fill="rgba(233,238,255,0.6)">: </tspan>
+      <tspan fill="#fbbf24">"$.host"</tspan><tspan fill="rgba(233,238,255,0.6)">, </tspan>
+      <tspan fill="#9b7cff">"metric"</tspan><tspan fill="rgba(233,238,255,0.6)">: </tspan>
+      <tspan fill="#fbbf24">"$.key_"</tspan><tspan fill="rgba(233,238,255,0.6)">, </tspan>
+      <tspan fill="#9b7cff">"value"</tspan><tspan fill="rgba(233,238,255,0.6)">: </tspan>
       <tspan fill="#fbbf24">"$.lastvalue"</tspan>
     </text>
   </g>
-
-  <!-- Code line 6: closing braces -->
   <g class="p5-l6">
-    <text x="65" y="398"
+    <text x="65" y="405" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-          font-size="11" fill="rgba(233,238,255,0.3)" text-anchor="middle">6</text>
-    <text x="96" y="398"
+          font-size="11" fill="rgba(233,238,255,0.3)">6</text>
+    <text x="96" y="405"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
-          font-size="13.5" fill="rgba(233,238,255,0.6)">  }  }</text>
+          font-size="13.5" fill="rgba(233,238,255,0.6)">  } }</text>
   </g>
 
-  <!-- PHASE 6: file badges -->
-  <!-- Background clearout for badge row -->
+  <!-- PHASE 6: badge row -->
   <g class="p6-clear">
-    <rect x="46" y="212" width="708" height="42" fill="url(#bodyGrad)"/>
+    <rect x="46" y="222" width="708" height="42" fill="url(#bodyGrad)"/>
   </g>
-
-  <!-- Badge 1: connector_spec.json -->
   <g class="p6-b1">
-    <rect x="46" y="218" width="200" height="28" rx="14"
+    <rect x="46"  y="228" width="200" height="28" rx="14"
           fill="rgba(74,222,128,0.11)" stroke="#4ade80" stroke-width="1.3"/>
-    <text x="146" y="236.5" text-anchor="middle"
+    <text x="146" y="246.5" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="12" font-weight="600" fill="#4ade80">&#x2713; connector_spec.json</text>
   </g>
-
-  <!-- Badge 2: agent.py -->
   <g class="p6-b2">
-    <rect x="256" y="218" width="110" height="28" rx="14"
+    <rect x="256" y="228" width="110" height="28" rx="14"
           fill="rgba(74,222,128,0.11)" stroke="#4ade80" stroke-width="1.3"/>
-    <text x="311" y="236.5" text-anchor="middle"
+    <text x="311" y="246.5" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="12" font-weight="600" fill="#4ade80">&#x2713; agent.py</text>
   </g>
-
-  <!-- Badge 3: README.md -->
   <g class="p6-b3">
-    <rect x="376" y="218" width="124" height="28" rx="14"
+    <rect x="376" y="228" width="124" height="28" rx="14"
           fill="rgba(74,222,128,0.11)" stroke="#4ade80" stroke-width="1.3"/>
-    <text x="438" y="236.5" text-anchor="middle"
+    <text x="438" y="246.5" text-anchor="middle"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="12" font-weight="600" fill="#4ade80">&#x2713; README.md</text>
   </g>
 
-  <!-- PHASE 7: approve command (overlays command line area) -->
+  <!-- PHASE 7: approve command -->
   <g class="p7">
-    <!-- Clear previous command -->
     <rect x="46" y="75" width="708" height="30" fill="url(#bodyGrad)"/>
-
     <text x="46" y="96"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="15.5">
@@ -772,23 +556,15 @@
       <tspan fill="rgba(233,238,255,0.92)"> approve</tspan>
       <tspan fill="#fbbf24"> zabbix-metrics</tspan>
     </text>
-
-    <!-- Blinking cursor after approve command -->
-    <rect class="cursor-p7" x="467" y="79" width="9" height="19" rx="1.5" fill="#55f3ff"/>
   </g>
+  <rect class="cur7" x="469" y="79" width="9" height="19" rx="1.5" fill="#55f3ff"/>
 
-  <!-- PHASE 8: success line with glow (appears where subtitle was) -->
+  <!-- PHASE 8: success bar -->
   <g class="p8">
-    <!-- Background clearout -->
     <rect x="46" y="108" width="708" height="34" fill="url(#bodyGrad)"/>
-
-    <!-- Glowing pill background -->
-    <rect x="46" y="110" width="694" height="28" rx="7"
-          fill="rgba(74,222,128,0.06)"/>
+    <rect x="46" y="110" width="694" height="28" rx="7" fill="rgba(74,222,128,0.06)"/>
     <rect x="46" y="110" width="694" height="28" rx="7"
           fill="none" stroke="rgba(74,222,128,0.22)" stroke-width="1"/>
-
-    <!-- Success text -->
     <text x="58" y="129"
           font-family="ui-monospace,'SF Mono',Menlo,Monaco,Consolas,monospace"
           font-size="14.5" filter="url(#successGlow)">
@@ -800,9 +576,10 @@
       <tspan fill="#fbbf24" font-weight="600">1,247 metrics</tspan>
       <tspan fill="rgba(233,238,255,0.82)"> ingested</tspan>
     </text>
-
-    <!-- Live pulse dot (CSS animates r and opacity via keyframes) -->
-    <circle class="p8-dot" cx="700" cy="124" r="4.5" fill="#4ade80"/>
+    <!-- static dot (pulsing handled by .p8-dot below) -->
+    <circle cx="700" cy="124" r="4.5" fill="#4ade80" opacity="0.25"/>
   </g>
+  <!-- pulsing dot overlay -->
+  <circle class="p8-dot" cx="700" cy="124" r="6" fill="#4ade80"/>
 
 </svg>
