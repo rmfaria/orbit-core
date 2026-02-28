@@ -105,12 +105,15 @@ See [INSTALL.md](INSTALL.md) for production hardening, TLS, Docker Swarm and rev
 | ✨ | **AI Connector Generator** | Describe any HTTP API → AI generates connector spec + Python agent + README |
 | 📡 | **OpenTelemetry OTLP/HTTP** | Built-in receiver for traces, metrics and logs. No Collector required |
 | 📊 | **Live dashboards** | Timeseries charts, KPI cards, event feeds — auto-refresh every 30s |
+| 🖥️ | **System monitoring** | Live infrastructure panel: CPU, memory, disk usage, network I/O, PostgreSQL I/O & stats, worker health |
 | 🔔 | **Alerts** | Threshold + absence rules, evaluated every 60s, dispatched via webhook or Telegram |
 | 🔗 | **Auto-correlation** | Z-score anomaly detection links metric spikes to concurrent events |
 | 🤖 | **AI dashboard builder** | Claude-powered — describe a dashboard in plain text, it builds the spec from your real catalog |
 | 🗄️ | **Rollups + retention** | Automatic 5m and 1h rollups; query engine picks the best source table |
 | 🐳 | **Docker standalone** | Single `docker compose up -d` — migrations run automatically on first boot |
 | 🔑 | **API-first** | Every feature exposed via stable REST API; UI is optional |
+| 🌐 | **Multilingual UI (EN/PT/ES)** | Language switcher in the UI header |
+| 📱 | **Mobile-responsive** | Full mobile layout across all tabs |
 
 ---
 
@@ -142,6 +145,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full breakdown.
 | Wazuh | push (webhook) | `wazuh` | [connectors/wazuh](connectors/wazuh/INSTALL.md) |
 | Fortigate | via Wazuh syslog | `wazuh/fortigate` | [connectors/fortigate](connectors/fortigate/INSTALL.md) |
 | n8n | push (Error Trigger) | `n8n` | [connectors/n8n](connectors/n8n/INSTALL.md) |
+| macOS | push (LaunchAgent) | `macos` | via AI-generated connector + LaunchAgent |
 | OpenTelemetry | push (OTLP/HTTP) | `otel` | [OTLP receiver](#opentelemetry-otlp-receiver) |
 | **Any HTTP API** | **AI-generated** | any | [AI Connector Generator](#-ai-connector-generator) |
 
@@ -188,6 +192,7 @@ Query your data without writing SQL:
 | Method | Route | Description |
 |--------|-------|-------------|
 | `GET` | `/api/v1/health` | Health, DB status, worker list |
+| `GET` | `/api/v1/system` | Live infra metrics (CPU, memory, disk, network, DB pool, pg_stats, workers) |
 | `POST` | `/api/v1/ingest/metrics` | Batch ingest metric points |
 | `POST` | `/api/v1/ingest/events` | Batch ingest events (fingerprint dedup) |
 | `POST` | `/api/v1/ingest/raw/:id` | Push raw payload to a registered connector |
@@ -203,7 +208,9 @@ Query your data without writing SQL:
 | `POST` | `/api/v1/connectors/:id/approve` | Approve a connector |
 | `POST` | `/api/v1/connectors/:id/test` | Dry-run test |
 | `POST` | `/api/v1/ai/plugin` | AI Connector Generator |
-| `POST` | `/otlp/v1/{traces,metrics,logs}` | OTLP/HTTP receiver |
+| `POST` | `/otlp/v1/traces` | OTLP/HTTP traces receiver |
+| `POST` | `/otlp/v1/metrics` | OTLP/HTTP metrics receiver |
+| `POST` | `/otlp/v1/logs` | OTLP/HTTP logs receiver |
 | `GET` | `/api/v1/metrics/prom` | Prometheus exporter |
 
 **Auth:** `X-Api-Key: <key>` — set `ORBIT_API_KEY` on the server; UI stores key in `localStorage`.

@@ -1,0 +1,113 @@
+# Changelog
+
+All notable changes to orbit-core will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [1.5.0] - 2026-02-28
+
+### Added
+
+- **TimeRangePicker**: modern date range selector with preset pills (1h, 6h, 24h, 7d, 30d), datetime-local inputs and "↻ agora" button — replaces raw ISO text inputs in MetricsTab, EventsTab, NagiosTab and CorrelationsTab
+- **System Tab — Disk usage card**: displays total, used and free space in GB with a percent fill bar, sourced from `fs.statfs('/')`
+- **System Tab — PostgreSQL I/O & Stats card**: surfaces db size, cache hit %, active connections, reads/s and writes/s via `pg_stat_database`
+- Logo assets: `orbitcore-logo-horizontal.svg` and `orbitcore-logo-white.svg`
+
+### Fixed
+
+- Dashboard `timeseries_multi` widgets with an empty `namespace`/`metric` field now emit the correct series format instead of crashing
+- macOS metrics charts: canvas DPR rendering corrected — `setupCanvas` now uses `clientWidth`/`clientHeight` instead of raw pixel dimensions
+- Memory and disk comparison dashboard widgets now render correctly
+
+---
+
+## [1.4.0] - 2026-02-27
+
+### Added
+
+- **Spanish locale (ES)**: full UI translation covering all tabs and dynamic strings, plus a language switcher (EN / PT / ES)
+- **Mobile-responsive UI**: full layout adaptation for small screens across all tabs and navigation elements
+- **AI Plugin Generator** (`POST /api/v1/ai/plugin`): describe any HTTP API in plain text and receive a `connector_spec` (ConnectorSpec JSON), `agent_script` (Python) and `readme` (Markdown) in return
+- **Connectors tab**: copy button and "Use this Spec" flow for AI-generated results, enabling one-click registration
+- **macOS LaunchAgent agent** (`orbit-agent.py`): collects `cpu.usage_pct`, `memory.*` and `disk.*` metrics and pushes them every 120 seconds via `POST /api/v1/ingest/raw/macos`
+- Animated SVG demo for the AI Connector Generator (`docs/ai-connector-demo.svg`)
+- OpenTelemetry OTLP/HTTP receiver instrumented in orbit-site
+
+### Changed
+
+- All packages bumped to v1.4.0
+
+---
+
+## [1.3.0] - 2026-02-25
+
+### Added
+
+- **Alerts system**: threshold and absence rule types, 60-second evaluation worker, webhook and Telegram dispatch channels
+- **AlertsTab** in UI: full CRUD for alert rules and notification channels, notification history view and silence controls
+- Migration 0011: `alert_rules`, `alert_channels` and `alert_notifications` tables
+- **AI Connector Framework**: connector specs CRUD (create, list, get, update, delete), approve/test/dry-run workflow
+- `POST /api/v1/ingest/raw/:id` — push a raw payload to a registered connector and have it mapped automatically
+- Connector worker: polls all active connectors every 30 seconds
+- Auth: pull connectors support both `X-Api-Key` and BasicAuth authentication modes
+
+---
+
+## [1.2.0] - 2026-02-20
+
+### Added
+
+- **Auto-correlation**: z-score anomaly detection that links metric spikes to concurrent events within the same time window
+- **CorrelationsTab** in UI: surfaces correlated metric anomalies and events side by side
+- Migration 0009: composite indexes on `(namespace, ts)` for improved query performance on metrics and events tables
+- Rollup worker promoted to a background API process — no external cron required
+
+### Fixed
+
+- N+1 queries in `correlate.ts` replaced with batched lookups
+- Duplicate ingestion logic in `routes/ingest.ts` delegated to `connectors/ingest.ts`
+- Health check (`GET /api/v1/health`) now reports the status of all 4 background workers correctly
+
+---
+
+## [1.1.0] - 2026-02-15
+
+### Added
+
+- **AI Dashboard Builder** (`POST /api/v1/ai/dashboard`): Claude-powered `DashboardSpec` generation from a plain-text description
+- Dashboard CRUD with JSON spec persistence in PostgreSQL
+- **DashboardTab**: builder UI, live viewer and rotation/slideshow mode for multiple dashboards
+- Widget types: Gauge, KPI cards and EPS (Events Per Second) chart
+- `timeseries_multi` query kind with `group_by` support and Top-N result limiting
+- Event fingerprint deduplication in the ingest pipeline — duplicate events are silently collapsed
+
+---
+
+## [1.0.0] - 2026-02-01
+
+### Added
+
+- Initial release
+- Metric ingestion (`POST /api/v1/ingest/metrics`) with JSONB dimensions support
+- Event ingestion (`POST /api/v1/ingest/events`) with severity levels (info / low / medium / high / critical)
+- **OrbitQL** query engine: `timeseries`, `events` and `event_count` query kinds
+- Catalog API: assets, metrics, dimensions and events discovery endpoints
+- Automatic 5-minute and 1-hour rollups with transparent query-time selection
+- Retention policy: 14 days raw, 90 days 5-minute, 180 days 1-hour
+- Built-in connectors: Nagios (perfdata + HARD state events), Wazuh (alerts), n8n (failures), Fortigate (via Wazuh pipeline)
+- Docker Compose single-command deploy
+- PostgreSQL 16 backend
+- Prometheus exporter (`GET /api/v1/metrics/prom`)
+- `X-Api-Key` authentication
+
+---
+
+[1.5.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/rodrigomenchio/orbit-core/releases/tag/v1.0.0

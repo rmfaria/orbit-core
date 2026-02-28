@@ -65,14 +65,28 @@ orbit-core is a small, API-first core that unifies **metrics + events** into a s
 ## Quality criteria
 
 - Typical queries return in < 2s
-- Dimension group-bys are bounded (Top‑N) to avoid cardinality explosions
+- Dimension group-bys are bounded (Top-N) to avoid cardinality explosions
 - AI-generated dashboards must validate against the contracts in a single call
 - One-command deploy (`deploy.sh`) with end-of-run health check
 
+## What's built (v1.5.0)
+
+The following capabilities have been implemented and are available in production:
+
+- **Alerting** — threshold + absence rules, webhook + Telegram channels, 60-second evaluation loop
+- **AI Connector Generator** — describe any HTTP API in plain language; AI generates connector_spec + agent_script + README automatically (Anthropic)
+- **OpenTelemetry OTLP/HTTP receiver** — accepts traces, metrics and logs over OTLP with no Collector required
+- **macOS agent** — runs as a LaunchAgent, reports under namespace `macos`; collects cpu, memory and disk metrics
+- **Multilingual UI** — English, Portuguese and Spanish
+- **Mobile-responsive UI** — layout adapts to phone and tablet viewports
+- **System monitoring tab** — live view of CPU, memory, disk, network I/O, PostgreSQL I/O and stats, and worker health
+- **Modern TimeRangePicker** — preset pill buttons plus datetime-local inputs; replaces raw ISO text inputs
+
 ## Roadmap (next versions)
 
-- alerting on thresholds / anomalies
-- scheduled reports (email/webhook)
-- more sources/connectors
-- improved correlation rules + explainability
-- retention/rollup configuration via admin
+- Scheduled reports (email/webhook)
+- More connectors/sources
+- Improved correlation rules + explainability
+- Retention/rollup configuration via admin UI
+- ClickHouse backend (scale tier)
+- SSO / OIDC authentication
