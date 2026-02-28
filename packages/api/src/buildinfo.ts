@@ -9,6 +9,16 @@ function tryRead(p: string): string | null {
   }
 }
 
+function tryReadPkgVersion(p: string): string | null {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const v = pkg.version;
+    return typeof v === 'string' && v !== '0.0.0' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 function tryStatMtime(p: string): string | null {
   try {
     const st = fs.statSync(p);
@@ -40,7 +50,12 @@ export function getBuildInfo() {
   const distEntry = path.join(repoDir, 'packages', 'api', 'dist', 'index.js');
   const buildTime = process.env.BUILD_TIME ?? tryStatMtime(distEntry) ?? 'unknown';
 
-  const version = process.env.npm_package_version ?? process.env.ORBIT_VERSION ?? '0.0.0';
+  const version =
+    process.env.npm_package_version ??
+    process.env.ORBIT_VERSION ??
+    tryReadPkgVersion(path.join(repoDir, 'packages', 'api', 'package.json')) ??
+    tryReadPkgVersion(new URL('../../package.json', import.meta.url).pathname) ??
+    '0.0.0';
 
   return { version, git, buildTime };
 }
