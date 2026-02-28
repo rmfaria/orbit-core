@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./site/assets/orbitcore-logo.svg" width="72" alt="orbit-core" />
+<img src="./packages/ui/public/orbitcore-logo.svg" width="72" alt="orbit-core" />
 
 # orbit-core
 
