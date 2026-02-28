@@ -97,6 +97,14 @@ function relativeFrom(hours: number) {
   return new Date(Date.now() - hours * 3600 * 1000).toISOString();
 }
 
+function isoToLocal(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 // If built with VITE_ORBIT_API_KEY, seed localStorage on first load.
 const _builtInKey = import.meta.env.VITE_ORBIT_API_KEY as string | undefined;
 if (_builtInKey && !localStorage.getItem('orbit_api_key')) {
@@ -142,8 +150,12 @@ function setupCanvas(canvas: HTMLCanvasElement): CanvasCtx | null {
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   const dpr = window.devicePixelRatio || 1;
-  const w = Math.max(1, Math.floor(canvas.width / dpr));
-  const h = Math.max(1, Math.floor(canvas.height / dpr));
+  // Use CSS layout size as logical size; scale buffer for retina/HiDPI
+  const w = Math.max(1, canvas.clientWidth || canvas.offsetWidth || 900);
+  const h = Math.max(1, canvas.clientHeight || canvas.offsetHeight || 280);
+  canvas.width  = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#0b1220';
   ctx.fillRect(0, 0, w, h);
@@ -399,7 +411,9 @@ interface SysData {
   cpu:     { count: number; model: string; load: [number, number, number] };
   memory:  { total_mb: number; free_mb: number; used_mb: number; percent: number; process_rss_mb: number; process_heap_used_mb: number; process_heap_total_mb: number };
   network: Array<{ name: string; rx_bytes: number; tx_bytes: number; rx_per_sec: number; tx_per_sec: number }>;
+  disk:    { total_gb: number; used_gb: number; free_gb: number; percent: number };
   db:      { total: number; idle: number; waiting: number; connected: boolean };
+  pg_stats: { db_size_mb: number; cache_hit_pct: number; active_connections: number; tup_fetched_ps: number; tup_written_ps: number } | null;
   workers: Record<string, { alive: boolean; last_beat: string | null; beats: number; errors: number }>;
   process: { pid: number; uptime_sec: number; node_version: string; started_at: string };
 }
@@ -476,9 +490,10 @@ function SystemTab() {
   if (err)   return <div style={{ padding: 32, color: '#ff5dd6' }}>Error: {err}</div>;
   if (!data) return <div style={{ padding: 32, color: 'rgba(233,238,255,0.4)' }}>Carregando sistema…</div>;
 
-  const { cpu, memory, network, db, workers, process: proc } = data;
+  const { cpu, memory, network, disk, db, pg_stats, workers, process: proc } = data;
   const loadColor = cpu.load[0] > cpu.count * 0.8 ? '#ff5dd6' : cpu.load[0] > cpu.count * 0.5 ? '#fbbf24' : '#4ade80';
   const memColor  = memory.percent > 85 ? '#ff5dd6' : memory.percent > 65 ? '#fbbf24' : '#55f3ff';
+  const diskColor = disk.percent > 85 ? '#ff5dd6' : disk.percent > 65 ? '#fbbf24' : '#4ade80';
 
   return (
     <div style={{ padding: '20px 24px 40px', maxWidth: 1400 }}>
@@ -537,7 +552,7 @@ function SystemTab() {
         </SysCard>
       </div>
 
-      {/* Middle row: Network + DB pool */}
+      {/* Middle row: Network + Disk */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
 
         {/* Network */}
@@ -570,8 +585,25 @@ function SystemTab() {
           )}
         </SysCard>
 
+        {/* Disk */}
+        <SysCard title="Disco" accent={`rgba(${disk.percent > 85 ? '248,113,113' : disk.percent > 65 ? '251,191,36' : '74,222,128'},0.30)`}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 28, fontWeight: 900, color: diskColor }}>{disk.percent}%</span>
+            <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.45)' }}>{disk.used_gb} / {disk.total_gb} GB</span>
+          </div>
+          <Bar pct={disk.percent} color={diskColor} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 11, marginTop: 2 }}>
+            <div style={{ color: 'rgba(233,238,255,0.45)' }}>usado <span style={{ color: '#94a3b8' }}>{disk.used_gb} GB</span></div>
+            <div style={{ color: 'rgba(233,238,255,0.45)' }}>livre <span style={{ color: '#94a3b8' }}>{disk.free_gb} GB</span></div>
+          </div>
+        </SysCard>
+      </div>
+
+      {/* DB row: Pool + PostgreSQL I/O */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14, marginBottom: 14 }}>
+
         {/* DB pool */}
-        <SysCard title="PostgreSQL Pool" accent={db.connected ? 'rgba(74,222,128,0.30)' : 'rgba(255,93,214,0.35)'}>
+        <SysCard title="PostgreSQL — Pool" accent={db.connected ? 'rgba(74,222,128,0.30)' : 'rgba(255,93,214,0.35)'}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ width: 10, height: 10, borderRadius: '50%', background: db.connected ? '#4ade80' : '#ff5dd6', boxShadow: `0 0 8px ${db.connected ? '#4ade80' : '#ff5dd6'}` }} />
             <span style={{ fontSize: 14, fontWeight: 700, color: db.connected ? '#4ade80' : '#ff5dd6' }}>{db.connected ? t('sys_connected') : t('sys_disconnected')}</span>
@@ -592,6 +624,51 @@ function SystemTab() {
             </div>
           </div>
         </SysCard>
+
+        {/* PostgreSQL I/O & Stats */}
+        {pg_stats ? (
+          <SysCard title="PostgreSQL — I/O & Stats" accent="rgba(85,243,255,0.25)">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              {/* DB Size */}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#55f3ff' }}>
+                  {pg_stats.db_size_mb >= 1024 ? `${(pg_stats.db_size_mb / 1024).toFixed(1)} GB` : `${pg_stats.db_size_mb} MB`}
+                </div>
+                <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.45)', marginTop: 2 }}>tamanho DB</div>
+              </div>
+              {/* Cache Hit */}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: pg_stats.cache_hit_pct >= 95 ? '#4ade80' : pg_stats.cache_hit_pct >= 80 ? '#fbbf24' : '#ff5dd6' }}>
+                  {pg_stats.cache_hit_pct}%
+                </div>
+                <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.45)', marginTop: 2 }}>cache hit</div>
+                <div style={{ marginTop: 4 }}>
+                  <Bar pct={pg_stats.cache_hit_pct} color={pg_stats.cache_hit_pct >= 95 ? '#4ade80' : '#fbbf24'} />
+                </div>
+              </div>
+              {/* Active connections */}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#9b7cff' }}>{pg_stats.active_connections}</div>
+                <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.45)', marginTop: 2 }}>conexões ativas</div>
+              </div>
+              {/* Throughput */}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#fbbf24' }}>
+                  <span style={{ fontSize: 10, display: 'block', color: 'rgba(233,238,255,0.45)', marginBottom: 2 }}>reads/s</span>
+                  {pg_stats.tup_fetched_ps.toLocaleString()}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#fb923c', marginTop: 4 }}>
+                  <span style={{ fontSize: 10, display: 'block', color: 'rgba(233,238,255,0.45)', marginBottom: 2 }}>writes/s</span>
+                  {pg_stats.tup_written_ps.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </SysCard>
+        ) : (
+          <SysCard title="PostgreSQL — I/O & Stats" accent="rgba(100,116,139,0.25)">
+            <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.35)' }}>pg_stat_database não disponível</div>
+          </SysCard>
+        )}
       </div>
 
       {/* Workers */}
@@ -1190,22 +1267,130 @@ function ApiKeyBanner() {
   );
 }
 
-// ─── Date range shortcuts ─────────────────────────────────────────────────────
+// ─── Time Range Picker ────────────────────────────────────────────────────────
 
-function RangeShortcuts({ setFrom, setTo }: { setFrom: (s: string) => void; setTo: (s: string) => void }) {
-  const opts = [
-    { label: '1h',  h: 1   },
-    { label: '6h',  h: 6   },
-    { label: '24h', h: 24  },
-    { label: '7d',  h: 168 },
-  ];
+const RANGE_PRESETS = [
+  { label: '1h',  h: 1,   tip: 'Última hora'    },
+  { label: '6h',  h: 6,   tip: 'Últimas 6 horas' },
+  { label: '24h', h: 24,  tip: 'Últimas 24 horas' },
+  { label: '7d',  h: 168, tip: 'Últimos 7 dias'  },
+  { label: '30d', h: 720, tip: 'Últimos 30 dias'  },
+];
+
+function TimeRangePicker({
+  from, to, setFrom, setTo, bucketSec, setBucketSec,
+}: {
+  from: string; to: string;
+  setFrom: (s: string) => void; setTo: (s: string) => void;
+  bucketSec?: number; setBucketSec?: (n: number) => void;
+}) {
+  const [activeH, setActiveH] = React.useState<number | null>(24);
+
+  function applyPreset(h: number) {
+    setFrom(relativeFrom(h));
+    setTo(new Date().toISOString());
+    setActiveH(h);
+  }
+
+  const dtInput: React.CSSProperties = {
+    background: 'rgba(4,7,19,0.65)',
+    border: '1px solid rgba(140,160,255,0.22)',
+    borderRadius: 10,
+    color: '#e9eeff',
+    padding: '5px 9px',
+    fontSize: 12,
+    outline: 'none',
+    colorScheme: 'dark' as any,
+    cursor: 'pointer',
+  };
+
   return (
-    <div style={{ display: 'flex', gap: 4 }}>
-      {opts.map(({ label, h }) => (
-        <button key={label} style={S.btnSm} onClick={() => { setFrom(relativeFrom(h)); setTo(new Date().toISOString()); }}>
-          {label}
-        </button>
-      ))}
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* Preset pills */}
+      <span style={{ fontSize: 10, color: 'rgba(233,238,255,0.38)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+        período
+      </span>
+      {RANGE_PRESETS.map(({ label, h, tip }) => {
+        const active = activeH === h;
+        return (
+          <button
+            key={h}
+            title={tip}
+            onClick={() => applyPreset(h)}
+            style={{
+              background: active
+                ? 'linear-gradient(135deg, rgba(85,243,255,0.20) 0%, rgba(155,124,255,0.20) 100%)'
+                : 'rgba(255,255,255,0.04)',
+              border: active
+                ? '1px solid rgba(85,243,255,0.48)'
+                : '1px solid rgba(140,160,255,0.15)',
+              borderRadius: 20,
+              color: active ? '#55f3ff' : 'rgba(233,238,255,0.58)',
+              padding: '4px 12px',
+              fontSize: 12,
+              fontWeight: active ? 700 : 400,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+              boxShadow: active ? '0 0 10px rgba(85,243,255,0.16)' : 'none',
+              letterSpacing: active ? '0.03em' : 'normal',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+
+      {/* Divider */}
+      <div style={{ width: 1, height: 18, background: 'rgba(140,160,255,0.14)', margin: '0 2px', flexShrink: 0 }} />
+
+      {/* Custom date inputs */}
+      <input
+        type="datetime-local"
+        value={isoToLocal(from)}
+        onChange={e => { if (e.target.value) { setFrom(new Date(e.target.value).toISOString()); setActiveH(null); } }}
+        style={dtInput}
+      />
+      <span style={{ color: 'rgba(233,238,255,0.28)', fontSize: 14, flexShrink: 0 }}>→</span>
+      <input
+        type="datetime-local"
+        value={isoToLocal(to)}
+        onChange={e => { if (e.target.value) { setTo(new Date(e.target.value).toISOString()); setActiveH(null); } }}
+        style={dtInput}
+      />
+      <button
+        onClick={() => setTo(new Date().toISOString())}
+        title="Definir 'até' para agora"
+        style={{
+          background: 'rgba(155,124,255,0.10)',
+          border: '1px solid rgba(155,124,255,0.26)',
+          borderRadius: 8,
+          color: 'rgba(155,124,255,0.82)',
+          padding: '4px 9px',
+          fontSize: 11,
+          cursor: 'pointer',
+          transition: 'all 0.15s',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        ↻ agora
+      </button>
+
+      {/* Optional bucket selector */}
+      {setBucketSec && bucketSec !== undefined && (
+        <>
+          <div style={{ width: 1, height: 18, background: 'rgba(140,160,255,0.14)', margin: '0 2px', flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.38)', whiteSpace: 'nowrap' }}>bucket</span>
+          <input
+            type="number"
+            value={bucketSec}
+            min={10}
+            onChange={e => setBucketSec(Number(e.target.value))}
+            style={{ ...dtInput, width: 58, padding: '4px 6px', fontSize: 11 }}
+          />
+          <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.28)' }}>s</span>
+        </>
+      )}
     </div>
   );
 }
@@ -1216,13 +1401,15 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
   const [assetId, setAssetId]       = React.useState(assets[0]?.asset_id ?? '');
   const [namespace, setNamespace]   = React.useState('');
   const [metric, setMetric]         = React.useState('');
+  const [metric2, setMetric2]       = React.useState('');  // optional second metric for comparison
   const [service, setService]       = React.useState('');
   const [metricOpts, setMetricOpts] = React.useState<MetricOpt[]>([]);
   const [serviceOpts, setServiceOpts] = React.useState<string[]>([]);
-  const [bucketSec, setBucketSec]   = React.useState(60);
-  const [from, setFrom]             = React.useState(() => relativeFrom(6));
+  const [bucketSec, setBucketSec]   = React.useState(300);
+  const [from, setFrom]             = React.useState(() => relativeFrom(24));
   const [to, setTo]                 = React.useState(() => new Date().toISOString());
   const [rows, setRows]             = React.useState<Row[]>([]);
+  const [multiRows, setMultiRows]   = React.useState<MultiRow[]>([]);
   const [loading, setLoading]       = React.useState(false);
   const [err, setErr]               = React.useState<string | null>(null);
   const canvasRef                   = React.useRef<HTMLCanvasElement | null>(null);
@@ -1264,48 +1451,63 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
       .catch(() => setServiceOpts([]));
   }, [assetId, namespace, metric]);
 
-  // Resize canvas
+  // Draw chart whenever data changes; setupCanvas handles DPR + sizing internally
   React.useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
-    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-    c.style.width = '100%';
-    const cssW = c.offsetWidth || 900;
-    const cssH = 280;
-    c.style.height = `${cssH}px`;
-    c.width = cssW * dpr;
-    c.height = cssH * dpr;
-    const ctx = c.getContext('2d');
-    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawChart(c, rows);
-  }, [rows]);
+    if (multiRows.length > 0) drawMultiChart(c, multiRows);
+    else drawChart(c, rows);
+  }, [rows, multiRows]);
 
   async function run() {
     if (!assetId || !namespace || !metric) { setErr(t('metrics_no_asset')); return; }
     setLoading(true); setErr(null);
     try {
-      const body: any = {
-        query: {
-          kind: 'timeseries',
-          asset_id: assetId,
-          namespace,
-          metric,
-          from,
-          to,
-          bucket_sec: bucketSec,
-          ...(service ? { dimensions: { service } } : {})
-        }
-      };
-      const r = await fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
-      setRows((j?.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })));
+      if (metric2) {
+        // Multi-series: compare two metrics on the same chart
+        const body: any = {
+          query: {
+            kind: 'timeseries_multi',
+            from, to,
+            bucket_sec: bucketSec,
+            series: [
+              { asset_id: assetId, namespace, metric, label: metric, ...(service ? { dimensions: { service } } : {}) },
+              { asset_id: assetId, namespace, metric: metric2, label: metric2 },
+            ]
+          }
+        };
+        const r = await fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+        setMultiRows((j?.result?.rows ?? []).map((x: any) => ({ ts: x.ts, series: x.series, value: Number(x.value) })));
+        setRows([]);
+      } else {
+        // Single metric
+        const body: any = {
+          query: {
+            kind: 'timeseries',
+            asset_id: assetId, namespace, metric, from, to,
+            bucket_sec: bucketSec,
+            ...(service ? { dimensions: { service } } : {})
+          }
+        };
+        const r = await fetch('api/v1/query', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
+        setRows((j?.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })));
+        setMultiRows([]);
+      }
     } catch (e: any) {
       setErr(String(e));
     } finally {
       setLoading(false);
     }
   }
+
+  // Auto-run when asset/namespace/metric/from/to change
+  React.useEffect(() => {
+    if (assetId && namespace && metric) run();
+  }, [assetId, namespace, metric, metric2, from, to]);
 
   const namespaces = Array.from(new Set(metricOpts.map((m) => m.namespace)));
   const filteredMetrics = metricOpts.filter((m) => !namespace || m.namespace === namespace);
@@ -1337,40 +1539,30 @@ function MetricsTab({ assets }: { assets: AssetOpt[] }) {
             </select>
           </label>
           <label style={S.label}>
-            Service (Nagios)
-            <select style={S.select} value={service} onChange={(e) => setService(e.target.value)}>
-              <option value="">— Todos —</option>
-              {serviceOpts.map((s) => <option key={s} value={s}>{s}</option>)}
+            Compare with
+            <select style={S.select} value={metric2} onChange={(e) => setMetric2(e.target.value)}>
+              <option value="">— none —</option>
+              {filteredMetrics.filter(m => m.metric !== metric).map((m) => (
+                <option key={`cmp:${m.metric}`} value={m.metric}>{m.metric}</option>
+              ))}
             </select>
           </label>
         </div>
-        <div className="orbit-grid-2" style={{ marginBottom: 10 }}>
-          <label style={S.label}>
-            From (ISO)
-            <input style={S.input} value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label style={S.label}>
-            To (ISO)
-            <input style={S.input} value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
+        <div style={{ marginBottom: 10 }}>
+          <TimeRangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} bucketSec={bucketSec} setBucketSec={setBucketSec} />
         </div>
         <div style={S.row}>
-          <RangeShortcuts setFrom={setFrom} setTo={setTo} />
-          <label style={{ ...S.label, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <span>Bucket (s)</span>
-            <input style={{ ...S.input, width: 70 }} type="number" value={bucketSec} onChange={(e) => setBucketSec(Number(e.target.value))} />
-          </label>
           <button style={S.btn} onClick={run} disabled={loading}>{loading ? 'Running…' : 'Run query'}</button>
-          <span style={{ color: '#64748b', fontSize: 12 }}>{rows.length} pontos</span>
+          <span style={{ color: '#64748b', fontSize: 12 }}>{metric2 ? multiRows.length : rows.length} pontos</span>
         </div>
         {err && <div style={S.err}>{err}</div>}
       </div>
 
       <div style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
-        <canvas ref={canvasRef} style={{ display: 'block', width: '100%' }} />
+        <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: 280 }} />
       </div>
 
-      {rows.length > 0 && (
+      {(rows.length > 0 || multiRows.length > 0) && (
         <details style={{ marginTop: 0 }}>
           <summary style={{ cursor: 'pointer', color: '#64748b', fontSize: 12, padding: '6px 0' }}>Raw rows ({rows.length})</summary>
           <pre style={{ background: '#0f172a', padding: 12, borderRadius: 8, fontSize: 11, color: '#94a3b8', overflow: 'auto', maxHeight: 200 }}>
@@ -1557,18 +1749,8 @@ function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs?: stri
             </div>
           </div>
         </div>
-        <div className="orbit-grid-2">
-          <label style={S.label}>
-            From (ISO)
-            <input style={S.input} value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label style={S.label}>
-            To (ISO)
-            <input style={S.input} value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
-        </div>
-        <div style={{ ...S.row, marginTop: 8 }}>
-          <RangeShortcuts setFrom={setFrom} setTo={setTo} />
+        <div style={{ marginTop: 8 }}>
+          <TimeRangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
         </div>
         {err && <div style={S.err}>{err}</div>}
       </div>
@@ -1790,7 +1972,7 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
       </div>
 
       <div style={S.card}>
-        <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
+        <div className="orbit-grid-2" style={{ marginBottom: 10 }}>
           <label style={S.label}>
             Host
             <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
@@ -1804,17 +1986,11 @@ function NagiosTab({ assets }: { assets: AssetOpt[] }) {
               {states.map((s) => <option key={s} value={s}>{s || t('all')}</option>)}
             </select>
           </label>
-          <label style={S.label}>
-            From (ISO)
-            <input style={S.input} value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label style={S.label}>
-            To (ISO)
-            <input style={S.input} value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <TimeRangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
         </div>
         <div style={S.row}>
-          <RangeShortcuts setFrom={setFrom} setTo={setTo} />
           <button style={S.btn} onClick={run} disabled={loading}>{loading ? '…' : t('search')}</button>
           <span style={{ color: '#64748b', fontSize: 12 }}>{services.length} services</span>
         </div>
@@ -2676,21 +2852,13 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
         <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>
           {t('corr_desc1')} {t('corr_desc2')}
         </div>
-        <div className="orbit-grid-4" style={{ marginBottom: 10 }}>
+        <div className="orbit-grid-2" style={{ marginBottom: 10 }}>
           <label style={S.label}>
             Asset
             <select style={S.select} value={assetId} onChange={(e) => setAssetId(e.target.value)}>
               <option value="">{t('all')}</option>
               {assets.map((a) => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
             </select>
-          </label>
-          <label style={S.label}>
-            From (ISO)
-            <input style={S.input} value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label style={S.label}>
-            To (ISO)
-            <input style={S.input} value={to} onChange={(e) => setTo(e.target.value)} />
           </label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>{t('actions')}</span>
@@ -2700,8 +2868,8 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
             </div>
           </div>
         </div>
-        <div style={{ ...S.row }}>
-          <RangeShortcuts setFrom={setFrom} setTo={setTo} />
+        <div style={{ marginBottom: 10 }}>
+          <TimeRangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
         </div>
         {err && <div style={S.err}>{err}</div>}
       </div>
@@ -4915,7 +5083,7 @@ function ConnectorsTab() {
 
   async function create() {
     let specObj: unknown;
-    try { specObj = JSON.parse(cf.spec); } catch { showToast('Invalid Spec JSON', false); return; }
+    try { specObj = JSON.parse(cf.spec); } catch (e) { showToast(`Invalid Spec JSON: ${(e as Error).message}`, false); return; }
     const body: any = {
       id: cf.id, source_id: cf.source_id || cf.id, mode: cf.mode,
       type: cf.type, spec: specObj,
@@ -5297,13 +5465,28 @@ function ConnectorsTab() {
           {aiResult && (
             <div style={{ marginTop: 20, borderTop: '1px solid rgba(155,124,255,0.20)', paddingTop: 16 }}>
               <div style={{ color: '#c084fc', fontWeight: 700, marginBottom: 8, fontSize: 13 }}>✓ Spec gerado — ID: <code style={{ color: '#e9eeff' }}>{aiResult.id}</code></div>
-              <pre style={{ background: 'rgba(4,7,19,0.6)', border: '1px solid rgba(155,124,255,0.20)', borderRadius: 10, padding: 14, fontSize: 12, color: '#a5b4fc', overflowX: 'auto' as const, maxHeight: 300 }}>
-                {JSON.stringify(aiResult.spec, null, 2)}
-              </pre>
+              <div style={{ position: 'relative' as const }}>
+                <pre style={{ background: 'rgba(4,7,19,0.6)', border: '1px solid rgba(155,124,255,0.20)', borderRadius: 10, padding: 14, fontSize: 12, color: '#a5b4fc', overflowX: 'auto' as const, maxHeight: 300, margin: 0 }}>
+                  {JSON.stringify(aiResult.spec, null, 2)}
+                </pre>
+                <button
+                  onClick={() => navigator.clipboard.writeText(JSON.stringify(aiResult.spec, null, 2)).then(() => showToast('Copiado!', true))}
+                  style={{ position: 'absolute' as const, top: 8, right: 8, background: 'rgba(155,124,255,0.18)', border: '1px solid rgba(155,124,255,0.35)', borderRadius: 6, color: '#c084fc', fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
+                  Copy
+                </button>
+              </div>
               <div style={{ color: '#64748b', fontSize: 12, margin: '10px 0' }}>
                 {aiResult.next_step}
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const }}>
+                <button
+                  onClick={() => {
+                    setCf(p => ({ ...p, id: aiResult.id, source_id: aiResult.source_id, spec: JSON.stringify(aiResult.spec, null, 2) }));
+                    setSubtab('create');
+                  }}
+                  style={{ ...S.btn, background: 'linear-gradient(135deg, rgba(85,243,255,0.22), rgba(85,243,255,0.10))', borderColor: 'rgba(85,243,255,0.40)', color: '#55f3ff' }}>
+                  Use this Spec
+                </button>
                 <button onClick={() => { setSubtab('list'); load(); setAiResult(null); }} style={S.btn}>
                   View in List
                 </button>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  orbit-core — horizontal lockup (colored)
+  Creator: Rodrigo Menchio <rodrigomenchio@gmail.com>
+  SPDX-License-Identifier: Apache-2.0
+-->
+<svg width="220" height="60" viewBox="0 0 220 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- cyan → violet → pink gradient shared by icon -->
+    <linearGradient id="g" x1="4" y1="4" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#55F3FF"/>
+      <stop offset="0.55" stop-color="#9B7CFF"/>
+      <stop offset="1" stop-color="#FF5DD6"/>
+    </linearGradient>
+    <!-- soft glow behind icon elements -->
+    <filter id="glow" x="-45%" y="-45%" width="190%" height="190%">
+      <feGaussianBlur stdDeviation="2.5" result="b"/>
+      <feColorMatrix in="b" type="matrix"
+        values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.5 0" result="g"/>
+      <feMerge>
+        <feMergeNode in="g"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- ── icon (60 × 60, center 30,30, ring r=22) ─────────────────────────── -->
+  <g filter="url(#glow)">
+
+    <!-- orbit ring: 270° gradient arc (top → left → bottom → right) -->
+    <path d="M30 8 A22 22 0 1 1 52 30"
+          stroke="url(#g)" stroke-width="3.5" stroke-linecap="round"/>
+
+    <!-- orbit ring: closing 90° faint arc (right → top, top-right quadrant) -->
+    <path d="M52 30 A22 22 0 0 1 30 8"
+          stroke="white" stroke-opacity="0.18" stroke-width="3.5" stroke-linecap="round"/>
+
+    <!-- core: dark halo + gradient nucleus -->
+    <circle cx="30" cy="30" r="7"
+            fill="#0B1220" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+    <circle cx="30" cy="30" r="2.5" fill="url(#g)"/>
+
+    <!-- trajectory tick (upper-right, ~30° from horizontal) -->
+    <path d="M48 20 L54 15"
+          stroke="url(#g)" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- ── wordmark ────────────────────────────────────────────────────────── -->
+  <!--   "orbit" bold white  |  "-core" regular cyan                         -->
+  <text dominant-baseline="middle"
+        font-family="'Helvetica Neue', Arial, sans-serif"
+        font-size="26" letter-spacing="-0.3">
+    <tspan x="68" y="30" font-weight="700" fill="white">orbit</tspan><tspan
+          font-weight="400" fill="#55F3FF">-core</tspan>
+  </text>
+</svg>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  orbit-core — horizontal lockup (white / monochrome)
+  Use on colored, gradient, or photo backgrounds.
+  Creator: Rodrigo Menchio <rodrigomenchio@gmail.com>
+  SPDX-License-Identifier: Apache-2.0
+-->
+<svg width="220" height="60" viewBox="0 0 220 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- ── icon (60 × 60, center 30,30, ring r=22) ─────────────────────────── -->
+
+  <!-- orbit ring: 270° solid white arc (top → left → bottom → right) -->
+  <path d="M30 8 A22 22 0 1 1 52 30"
+        stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- orbit ring: closing 90° dim arc (right → top) -->
+  <path d="M52 30 A22 22 0 0 1 30 8"
+        stroke="white" stroke-opacity="0.28" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- core: outlined halo + solid nucleus -->
+  <circle cx="30" cy="30" r="7"
+          stroke="rgba(255,255,255,0.35)" stroke-width="1"/>
+  <circle cx="30" cy="30" r="2.5" fill="white"/>
+
+  <!-- trajectory tick (upper-right) -->
+  <path d="M48 20 L54 15"
+        stroke="white" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- ── wordmark ────────────────────────────────────────────────────────── -->
+  <!--   "orbit" bold  |  "-core" regular, slightly dimmed                   -->
+  <text dominant-baseline="middle"
+        font-family="'Helvetica Neue', Arial, sans-serif"
+        font-size="26" letter-spacing="-0.3">
+    <tspan x="68" y="30" font-weight="700" fill="white">orbit</tspan><tspan
+          font-weight="400" fill="white" opacity="0.65">-core</tspan>
+  </text>
+</svg>
