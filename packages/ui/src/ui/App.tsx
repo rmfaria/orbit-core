@@ -447,24 +447,7 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-function HomeSysIndicators() {
-  const [data, setData] = React.useState<SysData | null>(null);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    async function poll() {
-      try {
-        const r = await fetch('api/v1/system', { headers: apiGetHeaders() });
-        if (!r.ok) return;
-        const d = await r.json();
-        if (!cancelled) setData(d);
-      } catch { /* silent — indicators are optional */ }
-    }
-    poll();
-    const iv = setInterval(poll, 10_000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, []);
-
+function HomeSysIndicators({ data }: { data: SysData | null }) {
   if (!data) return null;
 
   const { cpu, memory, disk, network } = data;
@@ -2298,6 +2281,23 @@ function makeNeLineChart(canvas: HTMLCanvasElement, datasetCount: number) {
 function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => void }) {
   const [health, setHealth] = React.useState<any>(null);
   const [err, setErr] = React.useState<string | null>(null);
+  const [sysData, setSysData] = React.useState<SysData | null>(null);
+
+  // Poll /api/v1/system every 10s — shared between indicators and KPIs
+  React.useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const r = await fetch('api/v1/system', { headers: apiGetHeaders() });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!cancelled) setSysData(d);
+      } catch { /* silent */ }
+    }
+    poll();
+    const iv = setInterval(poll, 10_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, []);
 
   const [assetId, setAssetId] = React.useState('');
   const [from, setFrom] = React.useState(() => relativeFrom(1));
@@ -2597,16 +2597,26 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
 
   const dbColor  = health?.db === 'ok' ? '#4ade80' : health?.db === 'error' ? '#f87171' : '#fbbf24';
   const apiColor = health?.ok ? '#4ade80' : '#fbbf24';
-  const cpuLoad1 = lastCpu['load1'] ?? 0;
-  const cpuColor = cpuLoad1 > 4 ? '#f87171' : cpuLoad1 > 2 ? '#fbbf24' : '#55f3ff';
+
+  // System-based KPIs (from /api/v1/system)
+  const sysCpu = sysData?.cpu;
+  const sysMem = sysData?.memory;
+  const sysDisk = sysData?.disk;
+  const sysNet = sysData ? (sysData.network.find((n: any) => n.name === 'eth0') ?? sysData.network[0] ?? null) : null;
+
+  const sysLoadPct = sysCpu ? Math.min(100, (sysCpu.load[0] / sysCpu.count) * 100) : 0;
+  const sysCpuColor = sysLoadPct > 80 ? '#ff5dd6' : sysLoadPct > 50 ? '#fbbf24' : '#55f3ff';
+  const sysMemColor = sysMem ? (sysMem.percent > 85 ? '#ff5dd6' : sysMem.percent > 65 ? '#fbbf24' : '#a78bfa') : '#a78bfa';
+  const sysDiskColor = sysDisk ? (sysDisk.percent > 85 ? '#ff5dd6' : sysDisk.percent > 65 ? '#fbbf24' : '#4ade80') : '#4ade80';
+  const sysNetColor = '#38bdf8';
 
   const kpis = [
-    { label: 'CPU Load',        value: `${fmtN(lastCpu['load1'])} · ${fmtN(lastCpu['load5'])} · ${fmtN(lastCpu['load15'])}`, hint: 'load1 · load5 · load15', color: cpuColor },
-    { label: 'Disk Queue',      value: `${fmtN(lastDisk['aqu-sz'])} · ${fmtN(lastDisk['%util'])}`,                            hint: 'aqu-sz · %util',         color: '#a78bfa' },
-    { label: 'Net Traffic',     value: `${fmtN(lastNet['RX Mbps'])} · ${fmtN(lastNet['TX Mbps'])}`,                           hint: 'RX · TX  Mbps',          color: '#38bdf8' },
-    { label: 'Suricata Alerts', value: fmtN(suriLast, 0),                                                                      hint: t('home_suri_hint'),       color: (suriLast ?? 0) > 20 ? '#f87171' : '#fbbf24' },
-    { label: 'API',             value: health?.ok ? 'online' : '…',                                                            hint: '/api/v1/health',          color: apiColor },
-    { label: 'Postgres',        value: health?.db ?? '…',                                                                      hint: 'database',                color: dbColor },
+    { label: 'CPU Load',        value: sysCpu ? `${sysCpu.load[0].toFixed(2)} · ${sysCpu.load[1].toFixed(2)} · ${sysCpu.load[2].toFixed(2)}` : '…', hint: 'load1 · load5 · load15', color: sysCpuColor },
+    { label: t('sys_disk'),     value: sysDisk ? `${sysDisk.percent}% · ${sysDisk.used_gb}/${sysDisk.total_gb} GB` : '…',                            hint: 'used · total',            color: sysDiskColor },
+    { label: t('sys_network'),  value: sysNet ? `↓${fmtBytes(sysNet.rx_per_sec)} · ↑${fmtBytes(sysNet.tx_per_sec)}` : '…',                         hint: sysNet?.name ?? 'eth0',    color: sysNetColor },
+    { label: 'Suricata Alerts', value: fmtN(suriLast, 0),                                                                                            hint: t('home_suri_hint'),       color: (suriLast ?? 0) > 20 ? '#f87171' : '#fbbf24' },
+    { label: 'API',             value: health?.ok ? 'online' : '…',                                                                                  hint: '/api/v1/health',          color: apiColor },
+    { label: 'Postgres',        value: health?.db ?? '…',                                                                                            hint: 'database',                color: dbColor },
   ];
 
   return (
@@ -2616,7 +2626,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
 
       {/* System indicators — compact overview */}
       <div style={{ padding: '16px 16px 0' }}>
-        <HomeSysIndicators />
+        <HomeSysIndicators data={sysData} />
       </div>
 
       {/* Top panel: brand + status pills */}
