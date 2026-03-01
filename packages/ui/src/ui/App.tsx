@@ -2626,11 +2626,6 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
       {/* Star-field layer */}
       <div className="orbit-stars" />
 
-      {/* System indicators — compact overview */}
-      <div style={{ padding: '16px 16px 0' }}>
-        <HomeSysIndicators data={sysData} />
-      </div>
-
       {/* Top panel: brand + status pills */}
       <div className="orbit-panel">
         <div className="orbit-panel-head">
