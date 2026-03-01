@@ -447,6 +447,76 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
+function HomeSysIndicators() {
+  const [data, setData] = React.useState<SysData | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const r = await fetch('api/v1/system', { headers: apiGetHeaders() });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!cancelled) setData(d);
+      } catch { /* silent — indicators are optional */ }
+    }
+    poll();
+    const iv = setInterval(poll, 10_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, []);
+
+  if (!data) return null;
+
+  const { cpu, memory, disk, network } = data;
+  const loadPct   = Math.min(100, (cpu.load[0] / cpu.count) * 100);
+  const loadColor = cpu.load[0] > cpu.count * 0.8 ? '#ff5dd6' : cpu.load[0] > cpu.count * 0.5 ? '#fbbf24' : '#4ade80';
+  const memColor  = memory.percent > 85 ? '#ff5dd6' : memory.percent > 65 ? '#fbbf24' : '#55f3ff';
+  const diskColor = disk.percent > 85 ? '#ff5dd6' : disk.percent > 65 ? '#fbbf24' : '#4ade80';
+  const primaryIf = network[0] ?? null;
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div className="orbit-grid-4" style={{ gap: 10 }}>
+        <SysCard title={t('sys_cpu')} accent="rgba(85,243,255,0.35)">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 22, fontWeight: 900, color: loadColor }}>{cpu.load[0].toFixed(2)}</span>
+            <span style={{ fontSize: 10, color: 'rgba(233,238,255,0.45)' }}>{cpu.count} vCPU</span>
+          </div>
+          <Bar pct={loadPct} color={loadColor} />
+        </SysCard>
+
+        <SysCard title={t('sys_memory')} accent="rgba(155,124,255,0.35)">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 22, fontWeight: 900, color: memColor }}>{memory.percent}%</span>
+            <span style={{ fontSize: 10, color: 'rgba(233,238,255,0.45)' }}>{memory.used_mb} / {memory.total_mb} MB</span>
+          </div>
+          <Bar pct={memory.percent} color={memColor} />
+        </SysCard>
+
+        <SysCard title={t('sys_disk')} accent={`rgba(${disk.percent > 85 ? '248,113,113' : disk.percent > 65 ? '251,191,36' : '74,222,128'},0.30)`}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 22, fontWeight: 900, color: diskColor }}>{disk.percent}%</span>
+            <span style={{ fontSize: 10, color: 'rgba(233,238,255,0.45)' }}>{disk.used_gb} / {disk.total_gb} GB</span>
+          </div>
+          <Bar pct={disk.percent} color={diskColor} />
+        </SysCard>
+
+        <SysCard title={t('sys_network')} accent="rgba(251,191,36,0.30)">
+          {primaryIf ? (<>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#e9eeff', marginBottom: 2 }}>{primaryIf.name}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 11 }}>
+              <div style={{ color: '#4ade80' }}>↓ {fmtBytes(primaryIf.rx_per_sec)}</div>
+              <div style={{ color: '#55f3ff' }}>↑ {fmtBytes(primaryIf.tx_per_sec)}</div>
+            </div>
+          </>) : (
+            <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.35)' }}>N/A</div>
+          )}
+        </SysCard>
+      </div>
+    </div>
+  );
+}
+
 function WorkerPill({ name, w }: { name: string; w: SysData['workers'][string] }) {
   const c = w.alive ? '#4ade80' : '#ff5dd6';
   const ago = w.last_beat ? Math.round((Date.now() - new Date(w.last_beat).getTime()) / 1000) : null;
@@ -2543,6 +2613,11 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     <div style={{ position: 'relative' }}>
       {/* Star-field layer */}
       <div className="orbit-stars" />
+
+      {/* System indicators — compact overview */}
+      <div style={{ padding: '16px 16px 0' }}>
+        <HomeSysIndicators />
+      </div>
 
       {/* Top panel: brand + status pills */}
       <div className="orbit-panel">
