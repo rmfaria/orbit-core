@@ -472,7 +472,7 @@ function HomeSysIndicators() {
   const loadColor = cpu.load[0] > cpu.count * 0.8 ? '#ff5dd6' : cpu.load[0] > cpu.count * 0.5 ? '#fbbf24' : '#4ade80';
   const memColor  = memory.percent > 85 ? '#ff5dd6' : memory.percent > 65 ? '#fbbf24' : '#55f3ff';
   const diskColor = disk.percent > 85 ? '#ff5dd6' : disk.percent > 65 ? '#fbbf24' : '#4ade80';
-  const primaryIf = network[0] ?? null;
+  const primaryIf = network.find((n: any) => n.name === 'eth0') ?? network[0] ?? null;
 
   return (
     <div style={{ marginBottom: 14 }}>
