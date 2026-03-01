@@ -2610,11 +2610,13 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const sysDiskColor = sysDisk ? (sysDisk.percent > 85 ? '#ff5dd6' : sysDisk.percent > 65 ? '#fbbf24' : '#4ade80') : '#4ade80';
   const sysNetColor = '#38bdf8';
 
+  const toMbps = (b: number) => (b / 1048576 * 8).toFixed(2);
+
   const kpis = [
     { label: 'CPU Load',        value: sysCpu ? `${sysCpu.load[0].toFixed(2)} · ${sysCpu.load[1].toFixed(2)} · ${sysCpu.load[2].toFixed(2)}` : '…', hint: 'load1 · load5 · load15', color: sysCpuColor },
+    { label: t('sys_memory'),   value: sysMem ? `${sysMem.percent}% · ${sysMem.used_mb}/${sysMem.total_mb} MB` : '…',                                hint: 'used · total',            color: sysMemColor },
     { label: t('sys_disk'),     value: sysDisk ? `${sysDisk.percent}% · ${sysDisk.used_gb}/${sysDisk.total_gb} GB` : '…',                            hint: 'used · total',            color: sysDiskColor },
-    { label: t('sys_network'),  value: sysNet ? `↓${fmtBytes(sysNet.rx_per_sec)} · ↑${fmtBytes(sysNet.tx_per_sec)}` : '…',                         hint: sysNet?.name ?? 'eth0',    color: sysNetColor },
-    { label: 'Suricata Alerts', value: fmtN(suriLast, 0),                                                                                            hint: t('home_suri_hint'),       color: (suriLast ?? 0) > 20 ? '#f87171' : '#fbbf24' },
+    { label: t('sys_network'),  value: sysNet ? `↓ ${toMbps(sysNet.rx_per_sec)} · ↑ ${toMbps(sysNet.tx_per_sec)} Mbps` : '…',                       hint: sysNet?.name ?? 'eth0',    color: sysNetColor },
     { label: 'API',             value: health?.ok ? 'online' : '…',                                                                                  hint: '/api/v1/health',          color: apiColor },
     { label: 'Postgres',        value: health?.db ?? '…',                                                                                            hint: 'database',                color: dbColor },
   ];
