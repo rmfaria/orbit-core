@@ -53,6 +53,7 @@ export function getBuildInfo() {
   const version =
     process.env.npm_package_version ??
     process.env.ORBIT_VERSION ??
+    tryReadPkgVersion(path.join(repoDir, 'package.json')) ??
     tryReadPkgVersion(path.join(repoDir, 'packages', 'api', 'package.json')) ??
     tryReadPkgVersion(new URL('../../package.json', import.meta.url).pathname) ??
     '0.0.0';
