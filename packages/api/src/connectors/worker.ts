@@ -18,6 +18,7 @@ import pino from 'pino';
 import { applySpec, type ConnectorSpec } from './dsl.js';
 import { ingestMapped, logRun } from './ingest.js';
 import { heartbeat, workerError } from '../worker-registry.js';
+import { getEngine } from './engines/index.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 'connector-worker' });
 
@@ -44,6 +45,8 @@ interface PullSpec {
   pull_url:          string;
   pull_interval_min: number;
   auth:              AuthConfig | null;
+  engine:            string | null;
+  state:             Record<string, unknown> | null;
 }
 
 // ── Worker ────────────────────────────────────────────────────────────────────
@@ -70,13 +73,15 @@ export function startConnectorWorker(pool: Pool): () => void {
 
   async function tick(): Promise<void> {
     const { rows } = await pool.query<PullSpec>(
-      `SELECT id, source_id, type, spec, pull_url, auth,
+      `SELECT id, source_id, type, spec, pull_url, auth, engine, state,
               COALESCE(pull_interval_min, 5) AS pull_interval_min
        FROM connector_specs
        WHERE mode = 'pull'
          AND status = 'approved'
-         AND pull_url IS NOT NULL
-         AND pull_url != ''`
+         AND (
+           (engine IS NULL AND pull_url IS NOT NULL AND pull_url != '')
+           OR engine IS NOT NULL
+         )`
     );
 
     if (!rows.length) return;
@@ -97,7 +102,11 @@ export function startConnectorWorker(pool: Pool): () => void {
       running.add(s.source_id);
       lastRun.set(s.source_id, now);
 
-      executePull(pool, s).finally(() => running.delete(s.source_id));
+      if (s.engine) {
+        executeEnginePull(pool, s).finally(() => running.delete(s.source_id));
+      } else {
+        executePull(pool, s).finally(() => running.delete(s.source_id));
+      }
     }
   }
 
@@ -177,5 +186,48 @@ async function executePull(pool: Pool, s: PullSpec): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     await logRun(pool, s.source_id, startedAt, 0, 0, msg);
     logger.error({ source_id: s.source_id, err: msg }, 'pull connector failed');
+  }
+}
+
+// ── Engine-based pull execution ──────────────────────────────────────────────
+
+async function executeEnginePull(pool: Pool, s: PullSpec): Promise<void> {
+  const startedAt = new Date();
+  logger.debug({ source_id: s.source_id, engine: s.engine }, 'engine pull starting');
+
+  try {
+    const engineFn = getEngine(s.engine!);
+    if (!engineFn) throw new Error(`unknown engine: ${s.engine}`);
+
+    const result = await engineFn(pool, {
+      id:        s.id,
+      source_id: s.source_id,
+      spec:      s.spec as unknown as Record<string, unknown>,
+      auth:      s.auth,
+      state:     s.state,
+    });
+
+    let ingested = 0;
+    if (result.events.length) {
+      const r = await ingestMapped(pool, 'event', result.events);
+      ingested = r.ingested;
+    }
+
+    // Persist engine state (cursor/checkpoint)
+    await pool.query(
+      `UPDATE connector_specs SET state = $1, updated_at = now() WHERE id = $2`,
+      [JSON.stringify(result.newState), s.id],
+    );
+
+    await logRun(pool, s.source_id, startedAt, ingested, 0, null);
+
+    logger.info(
+      { source_id: s.source_id, engine: s.engine, ingested },
+      'engine pull ok',
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await logRun(pool, s.source_id, startedAt, 0, 0, msg);
+    logger.error({ source_id: s.source_id, engine: s.engine, err: msg }, 'engine pull failed');
   }
 }

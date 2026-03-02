@@ -66,21 +66,26 @@ const CreateConnectorSchema = z.object({
   source_id:         z.string().min(1),
   mode:              z.enum(['push', 'pull']).default('push'),
   type:              z.enum(['metric', 'event']).default('metric'),
-  spec:              SpecSchema,
+  spec:              z.union([SpecSchema, z.record(z.unknown())]),
   description:       z.string().optional(),
   pull_url:          z.string().url().optional(),
   pull_interval_min: z.number().int().min(1).max(1440).default(5),
   auth:              AuthSchema,
-});
+  engine:            z.string().optional(),
+}).refine(
+  (d) => d.engine || SpecSchema.safeParse(d.spec).success,
+  { message: 'spec must be a valid DSL spec when engine is not set', path: ['spec'] },
+);
 
 const PatchConnectorSchema = z.object({
-  spec:              SpecSchema.optional(),
+  spec:              z.union([SpecSchema, z.record(z.unknown())]).optional(),
   description:       z.string().optional(),
   pull_url:          z.string().url().nullable().optional(),
   pull_interval_min: z.number().int().min(1).max(1440).optional(),
   mode:              z.enum(['push', 'pull']).optional(),
   type:              z.enum(['metric', 'event']).optional(),
   auth:              AuthSchema,
+  engine:            z.string().nullable().optional(),
 });
 
 const GenerateSchema = z.object({
@@ -107,7 +112,7 @@ export function connectorsRouter(pool?: Pool | null): Router {
     if (!pool) return res.json({ ok: true, connectors: [] });
     const { rows } = await pool.query(
       `SELECT id, source_id, mode, type, status, auto, description,
-              pull_url, pull_interval_min, created_at, updated_at
+              pull_url, pull_interval_min, engine, created_at, updated_at
        FROM connector_specs
        ORDER BY created_at DESC`
     );
@@ -260,11 +265,11 @@ export function connectorsRouter(pool?: Pool | null): Router {
     const d = parsed.data;
     await pool.query(
       `INSERT INTO connector_specs
-         (id, source_id, mode, type, spec, status, description, pull_url, pull_interval_min, auth)
-       VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9)`,
+         (id, source_id, mode, type, spec, status, description, pull_url, pull_interval_min, auth, engine)
+       VALUES ($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,$10)`,
       [d.id, d.source_id, d.mode, d.type, JSON.stringify(d.spec),
        d.description ?? null, d.pull_url ?? null, d.pull_interval_min,
-       d.auth ? JSON.stringify(d.auth) : null]
+       d.auth ? JSON.stringify(d.auth) : null, d.engine ?? null]
     );
     return res.status(201).json({ ok: true, id: d.id });
   });
@@ -288,6 +293,7 @@ export function connectorsRouter(pool?: Pool | null): Router {
     if (d.pull_url          !== undefined) { sets.push(`pull_url = $${i++}`);          vals.push(d.pull_url); }
     if (d.pull_interval_min !== undefined) { sets.push(`pull_interval_min = $${i++}`); vals.push(d.pull_interval_min); }
     if (d.auth              !== undefined) { sets.push(`auth = $${i++}`);              vals.push(d.auth ? JSON.stringify(d.auth) : null); }
+    if (d.engine            !== undefined) { sets.push(`engine = $${i++}`);            vals.push(d.engine); }
 
     vals.push(req.params.id);
     const { rowCount } = await pool.query(
