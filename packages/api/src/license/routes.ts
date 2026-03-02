@@ -54,5 +54,14 @@ export function licenseRouter(pool: Pool): Router {
     });
   });
 
+  // DELETE /api/v1/license — remove license key (requires auth)
+  router.delete('/license', async (_req: Request, res: Response) => {
+    await pool.query(
+      `UPDATE orbit_settings SET value = '', updated_at = now() WHERE key = 'license_key'`,
+    );
+    invalidateLicenseCache();
+    res.json({ ok: true });
+  });
+
   return router;
 }

@@ -3167,7 +3167,86 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
         </div>
       </div>
 
+      <LicenseCard />
+
       <AiConfigCard />
+    </div>
+  );
+}
+
+function LicenseCard() {
+  const [info, setInfo] = React.useState<{ status: string; plan: string | null; email: string | null; deployment_id: string | null } | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [removing, setRemoving] = React.useState(false);
+  const [confirmRemove, setConfirmRemove] = React.useState(false);
+
+  function load() {
+    setLoading(true);
+    fetch('api/v1/license/status')
+      .then(r => r.json())
+      .then(j => { if (j.ok) setInfo(j.license); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
+
+  React.useEffect(() => { load(); }, []);
+
+  async function removeLicense() {
+    setRemoving(true);
+    try {
+      await fetch('api/v1/license', { method: 'DELETE', headers: apiHeaders() });
+      setConfirmRemove(false);
+      load();
+    } catch {}
+    finally { setRemoving(false); }
+  }
+
+  const isActive = info?.status === 'valid';
+  const isGrace = info?.status === 'grace';
+
+  return (
+    <div style={S.card}>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>{t('admin_license_title')}</div>
+      {loading ? (
+        <div style={{ color: '#64748b', fontSize: 13 }}>{t('admin_checking')}</div>
+      ) : !info ? (
+        <div style={{ color: '#f87171', fontSize: 13 }}>{t('admin_license_error')}</div>
+      ) : (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: isActive ? '#4ade80' : isGrace ? '#55f3ff' : '#f87171', display: 'inline-block' }} />
+            <span style={{ color: isActive ? '#4ade80' : isGrace ? '#55f3ff' : '#f87171', fontWeight: 700, fontSize: 13 }}>
+              {isActive ? t('license_valid') : isGrace ? t('license_grace') : t('license_expired')}
+            </span>
+          </div>
+          {isActive && (
+            <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.8 }}>
+              <div><strong style={{ color: '#e9eeff' }}>Plan:</strong> {info.plan}</div>
+              <div><strong style={{ color: '#e9eeff' }}>Email:</strong> {info.email}</div>
+              <div><strong style={{ color: '#e9eeff' }}>Deployment ID:</strong> <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>{info.deployment_id}</code></div>
+            </div>
+          )}
+          {isGrace && (
+            <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.8 }}>
+              <div>{t('admin_license_no_key')}</div>
+              <a href="https://orbit-core.org/register.html" target="_blank" rel="noreferrer" style={{ color: '#55f3ff', fontSize: 12 }}>{t('license_get_free')}</a>
+            </div>
+          )}
+          {isActive && (
+            <div style={{ marginTop: 14 }}>
+              {!confirmRemove ? (
+                <button onClick={() => setConfirmRemove(true)} style={{ ...S.btnSm, borderColor: 'rgba(248,113,113,0.4)', color: '#f87171', background: 'rgba(248,113,113,0.08)' }}>{t('admin_license_remove')}</button>
+              ) : (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ color: '#f87171', fontSize: 12 }}>{t('admin_license_confirm')}</span>
+                  <button onClick={removeLicense} disabled={removing} style={{ ...S.btnSm, borderColor: 'rgba(248,113,113,0.6)', color: '#f87171', background: 'rgba(248,113,113,0.15)' }}>{removing ? '...' : t('confirm')}</button>
+                  <button onClick={() => setConfirmRemove(false)} style={S.btnSm}>{t('cancel')}</button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

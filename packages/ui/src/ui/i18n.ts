@@ -292,6 +292,15 @@ const en = {
   admin_api_protect_hint:   'To protect, set ',
   admin_api_protect_hint2:  'on the orbit-core server and restart the service.',
 
+  // ── License admin ──────────────────────────────────────────────────────────
+  admin_license_title:   'License',
+  admin_license_error:   'Could not load license info.',
+  admin_license_no_key:  'No license key configured. Register to get a free license.',
+  admin_license_remove:  'Remove License',
+  admin_license_confirm: 'Are you sure? The app will revert to trial mode.',
+  confirm:               'Confirm',
+  cancel:                'Cancel',
+
   // ── Sources tab (extra) ───────────────────────────────────────────────────────
   sources_active:      'ACTIVE',
   sources_n8n_desc:    'Failed and stuck workflow runs (Error Trigger + polling)',
@@ -386,6 +395,14 @@ const ptBR: Partial<Translations> = {
   license_grace:           'Teste',
   license_expired:         'Licenca expirada',
   license_loading:         'Carregando...',
+
+  admin_license_title:   'Licenca',
+  admin_license_error:   'Nao foi possivel carregar a licenca.',
+  admin_license_no_key:  'Nenhuma chave de licenca configurada. Registre-se para obter uma licenca gratuita.',
+  admin_license_remove:  'Remover Licenca',
+  admin_license_confirm: 'Tem certeza? O app voltara ao modo teste.',
+  confirm:               'Confirmar',
+  cancel:                'Cancelar',
 
   conn_subtab_sources:   '📡 Fontes',
   conn_subtab_templates: '📋 Templates',
@@ -696,6 +713,14 @@ const es: Translations = {
   license_grace:           'Prueba',
   license_expired:         'Licencia expirada',
   license_loading:         'Cargando...',
+
+  admin_license_title:   'Licencia',
+  admin_license_error:   'No se pudo cargar la información de licencia.',
+  admin_license_no_key:  'No hay clave de licencia configurada. Regístrate para obtener una licencia gratuita.',
+  admin_license_remove:  'Eliminar Licencia',
+  admin_license_confirm: 'Estás seguro? La app volverá al modo prueba.',
+  confirm:               'Confirmar',
+  cancel:                'Cancelar',
 
   conn_subtab_sources:   '📡 Fuentes',
   conn_subtab_templates: '📋 Plantillas',
