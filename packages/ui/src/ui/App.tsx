@@ -3167,51 +3167,7 @@ function AdminTab({ setTab }: { setTab: (t: Tab) => void }) {
         </div>
       </div>
 
-      <div style={S.card}>
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Configure server authentication</div>
-        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
-          Authentication is controlled by the environment variable <code style={codeStyle}>ORBIT_API_KEY</code> in the API process.
-          If not set, the API accepts any request without authentication.
-        </div>
-
-        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', marginBottom: 6 }}>systemd</div>
-        <pre style={preStyle}>{`# /etc/systemd/system/orbit-core-api.service
-[Service]
-Environment=ORBIT_API_KEY=sua-chave-aqui
-
-# Recarregar e reiniciar:
-systemctl daemon-reload
-systemctl restart orbit-core-api`}</pre>
-
-        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', margin: '12px 0 6px' }}>Docker / docker-compose</div>
-        <pre style={preStyle}>{`environment:
-  - ORBIT_API_KEY=sua-chave-aqui`}</pre>
-
-        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', margin: '12px 0 6px' }}>Manual</div>
-        <pre style={preStyle}>{`ORBIT_API_KEY=sua-chave-aqui node dist/index.js`}</pre>
-      </div>
-
-      <div style={S.card}>
-        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>Configurar connectors</div>
-        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 12, lineHeight: 1.7 }}>
-          All connectors support <code style={codeStyle}>ORBIT_API_KEY</code> via environment variable.
-          When set, the header <code style={codeStyle}>X-Api-Key</code> is sent automatically in every request.
-        </div>
-
-        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', marginBottom: 6 }}>Nagios / Wazuh / n8n</div>
-        <pre style={preStyle}>{`export ORBIT_API=http://seu-servidor:3000
-export ORBIT_API_KEY=sua-chave-aqui
-python3 ship_events.py`}</pre>
-
-        <div style={{ fontWeight: 600, fontSize: 12, color: 'rgba(233,238,255,0.65)', margin: '12px 0 6px' }}>Fortigate</div>
-        <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.7 }}>
-          Uses the Wazuh connector (<code style={codeStyle}>ship_events.py</code>) — same configuration above.
-        </div>
-      </div>
-
       <AiConfigCard />
-
-      <SourcesTab setTab={setTab} />
     </div>
   );
 }
@@ -4972,6 +4928,63 @@ type ConnectorRun = {
   status: 'ok' | 'error'; ingested: number; raw_size: number | null; error: string | null;
 };
 
+const CONNECTOR_TEMPLATES: {
+  id: string; name: string; source_id: string; mode: 'push' | 'pull'; type: 'metric' | 'event';
+  description: string; spec: object; pull_url?: string; pull_interval_min?: string;
+}[] = [
+  {
+    id: 'nagios-metrics', name: 'Nagios Metrics', source_id: 'nagios', mode: 'push', type: 'metric',
+    description: 'Performance data (CPU, disk, memory) from Nagios perfdata output',
+    spec: { type: 'metric', items_path: 'metrics', mappings: { ts: { path: '$.timestamp', transform: 'iso8601' }, asset_id: { path: '$.host' }, namespace: { value: 'nagios' }, metric: { path: '$.metric' }, value: { path: '$.value', transform: 'number' }, unit: { path: '$.unit' } } },
+  },
+  {
+    id: 'nagios-events', name: 'Nagios Events', source_id: 'nagios', mode: 'push', type: 'event',
+    description: 'Host/service state changes, notifications and alerts',
+    spec: { type: 'event', items_path: 'events', mappings: { ts: { path: '$.timestamp' }, asset_id: { path: '$.host' }, namespace: { value: 'nagios' }, kind: { path: '$.state' }, severity: { path: '$.state_type', transform: 'severity_map' }, title: { path: '$.service_description' }, message: { path: '$.plugin_output' }, fingerprint: { path: '$.id' } } },
+  },
+  {
+    id: 'wazuh-alerts', name: 'Wazuh Alerts', source_id: 'wazuh', mode: 'push', type: 'event',
+    description: 'Security alerts, rule matches and audit logs from Wazuh/OSSEC',
+    spec: { type: 'event', items_path: 'alerts', mappings: { ts: { path: '$.timestamp' }, asset_id: { path: '$.agent.name' }, namespace: { value: 'wazuh' }, kind: { path: '$.rule.description' }, severity: { path: '$.rule.level', transform: 'severity_map' }, title: { path: '$.rule.description' }, message: { path: '$.full_log' }, fingerprint: { path: '$.id' } } },
+  },
+  {
+    id: 'fortigate-logs', name: 'Fortigate Logs', source_id: 'fortigate', mode: 'push', type: 'event',
+    description: 'Firewall traffic, UTM and system logs via syslog',
+    spec: { type: 'event', items_path: 'logs', mappings: { ts: { path: '$.timestamp' }, asset_id: { path: '$.devname' }, namespace: { value: 'fortigate' }, kind: { path: '$.type' }, severity: { path: '$.level', transform: 'severity_map' }, title: { path: '$.action' }, message: { path: '$.msg' }, fingerprint: { path: '$.logid' } } },
+  },
+  {
+    id: 'n8n-workflows', name: 'n8n Workflows', source_id: 'n8n', mode: 'push', type: 'event',
+    description: 'Failed and stuck workflow executions from n8n Error Trigger',
+    spec: { type: 'event', items_path: 'events', mappings: { ts: { path: '$.timestamp' }, asset_id: { value: 'n8n' }, namespace: { value: 'n8n' }, kind: { path: '$.workflow.name' }, severity: { value: 'high' }, title: { path: '$.error.message' }, message: { path: '$.error.stack' }, fingerprint: { path: '$.execution.id' } } },
+  },
+  {
+    id: 'otel-metrics', name: 'OTel Metrics', source_id: 'otel', mode: 'push', type: 'metric',
+    description: 'OpenTelemetry metrics via OTLP/HTTP protocol',
+    spec: { type: 'metric', items_path: 'resourceMetrics[*].scopeMetrics[*].metrics[*]', mappings: { ts: { path: '$.dataPoints[0].timeUnixNano', transform: 'nano_to_iso' }, asset_id: { path: '$.resource.attributes[?(@.key=="host.name")].value.stringValue' }, namespace: { value: 'otel' }, metric: { path: '$.name' }, value: { path: '$.dataPoints[0].asDouble', transform: 'number' }, unit: { path: '$.unit' } } },
+  },
+  {
+    id: 'otel-traces', name: 'OTel Traces', source_id: 'otel', mode: 'push', type: 'event',
+    description: 'OpenTelemetry spans/traces via OTLP/HTTP protocol',
+    spec: { type: 'event', items_path: 'resourceSpans[*].scopeSpans[*].spans[*]', mappings: { ts: { path: '$.startTimeUnixNano', transform: 'nano_to_iso' }, asset_id: { path: '$.resource.attributes[?(@.key=="service.name")].value.stringValue' }, namespace: { value: 'otel' }, kind: { path: '$.name' }, severity: { path: '$.status.code', transform: 'severity_map' }, title: { path: '$.name' }, message: { path: '$.status.message' }, fingerprint: { path: '$.traceId' } } },
+  },
+  {
+    id: 'zabbix-metrics', name: 'Zabbix Metrics', source_id: 'zabbix', mode: 'pull', type: 'metric',
+    description: 'Host metrics from Zabbix API (history.get)',
+    pull_url: 'http://zabbix-server/api_jsonrpc.php', pull_interval_min: '5',
+    spec: { type: 'metric', items_path: 'result', mappings: { ts: { path: '$.clock', transform: 'unix_to_iso' }, asset_id: { path: '$.host' }, namespace: { value: 'zabbix' }, metric: { path: '$.key_' }, value: { path: '$.value', transform: 'number' }, unit: { value: '' } } },
+  },
+  {
+    id: 'generic-metric', name: 'Generic Metric', source_id: 'custom', mode: 'push', type: 'metric',
+    description: 'Generic template for any JSON metric source',
+    spec: { type: 'metric', items_path: 'data.items', mappings: { ts: { path: '$.timestamp', transform: 'iso8601' }, asset_id: { path: '$.host', default: 'unknown' }, namespace: { value: 'my-source' }, metric: { path: '$.metric_name' }, value: { path: '$.value', transform: 'number' }, unit: { path: '$.unit' } } },
+  },
+  {
+    id: 'generic-event', name: 'Generic Event', source_id: 'custom', mode: 'push', type: 'event',
+    description: 'Generic template for any JSON event source',
+    spec: { type: 'event', items_path: 'alerts', mappings: { ts: { path: '$.timestamp' }, asset_id: { path: '$.host' }, namespace: { value: 'my-source' }, kind: { path: '$.rule.name' }, severity: { path: '$.level', transform: 'severity_map' }, title: { path: '$.rule.name' }, message: { path: '$.full_log' }, fingerprint: { path: '$.id' } } },
+  },
+];
+
 const SPEC_TEMPLATE_METRIC = `{
   "type": "metric",
   "items_path": "data.items",
@@ -5014,8 +5027,8 @@ function modeBadge(mode: string) {
   return <span style={{ background: mode === 'pull' ? '#1e1040' : '#0c1a3a', color: mode === 'pull' ? '#a78bfa' : '#38bdf8', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{mode.toUpperCase()}</span>;
 }
 
-function ConnectorsTab() {
-  const [subtab, setSubtab] = React.useState<'list' | 'create' | 'ai' | 'plugin'>('list');
+function ConnectorsTab({ setTab }: { setTab: (t: Tab) => void }) {
+  const [subtab, setSubtab] = React.useState<'list' | 'create' | 'ai' | 'plugin' | 'sources' | 'templates'>('list');
   const [connectors, setConnectors] = React.useState<Connector[]>([]);
   const [loading, setLoading]       = React.useState(false);
   const [err, setErr]               = React.useState<string | null>(null);
@@ -5231,7 +5244,7 @@ function ConnectorsTab() {
     } catch (e: any) { setAiErr(String(e)); } finally { setAiLoading(false); }
   }
 
-  const subtabBtn = (t: 'list' | 'create' | 'ai' | 'plugin', label: string) => (
+  const subtabBtn = (t: 'list' | 'create' | 'ai' | 'plugin' | 'sources' | 'templates', label: string) => (
     <button onClick={() => setSubtab(t)} style={{
       background: subtab === t ? 'rgba(85,243,255,0.15)' : 'transparent',
       border: subtab === t ? '1px solid rgba(85,243,255,0.4)' : '1px solid transparent',
@@ -5249,11 +5262,13 @@ function ConnectorsTab() {
       )}
 
       {/* ── Subtab bar ── */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-        {subtabBtn('list',   t('conn_title'))}
-        {subtabBtn('create', '+ Criar')}
-        {subtabBtn('ai',     '✨ Generate with AI')}
-        {subtabBtn('plugin', '⬇ Plugin IA')}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' as const }}>
+        {subtabBtn('list',      t('conn_title'))}
+        {subtabBtn('sources',   t('conn_subtab_sources'))}
+        {subtabBtn('templates', t('conn_subtab_templates'))}
+        {subtabBtn('create',    '+ Criar')}
+        {subtabBtn('ai',        '✨ Generate with AI')}
+        {subtabBtn('plugin',    '⬇ Plugin IA')}
       </div>
 
       {/* ── LIST ── */}
@@ -5661,6 +5676,36 @@ function ConnectorsTab() {
           )}
         </div>
       )}
+
+      {/* ── SOURCES ── */}
+      {subtab === 'sources' && <SourcesTab setTab={setTab} />}
+
+      {/* ── TEMPLATES ── */}
+      {subtab === 'templates' && (
+        <div>
+          <div style={S.card}>
+            <div style={{ fontWeight: 900, fontSize: 18 }}>{t('templates_title')}</div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', marginTop: 6, fontSize: 13 }}>{t('templates_desc')}</div>
+          </div>
+          <div style={S.card}>
+            <div className="orbit-grid-3">
+              {CONNECTOR_TEMPLATES.map(tmpl => (
+                <div key={tmpl.id} style={S.card}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                    <div style={{ fontWeight: 900 }}>{tmpl.name}</div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {modeBadge(tmpl.mode)}
+                      <span style={{ background: tmpl.type === 'metric' ? '#0c2a1a' : '#1a0c2a', color: tmpl.type === 'metric' ? '#4ade80' : '#c084fc', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{tmpl.type.toUpperCase()}</span>
+                    </div>
+                  </div>
+                  <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>{tmpl.description}</div>
+                  <button onClick={() => { setCf({ id: tmpl.id, source_id: tmpl.source_id, mode: tmpl.mode, type: tmpl.type, description: tmpl.description, pull_url: tmpl.pull_url || '', pull_interval_min: tmpl.pull_interval_min || '5', spec: JSON.stringify(tmpl.spec, null, 2) }); setSubtab('create'); }} style={S.btnSm}>{t('templates_use')}</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5859,7 +5904,7 @@ export function App() {
         {tab === 'metrics'       && <MetricsTab     assets={assets} />}
         {tab === 'correlations'  && <CorrelationsTab assets={assets} />}
         {tab === 'alerts'        && <AlertsTab assets={assets} />}
-        {tab === 'connectors'    && <ConnectorsTab />}
+        {tab === 'connectors'    && <ConnectorsTab setTab={setTab} />}
         {tab === 'admin'         && <AdminTab setTab={setTab} />}
       </div>
     </div>

@@ -297,6 +297,13 @@ const en = {
   sources_n8n_desc:    'Failed and stuck workflow runs (Error Trigger + polling)',
   sources_connector:   '⚙ Connector',
 
+  // ── Connectors sub-tabs ────────────────────────────────────────────────────
+  conn_subtab_sources:   '📡 Sources',
+  conn_subtab_templates: '📋 Templates',
+  templates_title:       'Connector Templates',
+  templates_desc:        'Ready-to-use connector specs. Click "Use Template" to pre-fill the creation form.',
+  templates_use:         'Use Template',
+
   // ── Alerts extra ─────────────────────────────────────────────────────────────
   alerts_state_disabled:   'DISAB.',
   alerts_state_silenced:   'SILENC.',
@@ -379,6 +386,12 @@ const ptBR: Partial<Translations> = {
   license_grace:           'Teste',
   license_expired:         'Licenca expirada',
   license_loading:         'Carregando...',
+
+  conn_subtab_sources:   '📡 Fontes',
+  conn_subtab_templates: '📋 Templates',
+  templates_title:       'Templates de Connectors',
+  templates_desc:        'Specs prontos para uso. Clique em "Usar Template" para pre-preencher o formulario de criacao.',
+  templates_use:         'Usar Template',
 };
 
 // ─── Spanish ──────────────────────────────────────────────────────────────────
@@ -683,6 +696,12 @@ const es: Translations = {
   license_grace:           'Prueba',
   license_expired:         'Licencia expirada',
   license_loading:         'Cargando...',
+
+  conn_subtab_sources:   '📡 Fuentes',
+  conn_subtab_templates: '📋 Plantillas',
+  templates_title:       'Plantillas de Conectores',
+  templates_desc:        'Specs listos para usar. Haz clic en "Usar Plantilla" para completar el formulario de creación.',
+  templates_use:         'Usar Plantilla',
 };
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────
