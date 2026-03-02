@@ -114,6 +114,9 @@ See [INSTALL.md](INSTALL.md) for production hardening, TLS, Docker Swarm and rev
 | 🔑 | **API-first** | Every feature exposed via stable REST API; UI is optional |
 | 🌐 | **Multilingual UI (EN/PT/ES)** | Language switcher in the UI header |
 | 📱 | **Mobile-responsive** | Full mobile layout across all tabs |
+| 🔑 | **Hybrid License System** | Ed25519 JWT license verification with 7-day grace period; inline activation banner + Licensed badge |
+| ⚙️ | **Engine Dispatch** | Built-in connector engines (n8n); registry pattern for zero-config pull connectors |
+| 📋 | **Connector Templates** | 10 pre-built templates with one-click import + Download Plugin (connector_spec.json + README) |
 
 ---
 
@@ -208,6 +211,9 @@ Query your data without writing SQL:
 | `POST` | `/api/v1/connectors/:id/approve` | Approve a connector |
 | `POST` | `/api/v1/connectors/:id/test` | Dry-run test |
 | `POST` | `/api/v1/ai/plugin` | AI Connector Generator |
+| `GET` | `/api/v1/license/status` | License status, plan, email, deployment ID |
+| `POST` | `/api/v1/license/activate` | Activate license key |
+| `DELETE` | `/api/v1/license` | Remove license key (auth required) |
 | `POST` | `/otlp/v1/traces` | OTLP/HTTP traces receiver |
 | `POST` | `/otlp/v1/metrics` | OTLP/HTTP metrics receiver |
 | `POST` | `/otlp/v1/logs` | OTLP/HTTP logs receiver |

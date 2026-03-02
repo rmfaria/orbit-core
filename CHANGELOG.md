@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.0] - 2026-03-01
+
+### Added
+
+- **Hybrid license system**: Ed25519 JWT signing/verification using native `node:crypto` — replaced `jsonwebtoken` dependency with zero-dependency implementation
+- **Inline license activation banner**: 7-day grace period countdown with inline key entry; "Licensed" badge shown when active
+- **License management card in AdminTab**: view license status (plan, email, deployment ID), remove license with confirmation
+- **License API endpoints**: `GET /api/v1/license/status`, `POST /api/v1/license/activate`, `DELETE /api/v1/license`
+- **Engine dispatch system**: registry pattern for built-in connector engines; `getEngine(name)` dispatches to dedicated executor instead of generic DSL flow
+- **Built-in n8n connector engine**: native pull-mode engine with cursor-based pagination, error detection and stuck-workflow detection
+- **Connector Templates sub-tab**: 10 pre-built templates (Nagios Metrics, Nagios Events, Wazuh Alerts, Fortigate Logs, n8n Workflows, OTel Metrics, OTel Traces, Zabbix Metrics, Generic Metric, Generic Event) with "Use This Spec" and "Download Plugin" actions
+- **Download Plugin feature**: generates downloadable `connector_spec.json` + `README.md` bundle for any template
+- **System indicator cards in HomeTab**: real-time CPU load, memory, disk and network I/O KPIs with color-coded thresholds
+
+### Changed
+
+- Replaced `jsonwebtoken` package with native `node:crypto` Ed25519 JWT verification (zero external JWT dependencies)
+- Reorganized AdminTab — migrated Sources into Connectors tab
+
+---
+
 ## [1.5.0] - 2026-02-28
 
 ### Added
@@ -105,9 +126,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[1.5.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.4.0...v1.5.0
-[1.4.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.3.0...v1.4.0
-[1.3.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/rodrigomenchio/orbit-core/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/rodrigomenchio/orbit-core/releases/tag/v1.0.0
+[1.6.0]: https://github.com/rmfaria/orbit-core/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/rmfaria/orbit-core/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/rmfaria/orbit-core/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/rmfaria/orbit-core/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/rmfaria/orbit-core/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/rmfaria/orbit-core/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/rmfaria/orbit-core/releases/tag/v1.0.0
