@@ -310,8 +310,13 @@ const en = {
   conn_subtab_sources:   '📡 Sources',
   conn_subtab_templates: '📋 Templates',
   templates_title:       'Connector Templates',
-  templates_desc:        'Ready-to-use connector specs. Click "Use Template" to pre-fill the creation form.',
+  templates_desc:        'Ready-to-use connector specs. Click "Use Template" to pre-fill the creation form, or "Download Plugin" to get the spec and README.',
   templates_use:         'Use Template',
+  templates_download:    'Download Plugin',
+  templates_dl_title:    'Plugin Package',
+  templates_dl_spec:     'Import in Connectors → Create (paste in Spec field)',
+  templates_dl_readme:   'Installation and configuration instructions',
+  templates_dl_use:      'Use in Create Form',
 
   // ── Alerts extra ─────────────────────────────────────────────────────────────
   alerts_state_disabled:   'DISAB.',
@@ -407,8 +412,13 @@ const ptBR: Partial<Translations> = {
   conn_subtab_sources:   '📡 Fontes',
   conn_subtab_templates: '📋 Templates',
   templates_title:       'Templates de Connectors',
-  templates_desc:        'Specs prontos para uso. Clique em "Usar Template" para pre-preencher o formulario de criacao.',
+  templates_desc:        'Specs prontos para uso. Clique em "Usar Template" para pre-preencher o formulario, ou "Baixar Plugin" para obter o spec e README.',
   templates_use:         'Usar Template',
+  templates_download:    'Baixar Plugin',
+  templates_dl_title:    'Pacote do Plugin',
+  templates_dl_spec:     'Importe em Connectors → Criar (cole no campo Spec)',
+  templates_dl_readme:   'Instrucoes de instalacao e configuracao',
+  templates_dl_use:      'Usar no Formulario',
 };
 
 // ─── Spanish ──────────────────────────────────────────────────────────────────
@@ -725,8 +735,13 @@ const es: Translations = {
   conn_subtab_sources:   '📡 Fuentes',
   conn_subtab_templates: '📋 Plantillas',
   templates_title:       'Plantillas de Conectores',
-  templates_desc:        'Specs listos para usar. Haz clic en "Usar Plantilla" para completar el formulario de creación.',
+  templates_desc:        'Specs listos para usar. Haz clic en "Usar Plantilla" para completar el formulario, o "Descargar Plugin" para obtener el spec y README.',
   templates_use:         'Usar Plantilla',
+  templates_download:    'Descargar Plugin',
+  templates_dl_title:    'Paquete del Plugin',
+  templates_dl_spec:     'Importar en Conectores → Crear (pegar en campo Spec)',
+  templates_dl_readme:   'Instrucciones de instalacion y configuracion',
+  templates_dl_use:      'Usar en Formulario',
 };
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────
