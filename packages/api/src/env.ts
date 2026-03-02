@@ -5,7 +5,11 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().default(''),
   // If set, all non-health endpoints require this key via X-Api-Key header or
   // Authorization: Bearer <key>. Leave unset to run without auth (dev mode).
-  ORBIT_API_KEY: z.string().optional()
+  ORBIT_API_KEY: z.string().optional(),
+  // Pre-configure license key via env var (useful for Docker deployments).
+  ORBIT_LICENSE_KEY: z.string().optional(),
+  // Opt-in anonymous telemetry heartbeat to orbit-core.org.
+  ORBIT_TELEMETRY: z.enum(['true', 'false']).default('false'),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -14,6 +18,8 @@ export function loadEnv(): Env {
   return EnvSchema.parse({
     PORT: process.env.PORT,
     DATABASE_URL: process.env.DATABASE_URL,
-    ORBIT_API_KEY: process.env.ORBIT_API_KEY
+    ORBIT_API_KEY: process.env.ORBIT_API_KEY,
+    ORBIT_LICENSE_KEY: process.env.ORBIT_LICENSE_KEY,
+    ORBIT_TELEMETRY: process.env.ORBIT_TELEMETRY,
   });
 }

@@ -5696,6 +5696,49 @@ class ErrorBoundary extends React.Component<
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 
+// ── License Setup Screen ─────────────────────────────────────────────────────
+
+type LicenseStatus = 'loading' | 'valid' | 'grace' | 'expired' | 'unlicensed';
+
+function LicenseSetup({ onActivated }: { onActivated: () => void }) {
+  const [key, setKey] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+
+  async function activate() {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch('api/v1/license/activate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ license_key: key.trim() }),
+      });
+      const j = await res.json();
+      if (j.ok) onActivated();
+      else setError(j.error || 'Invalid license key');
+    } catch { setError('Connection error. Please try again.'); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(1000px 640px at 50% 40%, rgba(85,243,255,0.08), transparent 55%), linear-gradient(180deg, #040713, #0b1220)', fontFamily: 'system-ui, -apple-system, sans-serif', color: '#e9eeff' }}>
+      <div style={{ ...S.card, maxWidth: 520, width: '90%', padding: 32, textAlign: 'center' as const }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>&#x2B21;</div>
+        <div style={{ fontWeight: 900, fontSize: 22, marginBottom: 4 }}>{t('license_setup_title')}</div>
+        <div style={{ color: 'rgba(233,238,255,0.65)', fontSize: 14, marginBottom: 24 }}>{t('license_setup_subtitle')}</div>
+        <textarea value={key} onChange={e => setKey(e.target.value)} placeholder={t('license_key_placeholder')} style={{ ...S.input, width: '100%', minHeight: 80, resize: 'vertical' as const, fontFamily: 'monospace', fontSize: 12, marginBottom: 12, boxSizing: 'border-box' as const }} />
+        {error && <div style={S.err}>{error}</div>}
+        <button onClick={activate} disabled={loading || !key.trim()} style={{ ...S.btn, width: '100%', marginTop: 12, padding: '12px 16px' }}>{loading ? t('license_activating') : t('license_activate')}</button>
+        <div style={{ marginTop: 20, fontSize: 13, color: 'rgba(233,238,255,0.55)' }}>
+          {t('license_no_key')}{' '}
+          <a href="https://orbit-core.org/register.html" target="_blank" rel="noreferrer" style={{ color: '#55f3ff', textDecoration: 'none' }}>{t('license_register_link')}</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const isMobile = useIsMobile();
   const [tab, setTab]         = React.useState<Tab>('home');
@@ -5703,18 +5746,54 @@ export function App() {
   const [needsKey, setNeedsKey] = React.useState(false);
   const [, _forceLocale] = React.useReducer((x: number) => x + 1, 0);
 
+  const [licenseStatus, setLicenseStatus] = React.useState<LicenseStatus>('loading');
+  const [licenseMsg, setLicenseMsg] = React.useState('');
+
+  // Check license on mount
   React.useEffect(() => {
+    fetch('api/v1/license/status')
+      .then(r => r.json())
+      .then(j => {
+        if (j.ok) {
+          setLicenseStatus(j.license.status);
+          setLicenseMsg(j.license.message ?? '');
+        } else {
+          setLicenseStatus('grace');
+        }
+      })
+      .catch(() => setLicenseStatus('grace'));
+  }, []);
+
+  React.useEffect(() => {
+    if (licenseStatus === 'loading' || licenseStatus === 'unlicensed' || licenseStatus === 'expired') return;
     fetch('api/v1/catalog/assets?limit=500', { headers: apiGetHeaders() })
       .then((r) => { if (r.status === 401) { setNeedsKey(true); return null; } return r.json(); })
       .then((j) => { if (j) { setNeedsKey(false); setAssets((j?.assets ?? []).map((a: any) => ({ asset_id: a.asset_id, name: a.name ?? a.asset_id }))); } })
       .catch(e => console.error("[orbit]", e));
-  }, [tab]);
+  }, [tab, licenseStatus]);
+
+  // Loading state
+  if (licenseStatus === 'loading') {
+    return <div style={{ ...S.root, display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#55f3ff' }}>{t('license_loading')}</div>;
+  }
+
+  // Unlicensed or expired → full-screen setup
+  if (licenseStatus === 'unlicensed' || licenseStatus === 'expired') {
+    return <LicenseSetup onActivated={() => setLicenseStatus('valid')} />;
+  }
 
   return (
     <ErrorBoundary>
     <div style={S.root}>
       <TopBar tab={tab} setTab={setTab} onLocaleChange={_forceLocale} />
       <div style={{ flex: 1, minWidth: 0, padding: isMobile ? '14px 12px' : '22px 24px' }}>
+        {licenseStatus === 'grace' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px', marginBottom: 14, background: 'rgba(85,243,255,0.06)', border: '1px solid rgba(85,243,255,0.25)', borderRadius: 12, fontSize: 13, color: '#55f3ff' }}>
+            <span style={{ fontSize: 16 }}>&#x23F3;</span>
+            <span>{licenseMsg}</span>
+            <a href="https://orbit-core.org/register.html" target="_blank" rel="noreferrer" style={{ color: '#55f3ff', fontWeight: 700, textDecoration: 'underline', marginLeft: 'auto' }}>{t('license_get_free')}</a>
+          </div>
+        )}
         {needsKey && tab !== 'admin' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', marginBottom: 18, background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.35)', borderRadius: 12, fontSize: 13, color: '#fbbf24' }}>
             <span style={{ fontSize: 18 }}>⚠</span>

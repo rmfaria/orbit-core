@@ -337,6 +337,20 @@ const en = {
   // ── Error boundary ────────────────────────────────────────────────────────────
   err_boundary_reload: 'Reload',
 
+  // ── License ──────────────────────────────────────────────────────────────────
+  license_setup_title:     'Orbit Core',
+  license_setup_subtitle:  'Enter your license key to get started.',
+  license_key_placeholder: 'Paste your license key here (eyJhbGci...)',
+  license_activating:      'Activating...',
+  license_activate:        'Activate License',
+  license_no_key:          "Don't have a license key?",
+  license_register_link:   'Register for free at orbit-core.org',
+  license_get_free:        'Get free license',
+  license_valid:           'Licensed',
+  license_grace:           'Trial',
+  license_expired:         'License expired',
+  license_loading:         'Loading...',
+
 } as const;
 
 // ─── Portuguese – Brazil (skeleton; extend as needed) ─────────────────────────
@@ -353,6 +367,18 @@ const ptBR: Partial<Translations> = {
   nav_connectors:   '🔌 Connectors',
   nav_dashboards:   '⊞ Dashboards',
   nav_admin:        '⚙ Administração',
+  // license
+  license_setup_subtitle:  'Insira sua chave de licenca para comecar.',
+  license_key_placeholder: 'Cole sua chave de licenca aqui (eyJhbGci...)',
+  license_activating:      'Ativando...',
+  license_activate:        'Ativar Licenca',
+  license_no_key:          'Nao tem uma chave de licenca?',
+  license_register_link:   'Registre-se gratuitamente em orbit-core.org',
+  license_get_free:        'Obter licenca gratuita',
+  license_valid:           'Licenciado',
+  license_grace:           'Teste',
+  license_expired:         'Licenca expirada',
+  license_loading:         'Carregando...',
 };
 
 // ─── Spanish ──────────────────────────────────────────────────────────────────
@@ -644,6 +670,19 @@ const es: Translations = {
   err_api_key_mid:    ' en',
   err_api_key_suffix: 'para cargar datos.',
   err_boundary_reload: 'Recargar',
+  // license
+  license_setup_title:     'Orbit Core',
+  license_setup_subtitle:  'Ingresa tu clave de licencia para comenzar.',
+  license_key_placeholder: 'Pega tu clave de licencia aqui (eyJhbGci...)',
+  license_activating:      'Activando...',
+  license_activate:        'Activar Licencia',
+  license_no_key:          'No tienes una clave de licencia?',
+  license_register_link:   'Registrate gratis en orbit-core.org',
+  license_get_free:        'Obtener licencia gratuita',
+  license_valid:           'Licenciado',
+  license_grace:           'Prueba',
+  license_expired:         'Licencia expirada',
+  license_loading:         'Cargando...',
 };
 
 // ─── Catalog ──────────────────────────────────────────────────────────────────

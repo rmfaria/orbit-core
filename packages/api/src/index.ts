@@ -32,7 +32,10 @@ import { startConnectorWorker } from './connectors/worker.js';
 import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
 import { startAlertWorker } from './alerting/worker.js';
+import { startTelemetryWorker } from './telemetry/worker.js';
 import { pool } from './db.js';
+import { makeLicenseMiddleware } from './license/middleware.js';
+import { licenseRouter } from './license/routes.js';
 
 // Wrap async Express handlers so their rejected promises reach the error handler.
 function a(fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler {
@@ -57,6 +60,11 @@ app.use((req, _res, next) => {
 // Health is always public — used by load-balancers and readiness probes.
 app.get('/api/v1/health', a(healthHandler));
 
+// License endpoints are public — required before auth for first-run setup.
+if (pool) {
+  app.use('/api/v1', licenseRouter(pool));
+}
+
 // Rate limiting: 300 req/min keyed by API key or IP.
 // Applied after /health so probes are never throttled.
 const limiter = rateLimit({
@@ -67,6 +75,9 @@ const limiter = rateLimit({
   keyGenerator: (req) => (req.headers['x-api-key'] as string) || ipKeyGenerator(req.ip ?? 'anon'),
 });
 app.use('/api/v1', limiter);
+
+// License check: blocks requests when unlicensed and grace period expired.
+app.use(makeLicenseMiddleware(pool));
 
 // All other endpoints require authentication when ORBIT_API_KEY is set.
 app.use(makeAuthMiddleware(env));
@@ -116,6 +127,15 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ ok: false, error: 'internal server error' });
 });
 
+// Bootstrap license from env var (Docker / CI deployments).
+if (pool && env.ORBIT_LICENSE_KEY) {
+  pool.query(
+    `INSERT INTO orbit_settings (key, value, updated_at) VALUES ('license_key', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
+    [env.ORBIT_LICENSE_KEY],
+  ).catch(err => logger.error({ err }, 'failed to store ORBIT_LICENSE_KEY'));
+}
+
 const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, auth: !!env.ORBIT_API_KEY }, 'orbit-api listening');
 });
@@ -125,11 +145,15 @@ let stopRollups:     (() => void) | undefined;
 let stopCorrelate:   (() => void) | undefined;
 let stopAlerts:      (() => void) | undefined;
 let stopConnectors:  (() => void) | undefined;
+let stopTelemetry:   (() => void) | undefined;
 if (pool) {
   stopRollups     = startRollupWorker(pool);
   stopCorrelate   = startCorrelateWorker(pool);
   stopAlerts      = startAlertWorker(pool);
   stopConnectors  = startConnectorWorker(pool);
+  if (env.ORBIT_TELEMETRY === 'true') {
+    stopTelemetry = startTelemetryWorker(pool);
+  }
 }
 
 // Graceful shutdown.
@@ -139,6 +163,7 @@ function shutdown(signal: string) {
   stopCorrelate?.();
   stopAlerts?.();
   stopConnectors?.();
+  stopTelemetry?.();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }
