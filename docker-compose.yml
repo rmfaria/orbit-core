@@ -56,6 +56,7 @@ services:
       target: ui
     ports:
       - "${ORBIT_PORT:-80}:80"
+      - "${ORBIT_PORT_SSL:-443}:443"
     depends_on:
       - api
     restart: unless-stopped

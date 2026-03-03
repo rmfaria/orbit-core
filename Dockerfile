@@ -61,6 +61,7 @@ FROM nginx:alpine AS ui
 
 COPY --from=builder /build/packages/ui/dist /usr/share/nginx/html
 COPY deploy/nginx-standalone.conf /etc/nginx/conf.d/default.conf
+COPY deploy/certs/ /etc/nginx/certs/
 
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
-  CMD wget -qO- http://127.0.0.1/orbit-core/ || exit 1
+  CMD wget -qO- --no-check-certificate https://127.0.0.1/orbit-core/ || exit 1

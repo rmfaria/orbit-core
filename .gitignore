@@ -19,3 +19,4 @@ docs/*.pdf
 docs/*.html
 packages/nagios-shipper/node_modules
 packages/nagios-shipper/dist
+deploy/certs/

@@ -36,6 +36,7 @@ import { startTelemetryWorker } from './telemetry/worker.js';
 import { pool } from './db.js';
 import { makeLicenseMiddleware } from './license/middleware.js';
 import { licenseRouter } from './license/routes.js';
+import { authRouter } from './routes/auth.js';
 
 // Wrap async Express handlers so their rejected promises reach the error handler.
 function a(fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler {
@@ -60,9 +61,10 @@ app.use((req, _res, next) => {
 // Health is always public — used by load-balancers and readiness probes.
 app.get('/api/v1/health', a(healthHandler));
 
-// License endpoints are public — required before auth for first-run setup.
+// License and auth endpoints are public — required before auth for first-run setup.
 if (pool) {
   app.use('/api/v1', licenseRouter(pool));
+  app.use('/api/v1', authRouter(pool));
 }
 
 // Rate limiting: 300 req/min keyed by API key or IP.
@@ -79,8 +81,8 @@ app.use('/api/v1', limiter);
 // License check: blocks requests when unlicensed and grace period expired.
 app.use(makeLicenseMiddleware(pool));
 
-// All other endpoints require authentication when ORBIT_API_KEY is set.
-app.use(makeAuthMiddleware(env));
+// All other endpoints require authentication when ORBIT_API_KEY is set or DB key exists.
+app.use(makeAuthMiddleware(env, pool));
 
 app.get('/api/v1/metrics', metricsHandler);
 app.get('/api/v1/metrics/prom', metricsPromHandler);
