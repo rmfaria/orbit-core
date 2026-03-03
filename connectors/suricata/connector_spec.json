@@ -1,0 +1,21 @@
+{
+  "id": "suricata-eve",
+  "source_id": "suricata",
+  "mode": "push",
+  "type": "event",
+  "description": "Suricata EVE-JSON log shipper — alerts, anomalies, http, ssh, dns, tls",
+  "status": "approved",
+  "spec": {
+    "type": "event",
+    "mappings": {
+      "ts":          { "path": "timestamp" },
+      "asset_id":    { "path": "src_ip", "default": "sensor:suricata" },
+      "namespace":   { "value": "suricata" },
+      "kind":        { "path": "event_type" },
+      "severity":    { "path": "alert.severity", "transform": "severity_map" },
+      "title":       { "path": "alert.signature" },
+      "message":     { "path": "alert.category" },
+      "fingerprint": { "path": "flow_id", "transform": "string" }
+    }
+  }
+}
