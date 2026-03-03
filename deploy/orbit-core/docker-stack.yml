@@ -4,6 +4,10 @@ version: "3.8"
 # Deploy: docker stack deploy -c deploy/orbit-core/docker-stack.yml openclaw
 # Requires: .env with DATABASE_URL and ORBIT_API_KEY
 
+# WARNING: orbitcore services are now managed by creds-reports-stack.yml
+# Do NOT redeploy this stack — it will cause Traefik router conflicts.
+# Traefik labels disabled here to prevent routing issues.
+
 services:
 
   # ── API ─────────────────────────────────────────────────────────────────────
