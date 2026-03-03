@@ -21,7 +21,7 @@ type MultiRow   = { ts: string; series: string; value: number };
 type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 type AssetOpt   = { asset_id: string; name: string };
 type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-type Tab        = 'home' | 'system' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'src-otel' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'connectors' | 'admin';
+type Tab        = 'home' | 'system' | 'dashboards' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'src-otel' | 'src-suricata' | 'events' | 'metrics' | 'correlations' | 'alerts' | 'connectors' | 'admin';
 
 type CorrelationRow = {
   event_key:    string;
@@ -61,6 +61,7 @@ const NS_COLOR: Record<string, string> = {
   fortigate: '#fb923c',
   n8n:       '#4ade80',
   otel:      '#f59e0b',
+  suricata:  '#f87171',
 };
 const NS_BG: Record<string, string> = {
   nagios:    '#0c1a3a',
@@ -68,6 +69,7 @@ const NS_BG: Record<string, string> = {
   fortigate: '#431407',
   n8n:       '#052e16',
   otel:      '#1c1408',
+  suricata:  '#3b1010',
 };
 
 /** Maps a raw event to its display/filter source.
@@ -861,9 +863,9 @@ function TopBar({ tab, setTab, onLocaleChange }: { tab: Tab; setTab: (t: Tab) =>
     textAlign: 'left' as const,
   };
 
-  const sourceLabels = ['Nagios', 'Wazuh', 'Fortigate', 'n8n', 'OTel'];
-  const sourceColors = [NS_COLOR.nagios, NS_COLOR.wazuh, NS_COLOR.fortigate, NS_COLOR.n8n, NS_COLOR.otel];
-  const sourceTabs: Tab[] = ['src-nagios', 'src-wazuh', 'src-fortigate', 'src-n8n', 'src-otel'];
+  const sourceLabels = ['Nagios', 'Wazuh', 'Fortigate', 'n8n', 'OTel', 'Suricata'];
+  const sourceColors = [NS_COLOR.nagios, NS_COLOR.wazuh, NS_COLOR.fortigate, NS_COLOR.n8n, NS_COLOR.otel, NS_COLOR.suricata];
+  const sourceTabs: Tab[] = ['src-nagios', 'src-wazuh', 'src-fortigate', 'src-n8n', 'src-otel', 'src-suricata'];
 
   return (
     <>
@@ -2309,7 +2311,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const [suriRows, setSuriRows] = React.useState<Row[]>([]);
   const [feed, setFeed] = React.useState<EventRow[]>([]);
   // selected namespaces for the consolidated feed
-  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n', 'otel']);
+  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata']);
 
   // Layout: 'side' = charts left + feed right; 'cols1/2/3' = stacked with N charts per row
   const [chartLayout, setChartLayout] = React.useState<'side' | 'cols1' | 'cols2' | 'cols3'>('side');
@@ -2398,7 +2400,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
       // 2000 is ample headroom for any zoom level.
       const LIMIT = 2000;
 
-      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n'];
+      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n', 'suricata'];
 
       // Fire ALL queries in a single round-trip (metrics + events together).
       const [rCpu, rDisk, rNet, rSuri, ...evResults] = await Promise.all([
@@ -2830,7 +2832,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 {/* source toggle pills — built from namespaces in feed + always show known ones */}
-                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'n8n', 'otel'])].sort().map(ns => {
+                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata'])].sort().map(ns => {
                   const active = feedNs.includes(ns);
                   const color  = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
                   const bg     = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';
@@ -6122,6 +6124,7 @@ export function App() {
         {tab === 'src-fortigate' && <EventsTab      key="src-fortigate" assets={assets} defaultNs="wazuh" />}
         {tab === 'src-n8n'       && <EventsTab      key="src-n8n"       assets={assets} defaultNs="n8n"   />}
         {tab === 'src-otel'      && <EventsTab      key="src-otel"      assets={assets} defaultNs="otel"  />}
+        {tab === 'src-suricata'  && <EventsTab      key="src-suricata"  assets={assets} defaultNs="suricata" />}
         {tab === 'events'        && <EventsTab      key="events"        assets={assets} />}
         {tab === 'metrics'       && <MetricsTab     assets={assets} />}
         {tab === 'correlations'  && <CorrelationsTab assets={assets} />}
