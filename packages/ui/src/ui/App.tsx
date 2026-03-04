@@ -4532,7 +4532,8 @@ function SmartDashboardIframe({ html, timePreset }: { html: string; timePreset: 
 
   React.useEffect(() => {
     const apiKey  = localStorage.getItem('orbit_api_key') ?? '';
-    const baseUrl = window.location.origin + (window.location.pathname.replace(/\/+$/, '').replace(/\/index\.html$/, ''));
+    // Strip any filename (*.html) and trailing slashes from pathname to get the app base
+    const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*\.[a-z]+$/i, '').replace(/\/+$/, '');
 
     const presetMs: Record<string, number> = {
       '1h': 3600000, '6h': 21600000, '24h': 86400000, '7d': 604800000, '30d': 2592000000,
@@ -4546,6 +4547,7 @@ function SmartDashboardIframe({ html, timePreset }: { html: string; timePreset: 
       window.__ORBIT_API_KEY__  = ${JSON.stringify(apiKey)};
       window.__ORBIT_FROM__     = ${JSON.stringify(from)};
       window.__ORBIT_TO__       = ${JSON.stringify(to)};
+      console.log('[orbit-iframe] base=' + window.__ORBIT_BASE_URL__ + ' from=' + window.__ORBIT_FROM__ + ' to=' + window.__ORBIT_TO__);
     </script>`;
 
     const injected = html.replace('</head>', injection + '\n</head>');
