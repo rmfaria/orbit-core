@@ -40,8 +40,13 @@ BEGIN
       AND c.relkind = 'r'  -- 'r' = ordinary table (not partitioned 'p')
   ) THEN
 
-    -- 4a. Rename old table
+    -- 4a. Rename old table and drop its indexes (names would conflict with new table)
     ALTER TABLE metric_points RENAME TO metric_points_old;
+    DROP INDEX IF EXISTS idx_metric_points_ts;
+    DROP INDEX IF EXISTS idx_metric_points_asset_ts;
+    DROP INDEX IF EXISTS idx_metric_points_ns_metric_ts;
+    DROP INDEX IF EXISTS idx_metric_points_asset_ns_metric_ts;
+    DROP INDEX IF EXISTS idx_metric_points_dims_gin;
 
     -- 4b. Create partitioned table (same schema minus serial PK)
     CREATE TABLE metric_points (
