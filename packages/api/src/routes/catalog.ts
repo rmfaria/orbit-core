@@ -63,6 +63,7 @@ export async function catalogMetricsHandler(req: Request, res: Response) {
   }
   params.push(lim);
 
+  where.push(`ts > now() - interval '7 days'`);
   const r = await pool.query(
     `select namespace, metric,
             count(*)::bigint as points,
@@ -93,26 +94,27 @@ export async function catalogEventsHandler(req: Request, res: Response) {
   if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
   try {
+    const tsFilter = `WHERE ts > now() - interval '30 days'`;
     const [nsRes, kindRes, agentRes, sevRes] = await Promise.all([
       pool.query<{ namespace: string; total: number; last_seen: string | null }>(
         `SELECT namespace, count(*)::int AS total, max(ts)::text AS last_seen
-         FROM orbit_events GROUP BY namespace ORDER BY total DESC LIMIT 30`
+         FROM orbit_events ${tsFilter} GROUP BY namespace ORDER BY total DESC LIMIT 30`
       ),
       pool.query<{ namespace: string; kind: string }>(
         `SELECT namespace, kind FROM (
            SELECT namespace, kind, count(*) AS cnt
-           FROM orbit_events GROUP BY namespace, kind ORDER BY cnt DESC LIMIT 200
+           FROM orbit_events ${tsFilter} GROUP BY namespace, kind ORDER BY cnt DESC LIMIT 200
          ) t`
       ),
       pool.query<{ namespace: string; asset_id: string }>(
         `SELECT namespace, asset_id FROM (
            SELECT namespace, asset_id, count(*) AS cnt
-           FROM orbit_events GROUP BY namespace, asset_id ORDER BY cnt DESC LIMIT 100
+           FROM orbit_events ${tsFilter} GROUP BY namespace, asset_id ORDER BY cnt DESC LIMIT 100
          ) t`
       ),
       pool.query<{ namespace: string; severity: string }>(
         `SELECT namespace, severity
-         FROM orbit_events
+         FROM orbit_events ${tsFilter}
          GROUP BY namespace, severity
          ORDER BY namespace, count(*) DESC`
       ),

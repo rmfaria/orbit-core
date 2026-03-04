@@ -13,6 +13,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - orbit_pg:/var/lib/postgresql/data
+    shm_size: '256m'
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d orbit"]
       interval: 10s
@@ -47,6 +52,16 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
   # ── UI (nginx — serves UI + proxies API) ──────────────────────────────────────
@@ -58,7 +73,12 @@ services:
       - "${ORBIT_PORT:-80}:80"
       - "${ORBIT_PORT_SSL:-443}:443"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     restart: unless-stopped
 
 volumes:

@@ -6,12 +6,29 @@
  */
 
 import React from 'react';
-import { Chart, registerables } from 'chart.js';
+import {
+  Chart,
+  LineController,
+  LineElement,
+  PointElement,
+  DoughnutController,
+  ArcElement,
+  LinearScale,
+  CategoryScale,
+  Filler,
+  Tooltip,
+  Legend,
+} from 'chart.js';
 import './home.css';
 import { t, setLocale, getLocale, Locale } from './i18n';
 
-// Register Chart.js components once.
-Chart.register(...registerables);
+// Register only the Chart.js components we actually use (smaller bundle).
+Chart.register(
+  LineController, LineElement, PointElement,
+  DoughnutController, ArcElement,
+  LinearScale, CategoryScale,
+  Filler, Tooltip, Legend,
+);
 
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -132,11 +149,26 @@ function apiGetHeaders(): HeadersInit {
 function useIsMobile(): boolean {
   const [mobile, setMobile] = React.useState(() => window.innerWidth < 768);
   React.useEffect(() => {
-    const fn = () => setMobile(window.innerWidth < 768);
+    let timer: ReturnType<typeof setTimeout>;
+    const fn = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setMobile(window.innerWidth < 768), 150);
+    };
     window.addEventListener('resize', fn, { passive: true });
-    return () => window.removeEventListener('resize', fn);
+    return () => { clearTimeout(timer); window.removeEventListener('resize', fn); };
   }, []);
   return mobile;
+}
+
+/** setInterval that pauses when the browser tab is hidden. Returns a cleanup function. */
+function visibleInterval(fn: () => void, ms: number): () => void {
+  let id: ReturnType<typeof setInterval> | null = null;
+  function start() { if (!id) id = setInterval(fn, ms); }
+  function stop() { if (id) { clearInterval(id); id = null; } }
+  function onVis() { document.hidden ? stop() : start(); }
+  if (!document.hidden) start();
+  document.addEventListener('visibilitychange', onVis);
+  return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
 }
 
 // ─── canvas chart ─────────────────────────────────────────────────────────────
@@ -538,8 +570,8 @@ function SystemTab() {
       }
     }
     poll();
-    const t = setInterval(poll, 5000);
-    return () => { cancelled = true; clearInterval(t); };
+    const stop = visibleInterval(poll, 15_000);
+    return () => { cancelled = true; stop(); };
   }, []);
 
   if (err)   return <div style={{ padding: 32, color: '#ff5dd6' }}>Error: {err}</div>;
@@ -2164,8 +2196,8 @@ function HealthBadge() {
         .catch(() => setHealth(null));
     }
     poll();
-    const t = setInterval(poll, 30_000);
-    return () => clearInterval(t);
+    const stop = visibleInterval(poll, 30_000);
+    return () => stop();
   }, []);
 
   const dbOk = health?.db === 'ok';
@@ -2297,8 +2329,8 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
       } catch { /* silent */ }
     }
     poll();
-    const iv = setInterval(poll, 10_000);
-    return () => { cancelled = true; clearInterval(iv); };
+    const stop = visibleInterval(poll, 15_000);
+    return () => { cancelled = true; stop(); };
   }, []);
 
   const [assetId, setAssetId] = React.useState('');
@@ -2477,10 +2509,10 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   React.useEffect(() => {
     if (!assetId) return;
     runPulse();
-    const t = setInterval(() => {
+    const stop = visibleInterval(() => {
       setTo(new Date().toISOString());
     }, 30_000);
-    return () => clearInterval(t);
+    return () => stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId]);
 

@@ -321,6 +321,11 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
 
   if (q.kind === 'timeseries_multi') {
     const src = chooseSource(q.from, q.to);
+    const isRollup = src.table !== 'metric_points';
+    const tsCol = isRollup ? 'bucket_ts' : 'ts';
+    // For rollup GROUP BY queries: re-aggregate the pre-computed column (avg(avg), max(max), etc.)
+    const rollupCol = isRollup ? rollupValueExpr(q.agg) : null;
+    const valueAgg = rollupCol ? `${rollupCol}(${rollupCol})::double precision` : aggExpr(q.agg);
 
     // performance-first: default to bucketed if bucket_sec not provided.
     // For rollup sources, bucket is fixed.
@@ -369,11 +374,11 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
         }
 
         // Keep ranking scoped to a bounded window (intersection of query range and lookback days).
-        const timeSql = `ts >= greatest($3::timestamptz, now() - ($2::text || ' days')::interval) and ts <= $4::timestamptz`;
+        const timeSql = `${tsCol} >= greatest($3::timestamptz, now() - ($2::text || ' days')::interval) and ${tsCol} <= $4::timestamptz`;
 
         rankParts.push(`
-          select (dimensions ->> $1::text) as dimension, ts, value
-          from metric_points
+          select (dimensions ->> $1::text) as dimension, ${tsCol} as ts, ${isRollup ? rollupCol : 'value'} as value
+          from ${src.table}
           where ${timeSql}
             and asset_id = $${pAsset} and namespace = $${pNs} and metric = $${pMetric}
             and (dimensions ? $1::text)
@@ -455,9 +460,11 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
         topDimSql = `and (dimensions ->> $${pDimKeyGlobal}::text) = any($${pTopVals}::text[])`;
       }
 
-      const tsExpr = useBucket
-        ? `date_bin('${bucket}'::interval, ts, '1970-01-01'::timestamptz)`
-        : 'ts';
+      const tsExpr = isRollup
+        ? tsCol
+        : useBucket
+          ? `date_bin('${bucket}'::interval, ts, '1970-01-01'::timestamptz)`
+          : 'ts';
 
       let dimSelect = '';
       let dimGroup = '';
@@ -470,9 +477,9 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
           select ${tsExpr} as ts,
                  $${pLabel}::text as series
                  ${dimSelect},
-                 ${aggExpr(q.agg)} as value
-          from metric_points
-          where ts >= $${pFrom}::timestamptz and ts <= $${pTo}::timestamptz
+                 ${valueAgg} as value
+          from ${src.table}
+          where ${tsCol} >= $${pFrom}::timestamptz and ${tsCol} <= $${pTo}::timestamptz
             and asset_id = $${pAsset} and namespace = $${pNs} and metric = $${pMetric}
             ${dimsSql}
             ${topDimSql}
@@ -482,9 +489,9 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
           select ${tsExpr} as ts,
                  $${pLabel}::text as series
                  ${dimSelect},
-                 value::double precision as value
-          from metric_points
-          where ts >= $${pFrom}::timestamptz and ts <= $${pTo}::timestamptz
+                 ${isRollup ? `${rollupCol}::double precision` : 'value::double precision'} as value
+          from ${src.table}
+          where ${tsCol} >= $${pFrom}::timestamptz and ${tsCol} <= $${pTo}::timestamptz
             and asset_id = $${pAsset} and namespace = $${pNs} and metric = $${pMetric}
             ${dimsSql}
             ${topDimSql}

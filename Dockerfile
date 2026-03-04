@@ -44,7 +44,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=20s \
   CMD wget -qO- http://localhost:3000/api/v1/health || exit 1
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "--max-old-space-size=384", "dist/index.js"]
 
 # ── Stage 3: migrate runner ───────────────────────────────────────────────────
 # storage-pg deploy includes dist/migrate.js and migrations/ directory.

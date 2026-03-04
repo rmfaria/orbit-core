@@ -6,6 +6,19 @@ type AbsenceCondition  = { kind: 'absence';   window_min: number };
 type ThresholdCondition = { kind: 'threshold'; agg?: 'avg' | 'max'; window_min: number; op: '>' | '>=' | '<' | '<='; value: number };
 export type AlertCondition = AbsenceCondition | ThresholdCondition;
 
+/** Build a dynamic WHERE clause using only non-null fields (allows index usage). */
+function buildWhere(asset_id: string | null, namespace: string | null, metric: string | null, window_min: number) {
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  let i = 1;
+  if (asset_id)  { conds.push(`asset_id = $${i++}`);  params.push(asset_id); }
+  if (namespace) { conds.push(`namespace = $${i++}`);  params.push(namespace); }
+  if (metric)    { conds.push(`metric = $${i++}`);     params.push(metric); }
+  conds.push(`ts > now() - make_interval(mins => $${i++})`);
+  params.push(window_min);
+  return { where: conds.join(' AND '), params };
+}
+
 export async function evaluate(pool: Pool, rule: {
   asset_id:  string | null;
   namespace: string | null;
@@ -15,29 +28,20 @@ export async function evaluate(pool: Pool, rule: {
   const { condition, asset_id, namespace, metric } = rule;
 
   if (condition.kind === 'absence') {
-    // Firing when no metric point received in the last window_min minutes
+    const { where, params } = buildWhere(asset_id, namespace, metric, condition.window_min);
     const { rows } = await pool.query(
-      `SELECT 1 FROM metric_points
-       WHERE ($1::text IS NULL OR asset_id = $1)
-         AND ($2::text IS NULL OR namespace = $2)
-         AND ($3::text IS NULL OR metric    = $3)
-         AND ts > now() - make_interval(mins => $4)
-       LIMIT 1`,
-      [asset_id ?? null, namespace ?? null, metric ?? null, condition.window_min]
+      `SELECT 1 FROM metric_points WHERE ${where} LIMIT 1`,
+      params
     );
     return { firing: rows.length === 0, value: null };
   }
 
   if (condition.kind === 'threshold') {
     const agg = condition.agg === 'max' ? 'MAX' : 'AVG';
+    const { where, params } = buildWhere(asset_id, namespace, metric, condition.window_min);
     const { rows } = await pool.query(
-      `SELECT ${agg}(value)::float8 AS v
-       FROM metric_points
-       WHERE ($1::text IS NULL OR asset_id = $1)
-         AND ($2::text IS NULL OR namespace = $2)
-         AND ($3::text IS NULL OR metric    = $3)
-         AND ts > now() - make_interval(mins => $4)`,
-      [asset_id ?? null, namespace ?? null, metric ?? null, condition.window_min]
+      `SELECT ${agg}(value)::float8 AS v FROM metric_points WHERE ${where}`,
+      params
     );
     const v: number | null = rows[0]?.v ?? null;
     if (v === null) return { firing: false, value: null };
