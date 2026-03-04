@@ -568,285 +568,225 @@
   }
 
   /* ─── PUBLIC RENDERERS ─── */
-  // _card() returns a .oviz-body div inside the container.
-  // Every render() clears body.innerHTML before re-rendering — prevents duplication.
+  // Each renderer uses a single dedicated div (body) for its content.
+  // On every render cycle the body is fully replaced via innerHTML.
+  // A monotonic render-version prevents stale async results from painting.
 
   function _nodata(body) {
     body.innerHTML = '<div style="padding:24px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font + '">No data available</div>';
   }
 
-  /** OrbitViz.line(selector, opts) — Timeseries line chart */
+  // Generic renderer factory: handles card setup, loading, async fetch, body swap, auto-refresh.
+  function _renderer(sel, opts, fetchFn, paintFn) {
+    opts = opts || {};
+    var container = _el(sel);
+    if (!container) return console.error('[orbit-viz] element not found:', sel);
+    var body = _card(container, opts);
+    body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;padding:32px 0;color:' + theme.textMuted + ';font-family:' + theme.font + ';font-size:12px;"><svg width="20" height="20" viewBox="0 0 24 24" style="animation:oviz-spin 1s linear infinite;margin-right:8px"><circle cx="12" cy="12" r="10" stroke="' + theme.cyan + '" stroke-width="2" fill="none" stroke-dasharray="31.4" stroke-linecap="round"/></svg>Loading...</div>';
+    if (!document.getElementById('oviz-css')) {
+      var s = document.createElement('style'); s.id = 'oviz-css';
+      s.textContent = '@keyframes oviz-spin{to{transform:rotate(360deg)}}';
+      document.head.appendChild(s);
+    }
+    var ver = 0;
+    function render() {
+      var myVer = ++ver;
+      fetchFn(opts).then(function (j) {
+        if (myVer !== ver) return; // stale — a newer render is in flight
+        body.innerHTML = '';
+        paintFn(container, body, j, opts);
+      }).catch(function (err) {
+        if (myVer !== ver) return;
+        body.innerHTML = '<div style="padding:16px;color:' + theme.red + ';font-family:' + theme.font + ';font-size:12px;text-align:center;">Query failed: ' + (err.message || err) + '</div>';
+      });
+    }
+    render();
+    _autoRefresh(render, opts.refreshInterval);
+  }
+
+  /** OrbitViz.line / area */
   function line(sel, opts) {
     opts = opts || {};
-    var container = _el(sel);
-    if (!container) return console.error('[orbit-viz] element not found:', sel);
-    var body = _card(container, opts);
-    _loading(body);
     var h = opts.height || 200;
-
-    function render() {
-      _timeseries(opts).then(function (j) {
-        body.innerHTML = '';
-        if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
-        var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(body, w, h);
-        _drawLineChart(ctx, w, h, j.result.rows, opts);
-      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
-    }
-
-    render();
-    _autoRefresh(render, opts.refreshInterval);
+    _renderer(sel, opts, _timeseries, function (container, body, j) {
+      if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
+      var w = container.clientWidth - 32;
+      var ctx = _setupCanvas(body, w, h);
+      _drawLineChart(ctx, w, h, j.result.rows, opts);
+    });
   }
+  function area(sel, opts) { opts = opts || {}; opts.fill = true; line(sel, opts); }
 
-  /** OrbitViz.area(selector, opts) — Timeseries area chart (same as line with fill) */
-  function area(sel, opts) {
-    opts = opts || {};
-    opts.fill = true;
-    line(sel, opts);
-  }
-
-  /** OrbitViz.multiLine(selector, opts) — Multi-series line chart */
+  /** OrbitViz.multiLine */
   function multiLine(sel, opts) {
     opts = opts || {};
-    var container = _el(sel);
-    if (!container) return console.error('[orbit-viz] element not found:', sel);
-    var body = _card(container, opts);
-    _loading(body);
     var h = opts.height || 200;
-
-    function render() {
-      _timeseriesMulti(opts).then(function (j) {
-        body.innerHTML = '';
-        if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
-        var seriesData = {};
-        j.result.rows.forEach(function (r) {
-          var name = r.series || 'default';
-          if (!seriesData[name]) seriesData[name] = [];
-          seriesData[name].push(r);
-        });
-        var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(body, w, h);
-        _drawMultiLineChart(ctx, w, h, seriesData, opts);
-      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
-    }
-
-    render();
-    _autoRefresh(render, opts.refreshInterval);
+    _renderer(sel, opts, _timeseriesMulti, function (container, body, j) {
+      if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
+      var seriesData = {};
+      j.result.rows.forEach(function (r) {
+        var name = r.series || 'default';
+        if (!seriesData[name]) seriesData[name] = [];
+        seriesData[name].push(r);
+      });
+      var w = container.clientWidth - 32;
+      var ctx = _setupCanvas(body, w, h);
+      _drawMultiLineChart(ctx, w, h, seriesData, opts);
+    });
   }
 
-  /** OrbitViz.bar(selector, opts) — Bar chart comparing multiple metrics/assets */
+  /** OrbitViz.bar */
   function bar(sel, opts) {
     opts = opts || {};
-    var container = _el(sel);
-    if (!container) return console.error('[orbit-viz] element not found:', sel);
-    var body = _card(container, opts);
-    _loading(body);
     var h = opts.height || 200;
 
-    function render() {
-      if (opts.items && opts.items.length) {
-        body.innerHTML = '';
-        var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(body, w, h);
-        _drawBarChart(ctx, w, h, opts.items, opts);
-        return;
-      }
-
-      var metrics = opts.metrics || [];
-      if (!metrics.length) { body.innerHTML = ''; _error(body, 'No metrics specified'); return; }
-
-      var series = metrics.map(function (m) {
-        var obj = typeof m === 'string' ? { metric: m } : m;
-        return {
-          asset_id: obj.asset || obj.asset_id || opts.asset || opts.asset_id || '',
-          namespace: obj.namespace || opts.namespace || 'nagios',
-          metric: obj.metric || obj.name || '',
-          label: obj.label || obj.metric || obj.name || ''
-        };
-      });
-
-      _timeseriesMulti({ series: series, agg: opts.agg || 'avg' }).then(function (j) {
-        body.innerHTML = '';
-        if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
-        var lastVals = {};
-        j.result.rows.forEach(function (r) { lastVals[r.series] = r.value; });
-        var items = series.map(function (s) { return { label: s.label, value: lastVals[s.label] || 0 }; });
-        var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(body, w, h);
-        _drawBarChart(ctx, w, h, items, opts);
-      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
+    if (opts.items && opts.items.length) {
+      // Static items — no fetch needed
+      var container = _el(sel);
+      if (!container) return;
+      var body = _card(container, opts);
+      body.innerHTML = '';
+      var w = container.clientWidth - 32;
+      var ctx = _setupCanvas(body, w, h);
+      _drawBarChart(ctx, w, h, opts.items, opts);
+      return;
     }
 
-    render();
-    _autoRefresh(render, opts.refreshInterval);
+    var metrics = opts.metrics || [];
+    if (!metrics.length) return;
+
+    var series = metrics.map(function (m) {
+      var obj = typeof m === 'string' ? { metric: m } : m;
+      return {
+        asset_id: obj.asset || obj.asset_id || opts.asset || opts.asset_id || '',
+        namespace: obj.namespace || opts.namespace || 'nagios',
+        metric: obj.metric || obj.name || '',
+        label: obj.label || obj.metric || obj.name || ''
+      };
+    });
+
+    var fetchOpts = { series: series, agg: opts.agg || 'avg' };
+    _renderer(sel, opts, function () { return _timeseriesMulti(fetchOpts); }, function (container, body, j) {
+      if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
+      var lastVals = {};
+      j.result.rows.forEach(function (r) { lastVals[r.series] = r.value; });
+      var items = series.map(function (s) { return { label: s.label, value: lastVals[s.label] || 0 }; });
+      var w = container.clientWidth - 32;
+      var ctx = _setupCanvas(body, w, h);
+      _drawBarChart(ctx, w, h, items, opts);
+    });
   }
 
-  /** OrbitViz.gauge(selector, opts) — Gauge arc for percentage values */
+  /** OrbitViz.gauge */
   function gauge(sel, opts) {
     opts = opts || {};
-    var container = _el(sel);
-    if (!container) return console.error('[orbit-viz] element not found:', sel);
-    var body = _card(container, opts);
-    _loading(body);
-
-    function render() {
-      _timeseries(opts).then(function (j) {
-        body.innerHTML = '';
-        var lastVal = 0;
-        if (j.ok && j.result && j.result.rows.length) {
-          lastVal = +j.result.rows[j.result.rows.length - 1].value;
-        }
-        _renderGauge(body, lastVal, opts);
-      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
-    }
-
-    render();
-    _autoRefresh(render, opts.refreshInterval);
+    _renderer(sel, opts, _timeseries, function (_container, body, j) {
+      var lastVal = 0;
+      if (j.ok && j.result && j.result.rows.length) {
+        lastVal = +j.result.rows[j.result.rows.length - 1].value;
+      }
+      _renderGauge(body, lastVal, opts);
+    });
   }
 
-  /** OrbitViz.kpi(selector, opts) — Single big number KPI */
+  /** OrbitViz.kpi */
   function kpi(sel, opts) {
     opts = opts || {};
-    var container = _el(sel);
-    if (!container) return console.error('[orbit-viz] element not found:', sel);
-    var body = _card(container, opts);
-    _loading(body);
-
-    function render() {
-      var queryFn = opts.queryKind === 'event_count' ? _eventCount : _timeseries;
-      queryFn(opts).then(function (j) {
-        body.innerHTML = '';
-        var value = 0;
-        if (j.ok && j.result && j.result.rows.length) {
-          if (opts.aggregate === 'sum') {
-            j.result.rows.forEach(function (r) { value += +(r.value || 0); });
-          } else {
-            value = +j.result.rows[j.result.rows.length - 1].value;
-          }
+    var queryFn = opts.queryKind === 'event_count' ? _eventCount : _timeseries;
+    _renderer(sel, opts, queryFn, function (_container, body, j) {
+      var value = 0;
+      if (j.ok && j.result && j.result.rows.length) {
+        if (opts.aggregate === 'sum') {
+          j.result.rows.forEach(function (r) { value += +(r.value || 0); });
+        } else {
+          value = +j.result.rows[j.result.rows.length - 1].value;
         }
-        var d = document.createElement('div');
-        d.style.cssText = 'text-align:center;padding:12px 0;';
-        d.innerHTML = '<div style="font-size:36px;font-weight:700;color:' + (opts.color || theme.cyan) + ';font-family:' + theme.font + '">' +
-          _fmtVal(value, opts.unit) + '<span style="font-size:14px;color:' + theme.textMuted + ';margin-left:4px">' + (opts.unit || '') + '</span></div>';
-        if (opts.subtitle) {
-          d.innerHTML += '<div style="font-size:11px;color:' + theme.textMuted + ';margin-top:4px;font-family:' + theme.font + '">' + opts.subtitle + '</div>';
-        }
-        body.appendChild(d);
-      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
-    }
-
-    render();
-    _autoRefresh(render, opts.refreshInterval);
+      }
+      body.innerHTML = '<div style="text-align:center;padding:12px 0;"><div style="font-size:36px;font-weight:700;color:' + (opts.color || theme.cyan) + ';font-family:' + theme.font + '">' +
+        _fmtVal(value, opts.unit) + '<span style="font-size:14px;color:' + theme.textMuted + ';margin-left:4px">' + (opts.unit || '') + '</span></div>' +
+        (opts.subtitle ? '<div style="font-size:11px;color:' + theme.textMuted + ';margin-top:4px;font-family:' + theme.font + '">' + opts.subtitle + '</div>' : '') +
+        '</div>';
+    });
   }
 
-  /** OrbitViz.events(selector, opts) — Events table */
+  /** OrbitViz.events / table */
   function events(sel, opts) {
     opts = opts || {};
-    var container = _el(sel);
-    if (!container) return console.error('[orbit-viz] element not found:', sel);
-    var body = _card(container, opts);
-    _loading(body);
-
-    function render() {
-      _events(opts).then(function (j) {
-        body.innerHTML = '';
-        if (!j.ok || !j.result || !j.result.rows.length) {
-          body.innerHTML = '<div style="padding:16px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font + '">No events</div>';
-          return;
-        }
-        var d = document.createElement('div');
-        d.style.cssText = 'overflow-y:auto;max-height:' + (opts.height || 300) + 'px;';
-        var html = '<table style="width:100%;border-collapse:collapse;font:11px ' + theme.font + ';">';
-        html += '<thead><tr style="border-bottom:1px solid ' + theme.border + ';">';
-        html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Time</th>';
-        html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Severity</th>';
-        html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Asset</th>';
-        html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Title</th>';
-        html += '</tr></thead><tbody>';
-        j.result.rows.forEach(function (r) {
-          var sevColor = theme.severity[r.severity] || theme.textMuted;
-          html += '<tr style="border-bottom:1px solid ' + theme.border + '22;">';
-          html += '<td style="padding:5px 8px;color:' + theme.textMuted + ';white-space:nowrap">' + _fmtDate(r.ts) + '</td>';
-          html += '<td style="padding:5px 8px"><span style="background:' + sevColor + '22;color:' + sevColor + ';padding:2px 6px;border-radius:4px;font-size:10px;text-transform:uppercase">' + (r.severity || 'info') + '</span></td>';
-          html += '<td style="padding:5px 8px;color:' + theme.text + '">' + (r.asset_id || '—') + '</td>';
-          html += '<td style="padding:5px 8px;color:' + theme.text + '">' + (r.title || r.message || '—') + '</td>';
-          html += '</tr>';
-        });
-        html += '</tbody></table>';
-        d.innerHTML = html;
-        body.appendChild(d);
-      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
-    }
-
-    render();
-    _autoRefresh(render, opts.refreshInterval);
+    _renderer(sel, opts, _events, function (_container, body, j) {
+      if (!j.ok || !j.result || !j.result.rows.length) {
+        body.innerHTML = '<div style="padding:16px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font + '">No events</div>';
+        return;
+      }
+      var html = '<div style="overflow-y:auto;max-height:' + (opts.height || 300) + 'px;">';
+      html += '<table style="width:100%;border-collapse:collapse;font:11px ' + theme.font + ';">';
+      html += '<thead><tr style="border-bottom:1px solid ' + theme.border + ';">';
+      html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Time</th>';
+      html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Severity</th>';
+      html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Asset</th>';
+      html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Title</th>';
+      html += '</tr></thead><tbody>';
+      j.result.rows.forEach(function (r) {
+        var sevColor = theme.severity[r.severity] || theme.textMuted;
+        html += '<tr style="border-bottom:1px solid ' + theme.border + '22;">';
+        html += '<td style="padding:5px 8px;color:' + theme.textMuted + ';white-space:nowrap">' + _fmtDate(r.ts) + '</td>';
+        html += '<td style="padding:5px 8px"><span style="background:' + sevColor + '22;color:' + sevColor + ';padding:2px 6px;border-radius:4px;font-size:10px;text-transform:uppercase">' + (r.severity || 'info') + '</span></td>';
+        html += '<td style="padding:5px 8px;color:' + theme.text + '">' + (r.asset_id || '—') + '</td>';
+        html += '<td style="padding:5px 8px;color:' + theme.text + '">' + (r.title || r.message || '—') + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      body.innerHTML = html;
+    });
   }
 
-  /** OrbitViz.eps(selector, opts) — Events Per Second line chart */
+  /** OrbitViz.eps */
   function eps(sel, opts) {
     opts = opts || {};
     opts.unit = opts.unit || 'eps';
     opts.color = opts.color || theme.purple;
-    var container = _el(sel);
-    if (!container) return console.error('[orbit-viz] element not found:', sel);
-    var body = _card(container, opts);
-    _loading(body);
     var h = opts.height || 200;
-
-    function render() {
-      _eventCount(opts).then(function (j) {
-        body.innerHTML = '';
-        if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
-        var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(body, w, h);
-        _drawLineChart(ctx, w, h, j.result.rows, opts);
-      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
-    }
-
-    render();
-    _autoRefresh(render, opts.refreshInterval);
+    _renderer(sel, opts, _eventCount, function (container, body, j) {
+      if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
+      var w = container.clientWidth - 32;
+      var ctx = _setupCanvas(body, w, h);
+      _drawLineChart(ctx, w, h, j.result.rows, opts);
+    });
   }
 
-  /** OrbitViz.donut(selector, opts) — Donut chart for event severity distribution */
+  /** OrbitViz.donut */
   function donut(sel, opts) {
     opts = opts || {};
-    var container = _el(sel);
-    if (!container) return console.error('[orbit-viz] element not found:', sel);
-    var body = _card(container, opts);
-    _loading(body);
-
-    function render() {
-      if (opts.items && opts.items.length) {
-        body.innerHTML = '';
-        _renderDonut(body, opts.items, opts);
-        return;
-      }
-
-      _events({ namespace: opts.namespace, asset: opts.asset, limit: opts.limit || 1000 }).then(function (j) {
-        body.innerHTML = '';
-        if (!j.ok || !j.result || !j.result.rows.length) {
-          _renderDonut(body, [], opts);
-          return;
-        }
-        var groupBy = opts.groupBy || 'severity';
-        var counts = {};
-        j.result.rows.forEach(function (r) {
-          var key = r[groupBy] || 'unknown';
-          counts[key] = (counts[key] || 0) + 1;
-        });
-        var items = Object.keys(counts).map(function (key) {
-          return {
-            label: key,
-            value: counts[key],
-            color: groupBy === 'severity' ? (theme.severity[key] || theme.textMuted) : undefined
-          };
-        }).sort(function (a, b) { return b.value - a.value; });
-        _renderDonut(body, items, opts);
-      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
+    if (opts.items && opts.items.length) {
+      var container = _el(sel);
+      if (!container) return;
+      var body = _card(container, opts);
+      body.innerHTML = '';
+      _renderDonut(body, opts.items, opts);
+      return;
     }
 
-    render();
-    _autoRefresh(render, opts.refreshInterval);
+    _renderer(sel, opts, function (o) {
+      return _events({ namespace: o.namespace, asset: o.asset, limit: o.limit || 1000 });
+    }, function (_container, body, j) {
+      if (!j.ok || !j.result || !j.result.rows.length) {
+        _renderDonut(body, [], opts);
+        return;
+      }
+      var groupBy = opts.groupBy || 'severity';
+      var counts = {};
+      j.result.rows.forEach(function (r) {
+        var key = r[groupBy] || 'unknown';
+        counts[key] = (counts[key] || 0) + 1;
+      });
+      var items = Object.keys(counts).map(function (key) {
+        return {
+          label: key,
+          value: counts[key],
+          color: groupBy === 'severity' ? (theme.severity[key] || theme.textMuted) : undefined
+        };
+      }).sort(function (a, b) { return b.value - a.value; });
+      _renderDonut(body, items, opts);
+    });
   }
 
   /** OrbitViz.table(selector, opts) — Raw events table (alias for events) */
