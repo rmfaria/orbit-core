@@ -114,8 +114,9 @@
     container.style.padding = '16px';
     container.style.position = 'relative';
     container.style.overflow = 'hidden';
-    if (opts.title) {
+    if (opts.title && !container.querySelector('.oviz-header')) {
       var h = document.createElement('div');
+      h.className = 'oviz-header';
       h.style.cssText = 'color:' + theme.text + ';font-family:' + theme.font + ';font-size:13px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;';
       h.textContent = opts.title;
       if (opts.unit) {
@@ -126,7 +127,14 @@
       }
       container.appendChild(h);
     }
-    return container;
+    // Create or reuse a body wrapper for chart content (cleared on refresh)
+    var body = container.querySelector('.oviz-body');
+    if (!body) {
+      body = document.createElement('div');
+      body.className = 'oviz-body';
+      container.appendChild(body);
+    }
+    return body;
   }
 
   function _loading(container) {
@@ -560,43 +568,30 @@
   }
 
   /* ─── PUBLIC RENDERERS ─── */
+  // _card() returns a .oviz-body div inside the container.
+  // Every render() clears body.innerHTML before re-rendering — prevents duplication.
+
+  function _nodata(body) {
+    body.innerHTML = '<div style="padding:24px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font + '">No data available</div>';
+  }
 
   /** OrbitViz.line(selector, opts) — Timeseries line chart */
   function line(sel, opts) {
     opts = opts || {};
     var container = _el(sel);
     if (!container) return console.error('[orbit-viz] element not found:', sel);
-    _card(container, opts);
-    var loader = _loading(container);
+    var body = _card(container, opts);
+    _loading(body);
     var h = opts.height || 200;
 
     function render() {
       _timeseries(opts).then(function (j) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        // Remove old canvas
-        var oldCanvas = container.querySelector('canvas');
-        if (oldCanvas) container.removeChild(oldCanvas);
-
-        if (!j.ok || !j.result || !j.result.rows.length) {
-          if (!container.querySelector('.oviz-nodata')) {
-            var nd = document.createElement('div');
-            nd.className = 'oviz-nodata';
-            nd.style.cssText = 'padding:24px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font;
-            nd.textContent = 'No data available';
-            container.appendChild(nd);
-          }
-          return;
-        }
-        var ndEl = container.querySelector('.oviz-nodata');
-        if (ndEl) container.removeChild(ndEl);
+        body.innerHTML = '';
+        if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
         var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(container, w, h);
+        var ctx = _setupCanvas(body, w, h);
         _drawLineChart(ctx, w, h, j.result.rows, opts);
-      }).catch(function (err) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'Query failed: ' + (err.message || err));
-      });
+      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
     }
 
     render();
@@ -615,45 +610,24 @@
     opts = opts || {};
     var container = _el(sel);
     if (!container) return console.error('[orbit-viz] element not found:', sel);
-    _card(container, opts);
-    var loader = _loading(container);
+    var body = _card(container, opts);
+    _loading(body);
     var h = opts.height || 200;
 
     function render() {
       _timeseriesMulti(opts).then(function (j) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        var oldCanvas = container.querySelector('canvas');
-        if (oldCanvas) container.removeChild(oldCanvas);
-
-        if (!j.ok || !j.result || !j.result.rows.length) {
-          if (!container.querySelector('.oviz-nodata')) {
-            var nd = document.createElement('div');
-            nd.className = 'oviz-nodata';
-            nd.style.cssText = 'padding:24px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font;
-            nd.textContent = 'No data available';
-            container.appendChild(nd);
-          }
-          return;
-        }
-        var ndEl = container.querySelector('.oviz-nodata');
-        if (ndEl) container.removeChild(ndEl);
-
-        // Group by series name
+        body.innerHTML = '';
+        if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
         var seriesData = {};
         j.result.rows.forEach(function (r) {
           var name = r.series || 'default';
           if (!seriesData[name]) seriesData[name] = [];
           seriesData[name].push(r);
         });
-
         var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(container, w, h);
+        var ctx = _setupCanvas(body, w, h);
         _drawMultiLineChart(ctx, w, h, seriesData, opts);
-      }).catch(function (err) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'Query failed: ' + (err.message || err));
-      });
+      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
     }
 
     render();
@@ -665,30 +639,21 @@
     opts = opts || {};
     var container = _el(sel);
     if (!container) return console.error('[orbit-viz] element not found:', sel);
-    _card(container, opts);
-    var loader = _loading(container);
+    var body = _card(container, opts);
+    _loading(body);
     var h = opts.height || 200;
 
     function render() {
-      // If opts.items provided directly, use them
       if (opts.items && opts.items.length) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        var oldCanvas = container.querySelector('canvas');
-        if (oldCanvas) container.removeChild(oldCanvas);
+        body.innerHTML = '';
         var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(container, w, h);
+        var ctx = _setupCanvas(body, w, h);
         _drawBarChart(ctx, w, h, opts.items, opts);
         return;
       }
 
-      // Otherwise, fetch last value of each metric
       var metrics = opts.metrics || [];
-      if (!metrics.length) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'No metrics specified');
-        return;
-      }
+      if (!metrics.length) { body.innerHTML = ''; _error(body, 'No metrics specified'); return; }
 
       var series = metrics.map(function (m) {
         var obj = typeof m === 'string' ? { metric: m } : m;
@@ -701,39 +666,15 @@
       });
 
       _timeseriesMulti({ series: series, agg: opts.agg || 'avg' }).then(function (j) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        var oldCanvas = container.querySelector('canvas');
-        if (oldCanvas) container.removeChild(oldCanvas);
-
-        if (!j.ok || !j.result || !j.result.rows.length) {
-          if (!container.querySelector('.oviz-nodata')) {
-            var nd = document.createElement('div');
-            nd.className = 'oviz-nodata';
-            nd.style.cssText = 'padding:24px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font;
-            nd.textContent = 'No data available';
-            container.appendChild(nd);
-          }
-          return;
-        }
-
-        // Get last value per series
+        body.innerHTML = '';
+        if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
         var lastVals = {};
-        j.result.rows.forEach(function (r) {
-          lastVals[r.series] = r.value;
-        });
-
-        var items = series.map(function (s) {
-          return { label: s.label, value: lastVals[s.label] || 0 };
-        });
-
+        j.result.rows.forEach(function (r) { lastVals[r.series] = r.value; });
+        var items = series.map(function (s) { return { label: s.label, value: lastVals[s.label] || 0 }; });
         var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(container, w, h);
+        var ctx = _setupCanvas(body, w, h);
         _drawBarChart(ctx, w, h, items, opts);
-      }).catch(function (err) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'Query failed: ' + (err.message || err));
-      });
+      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
     }
 
     render();
@@ -745,27 +686,18 @@
     opts = opts || {};
     var container = _el(sel);
     if (!container) return console.error('[orbit-viz] element not found:', sel);
-    _card(container, opts);
-    var loader = _loading(container);
+    var body = _card(container, opts);
+    _loading(body);
 
     function render() {
       _timeseries(opts).then(function (j) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        // Remove old gauge
-        var oldGauge = container.querySelector('div[style*="justify-content:center"]');
-        if (oldGauge) container.removeChild(oldGauge);
-
-        if (!j.ok || !j.result || !j.result.rows.length) {
-          _renderGauge(container, 0, opts);
-          return;
+        body.innerHTML = '';
+        var lastVal = 0;
+        if (j.ok && j.result && j.result.rows.length) {
+          lastVal = +j.result.rows[j.result.rows.length - 1].value;
         }
-        var lastVal = +j.result.rows[j.result.rows.length - 1].value;
-        _renderGauge(container, lastVal, opts);
-      }).catch(function (err) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'Query failed: ' + (err.message || err));
-      });
+        _renderGauge(body, lastVal, opts);
+      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
     }
 
     render();
@@ -777,21 +709,13 @@
     opts = opts || {};
     var container = _el(sel);
     if (!container) return console.error('[orbit-viz] element not found:', sel);
-    _card(container, opts);
-    var loader = _loading(container);
+    var body = _card(container, opts);
+    _loading(body);
 
     function render() {
       var queryFn = opts.queryKind === 'event_count' ? _eventCount : _timeseries;
       queryFn(opts).then(function (j) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        var oldKpi = container.querySelector('.oviz-kpi');
-        if (oldKpi) container.removeChild(oldKpi);
-
-        var d = document.createElement('div');
-        d.className = 'oviz-kpi';
-        d.style.cssText = 'text-align:center;padding:12px 0;';
-
+        body.innerHTML = '';
         var value = 0;
         if (j.ok && j.result && j.result.rows.length) {
           if (opts.aggregate === 'sum') {
@@ -800,19 +724,15 @@
             value = +j.result.rows[j.result.rows.length - 1].value;
           }
         }
-
+        var d = document.createElement('div');
+        d.style.cssText = 'text-align:center;padding:12px 0;';
         d.innerHTML = '<div style="font-size:36px;font-weight:700;color:' + (opts.color || theme.cyan) + ';font-family:' + theme.font + '">' +
           _fmtVal(value, opts.unit) + '<span style="font-size:14px;color:' + theme.textMuted + ';margin-left:4px">' + (opts.unit || '') + '</span></div>';
-
         if (opts.subtitle) {
           d.innerHTML += '<div style="font-size:11px;color:' + theme.textMuted + ';margin-top:4px;font-family:' + theme.font + '">' + opts.subtitle + '</div>';
         }
-
-        container.appendChild(d);
-      }).catch(function (err) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'Query failed: ' + (err.message || err));
-      });
+        body.appendChild(d);
+      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
     }
 
     render();
@@ -824,26 +744,18 @@
     opts = opts || {};
     var container = _el(sel);
     if (!container) return console.error('[orbit-viz] element not found:', sel);
-    _card(container, opts);
-    var loader = _loading(container);
+    var body = _card(container, opts);
+    _loading(body);
 
     function render() {
       _events(opts).then(function (j) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        var oldTable = container.querySelector('.oviz-events');
-        if (oldTable) container.removeChild(oldTable);
-
-        var d = document.createElement('div');
-        d.className = 'oviz-events';
-        d.style.cssText = 'overflow-y:auto;max-height:' + (opts.height || 300) + 'px;';
-
+        body.innerHTML = '';
         if (!j.ok || !j.result || !j.result.rows.length) {
-          d.innerHTML = '<div style="padding:16px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font + '">No events</div>';
-          container.appendChild(d);
+          body.innerHTML = '<div style="padding:16px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font + '">No events</div>';
           return;
         }
-
+        var d = document.createElement('div');
+        d.style.cssText = 'overflow-y:auto;max-height:' + (opts.height || 300) + 'px;';
         var html = '<table style="width:100%;border-collapse:collapse;font:11px ' + theme.font + ';">';
         html += '<thead><tr style="border-bottom:1px solid ' + theme.border + ';">';
         html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Time</th>';
@@ -851,7 +763,6 @@
         html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Asset</th>';
         html += '<th style="padding:6px 8px;text-align:left;color:' + theme.textMuted + ';font-weight:500">Title</th>';
         html += '</tr></thead><tbody>';
-
         j.result.rows.forEach(function (r) {
           var sevColor = theme.severity[r.severity] || theme.textMuted;
           html += '<tr style="border-bottom:1px solid ' + theme.border + '22;">';
@@ -861,14 +772,10 @@
           html += '<td style="padding:5px 8px;color:' + theme.text + '">' + (r.title || r.message || '—') + '</td>';
           html += '</tr>';
         });
-
         html += '</tbody></table>';
         d.innerHTML = html;
-        container.appendChild(d);
-      }).catch(function (err) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'Query failed: ' + (err.message || err));
-      });
+        body.appendChild(d);
+      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
     }
 
     render();
@@ -878,40 +785,22 @@
   /** OrbitViz.eps(selector, opts) — Events Per Second line chart */
   function eps(sel, opts) {
     opts = opts || {};
+    opts.unit = opts.unit || 'eps';
+    opts.color = opts.color || theme.purple;
     var container = _el(sel);
     if (!container) return console.error('[orbit-viz] element not found:', sel);
-    _card(container, opts);
-    var loader = _loading(container);
+    var body = _card(container, opts);
+    _loading(body);
     var h = opts.height || 200;
 
     function render() {
       _eventCount(opts).then(function (j) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        var oldCanvas = container.querySelector('canvas');
-        if (oldCanvas) container.removeChild(oldCanvas);
-
-        if (!j.ok || !j.result || !j.result.rows.length) {
-          if (!container.querySelector('.oviz-nodata')) {
-            var nd = document.createElement('div');
-            nd.className = 'oviz-nodata';
-            nd.style.cssText = 'padding:24px;text-align:center;color:' + theme.textMuted + ';font:12px ' + theme.font;
-            nd.textContent = 'No data available';
-            container.appendChild(nd);
-          }
-          return;
-        }
-        var ndEl = container.querySelector('.oviz-nodata');
-        if (ndEl) container.removeChild(ndEl);
+        body.innerHTML = '';
+        if (!j.ok || !j.result || !j.result.rows.length) { _nodata(body); return; }
         var w = container.clientWidth - 32;
-        var ctx = _setupCanvas(container, w, h);
-        opts.unit = opts.unit || 'eps';
-        opts.color = opts.color || theme.purple;
+        var ctx = _setupCanvas(body, w, h);
         _drawLineChart(ctx, w, h, j.result.rows, opts);
-      }).catch(function (err) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'Query failed: ' + (err.message || err));
-      });
+      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
     }
 
     render();
@@ -923,39 +812,28 @@
     opts = opts || {};
     var container = _el(sel);
     if (!container) return console.error('[orbit-viz] element not found:', sel);
-    _card(container, opts);
-    var loader = _loading(container);
+    var body = _card(container, opts);
+    _loading(body);
 
     function render() {
-      // If items provided directly, render them
       if (opts.items && opts.items.length) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        var oldDonut = container.querySelector('div[style*="align-items:center"]');
-        if (oldDonut && oldDonut !== container.firstChild) container.removeChild(oldDonut);
-        _renderDonut(container, opts.items, opts);
+        body.innerHTML = '';
+        _renderDonut(body, opts.items, opts);
         return;
       }
 
-      // Default: group events by severity
       _events({ namespace: opts.namespace, asset: opts.asset, limit: opts.limit || 1000 }).then(function (j) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        loader = null;
-        var oldDonut = container.querySelector('div[style*="align-items:center"]');
-        if (oldDonut && oldDonut !== container.firstChild) container.removeChild(oldDonut);
-
+        body.innerHTML = '';
         if (!j.ok || !j.result || !j.result.rows.length) {
-          _renderDonut(container, [], opts);
+          _renderDonut(body, [], opts);
           return;
         }
-
         var groupBy = opts.groupBy || 'severity';
         var counts = {};
         j.result.rows.forEach(function (r) {
           var key = r[groupBy] || 'unknown';
           counts[key] = (counts[key] || 0) + 1;
         });
-
         var items = Object.keys(counts).map(function (key) {
           return {
             label: key,
@@ -963,12 +841,8 @@
             color: groupBy === 'severity' ? (theme.severity[key] || theme.textMuted) : undefined
           };
         }).sort(function (a, b) { return b.value - a.value; });
-
-        _renderDonut(container, items, opts);
-      }).catch(function (err) {
-        if (loader && loader.parentNode) loader.parentNode.removeChild(loader);
-        _error(container, 'Query failed: ' + (err.message || err));
-      });
+        _renderDonut(body, items, opts);
+      }).catch(function (err) { body.innerHTML = ''; _error(body, 'Query failed: ' + (err.message || err)); });
     }
 
     render();
