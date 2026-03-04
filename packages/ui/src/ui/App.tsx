@@ -4548,7 +4548,7 @@ function SmartDashboardIframe({ html, timePreset }: { html: string; timePreset: 
       window.__ORBIT_FROM__     = ${JSON.stringify(from)};
       window.__ORBIT_TO__       = ${JSON.stringify(to)};
     </script>
-    <script src="${baseUrl}/orbit-viz.js"></script>
+    <script src="${baseUrl}/orbit-viz.js?v=${Date.now()}"></script>
     <script>
       if (window.OrbitViz) {
         OrbitViz.init({
