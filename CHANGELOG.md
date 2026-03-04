@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.1] - 2026-03-04
+
+### Added
+
+- **Suricata EVE-JSON connector**: push-mode Python shipper that parses Suricata EVE logs (alert, anomaly, HTTP, SSH events) with severity mapping and network context attributes
+- **Suricata in UI live feed**: dedicated source tab, namespace filter pills, and color-coded events (#f87171 coral red) in the dashboard
+- **First-access password setup**: on first boot, admin creates password via `/api/v1/auth/setup`; subsequent logins via `/api/v1/auth/login` with scrypt-hashed credentials stored in `orbit_settings`
+- **Auth middleware DB support**: API key resolution from `orbit_settings` table with 60-second cache, fallback to `ORBIT_API_KEY` env var
+- **HTTPS for local Docker Compose**: self-signed TLS certificate, nginx SSL termination on port 443, HTTP→HTTPS redirect
+- **Privacy Policy page**: published at orbit-core.org/privacy.html for API compliance
+- **LinkedIn Publisher workflow**: n8n webhook-triggered workflow for posting to LinkedIn via OAuth2
+
+### Changed
+
+- **Login page modernized**: replaced BasicAuth with styled dark-theme login page and cookie-based session auth
+- **AuthGate component**: SPA always checks `/api/v1/auth/status` on mount — clears stale localStorage if setup incomplete
+- **Migration 0020**: added `admin_password_hash` and `admin_api_key` to `orbit_settings` table
+
+---
+
 ## [1.6.0] - 2026-03-01
 
 ### Added
