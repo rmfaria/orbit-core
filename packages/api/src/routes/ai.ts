@@ -402,9 +402,16 @@ export function aiRouter(pool: Pool | null): Router {
       return res.status(502).json({ ok: false, error: 'AI returned no HTML', raw: rawText.slice(0, 500) });
     }
 
+    // Post-process: fix common AI mistakes in generated HTML
+    let html = result.html;
+    // Fix: "function query" without async (AI sometimes forgets the async keyword)
+    html = html.replace(/\bfunction query\s*\(/g, 'async function query(');
+    // Avoid double-async
+    html = html.replace(/\basync async\b/g, 'async');
+
     return res.json({
       ok: true,
-      html: result.html,
+      html,
       name: result.name ?? 'AI Dashboard',
       description: result.description ?? prompt,
     });
@@ -890,7 +897,7 @@ Cards: background #0a0e1a, subtle border, padding 20px
 2. Use Canvas API for charts (create <canvas> elements, draw with getContext('2d'))
 3. Use SVG for gauges and simple shapes
 4. Access runtime vars: window.__ORBIT_BASE_URL__, __ORBIT_API_KEY__, __ORBIT_FROM__, __ORBIT_TO__
-5. Helper for API calls:
+5. MANDATORY helper function (MUST use "async" keyword — await only works inside async functions):
    async function query(body) {
      const res = await fetch(window.__ORBIT_BASE_URL__ + '/api/v1/query', {
        method: 'POST',
@@ -899,6 +906,7 @@ Cards: background #0a0e1a, subtle border, padding 20px
      });
      return res.json();
    }
+   CRITICAL: The query function MUST be declared as "async function query" — never just "function query".
 6. Auto-refresh every 30 seconds (setInterval)
 7. Show loading skeleton on initial load
 8. Handle errors gracefully (show message in card if API fails)
