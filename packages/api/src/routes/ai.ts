@@ -274,6 +274,142 @@ export function aiRouter(pool: Pool | null): Router {
     return res.json({ ok: true, spec: parsed.data });
   });
 
+  // ── AI Smart Dashboard (HTML/CSS/JS generator) ────────────────────────────
+  r.post('/ai/smart-dashboard', async (req, res) => {
+    const aiKey   = req.headers['x-ai-key']   as string | undefined;
+    const aiModel = req.headers['x-ai-model'] as string | undefined;
+
+    if (!aiKey)   return res.status(400).json({ ok: false, error: 'Missing X-Ai-Key header' });
+    if (!aiModel) return res.status(400).json({ ok: false, error: 'Missing X-Ai-Model header' });
+
+    const { prompt } = (req.body ?? {}) as { prompt?: string };
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 5) {
+      return res.status(400).json({ ok: false, error: 'Provide a prompt of at least 5 characters' });
+    }
+
+    // Reuse catalog queries
+    let assetMetrics:  AssetMetric[]   = [];
+    let eventNsStats:  EventNsStat[]   = [];
+    let eventKinds:    EventKindStat[] = [];
+    let eventAgents:   EventAgentStat[]= [];
+    let eventSevs:     EventSevStat[]  = [];
+    let assetNames:    Map<string, string> = new Map();
+
+    if (pool) {
+      try {
+        const [amr, anr, ensr, ekr, ear, esr] = await Promise.all([
+          pool.query<AssetMetric>(
+            `SELECT asset_id, namespace, metric, count(*)::int AS pts
+             FROM metric_points
+             GROUP BY asset_id, namespace, metric
+             ORDER BY pts DESC
+             LIMIT 400`
+          ),
+          pool.query<{ asset_id: string; name: string }>(
+            'SELECT asset_id, name FROM assets ORDER BY last_seen DESC LIMIT 100'
+          ),
+          pool.query<EventNsStat>(
+            `SELECT namespace,
+                    count(*)::int          AS total,
+                    max(ts)::text          AS last_seen
+             FROM orbit_events
+             GROUP BY namespace
+             ORDER BY total DESC
+             LIMIT 20`
+          ),
+          pool.query<EventKindStat>(
+            `SELECT namespace, kind, count(*)::int AS cnt
+             FROM orbit_events
+             GROUP BY namespace, kind
+             ORDER BY cnt DESC
+             LIMIT 50`
+          ),
+          pool.query<EventAgentStat>(
+            `SELECT namespace, asset_id, count(*)::int AS cnt
+             FROM orbit_events
+             GROUP BY namespace, asset_id
+             ORDER BY cnt DESC
+             LIMIT 50`
+          ),
+          pool.query<EventSevStat>(
+            `SELECT namespace, severity, count(*)::int AS cnt
+             FROM orbit_events
+             GROUP BY namespace, severity
+             ORDER BY namespace, cnt DESC`
+          ),
+        ]);
+
+        assetMetrics = amr.rows;
+        assetNames   = new Map(anr.rows.map(a => [a.asset_id, a.name]));
+        eventNsStats = ensr.rows;
+        eventKinds   = ekr.rows;
+        eventAgents  = ear.rows;
+        eventSevs    = esr.rows;
+      } catch { /* catalog may be empty */ }
+    }
+
+    const systemPrompt = buildSmartDashboardPrompt(assetMetrics, assetNames, eventNsStats, eventKinds, eventAgents, eventSevs);
+
+    let anthropicRes: Response;
+    try {
+      anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key':         aiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type':      'application/json',
+        },
+        body: JSON.stringify({
+          model:      aiModel,
+          max_tokens: 16384,
+          system:     systemPrompt,
+          messages:   [{ role: 'user', content: prompt }],
+        }),
+      });
+    } catch (err: unknown) {
+      return res.status(502).json({ ok: false, error: 'Failed to reach Anthropic API', detail: String(err) });
+    }
+
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text().catch(() => '');
+      return res.status(502).json({
+        ok: false,
+        error: `Anthropic API error: ${anthropicRes.status}`,
+        detail: errText.slice(0, 500),
+      });
+    }
+
+    const anthropicJson = await anthropicRes.json() as { content?: Array<{ text: string }> };
+    const rawText = anthropicJson?.content?.[0]?.text ?? '';
+
+    // Extract JSON block from response
+    const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const jsonText = jsonMatch ? jsonMatch[1].trim() : rawText.trim();
+
+    let result: { html?: string; name?: string; description?: string };
+    try {
+      result = JSON.parse(jsonText);
+    } catch {
+      // If the model returned raw HTML, wrap it
+      if (rawText.includes('<!DOCTYPE') || rawText.includes('<html')) {
+        result = { html: rawText.trim(), name: 'AI Dashboard', description: prompt };
+      } else {
+        return res.status(502).json({ ok: false, error: 'AI returned invalid response', raw: rawText.slice(0, 500) });
+      }
+    }
+
+    if (!result.html) {
+      return res.status(502).json({ ok: false, error: 'AI returned no HTML', raw: rawText.slice(0, 500) });
+    }
+
+    return res.json({
+      ok: true,
+      html: result.html,
+      name: result.name ?? 'AI Dashboard',
+      description: result.description ?? prompt,
+    });
+  });
+
   return r;
 }
 
@@ -607,5 +743,180 @@ Use severities=["medium","high","critical"] for broader monitoring.
 7. Use only asset_ids that appear in the catalog above
 8. Use only metric names that appear in the catalog above
 9. Use only namespace values that appear in the catalog above
+`;
+}
+
+// ─── Smart Dashboard HTML prompt ─────────────────────────────────────────────
+
+function buildSmartDashboardPrompt(
+  assetMetrics: AssetMetric[],
+  assetNames:   Map<string, string>,
+  eventNsStats: EventNsStat[],
+  eventKinds:   EventKindStat[],
+  eventAgents:  EventAgentStat[],
+  eventSevs:    EventSevStat[],
+): string {
+
+  // Build metric catalog
+  const byAsset = new Map<string, { namespace: string; metric: string; pts: number }[]>();
+  for (const am of assetMetrics) {
+    const arr = byAsset.get(am.asset_id) ?? [];
+    arr.push({ namespace: am.namespace, metric: am.metric, pts: am.pts });
+    byAsset.set(am.asset_id, arr);
+  }
+
+  let metricCatalog = '';
+  if (byAsset.size === 0) {
+    metricCatalog = '  (no metrics registered yet)';
+  } else {
+    const lines: string[] = [];
+    for (const [assetId, mets] of byAsset) {
+      const label = assetNames.get(assetId) ?? assetId;
+      lines.push(`  Asset: ${assetId}  (${label})`);
+      for (const m of mets.slice(0, 20)) {
+        lines.push(`    - namespace=${m.namespace}  metric=${m.metric}  (${m.pts} points)`);
+      }
+    }
+    metricCatalog = lines.join('\n');
+  }
+
+  // Build event catalog
+  let eventCatalog = '';
+  if (eventNsStats.length === 0) {
+    eventCatalog = '  (no events registered yet)';
+  } else {
+    const lines: string[] = [];
+    for (const ns of eventNsStats) {
+      lines.push(`  Namespace: ${ns.namespace}  (${ns.total.toLocaleString()} events, last: ${ns.last_seen ?? 'never'})`);
+      const kinds = eventKinds.filter(k => k.namespace === ns.namespace);
+      if (kinds.length) lines.push(`    Kinds: ${kinds.map(k => `${k.kind}(${k.cnt})`).join(', ')}`);
+      const agents = eventAgents.filter(a => a.namespace === ns.namespace);
+      if (agents.length) lines.push(`    Agents: ${agents.map(a => `${a.asset_id}(${a.cnt})`).join(', ')}`);
+      const sevs = eventSevs.filter(s => s.namespace === ns.namespace);
+      if (sevs.length) lines.push(`    Severities: ${sevs.map(s => `${s.severity}(${s.cnt})`).join(', ')}`);
+    }
+    eventCatalog = lines.join('\n');
+  }
+
+  return `You are an orbit-core Smart Dashboard Designer AI.
+You generate COMPLETE, self-contained HTML pages with embedded CSS and JavaScript that visualize data from orbit-core.
+
+Output ONLY a valid JSON object with these keys:
+{
+  "name": "Short dashboard name",
+  "description": "One-line description",
+  "html": "<complete HTML page as a string>"
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## DATA CATALOG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### Metrics (asset → namespace → metric)
+${metricCatalog}
+
+### Events (namespace → kinds / agents / severities)
+${eventCatalog}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## ORBIT-CORE QUERY API
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The HTML must fetch data via:
+  POST {BASE_URL}/api/v1/query
+  Headers: Content-Type: application/json, X-Api-Key: {API_KEY}
+  Body: JSON query object
+
+### Query kinds:
+
+1. timeseries — single metric time series
+   { "kind": "timeseries", "asset_id": "...", "namespace": "...", "metric": "...", "from": ISO, "to": ISO }
+   Response: { ok, data: [{ ts, value }] }
+
+2. timeseries_multi — multiple series overlaid
+   { "kind": "timeseries_multi", "from": ISO, "to": ISO,
+     "series": [{ "asset_id": "...", "namespace": "...", "metric": "...", "label": "..." }] }
+   Response: { ok, data: { "label1": [{ ts, value }], ... } }
+
+3. events — event feed
+   { "kind": "events", "namespace": "...", "from": ISO, "to": ISO, "limit": 100 }
+   Optional filters: asset_id, severities (array), kinds (array)
+   Response: { ok, data: [{ ts, asset_id, kind, severity, title, message, ... }] }
+
+4. event_count — event count bucketed by time
+   { "kind": "event_count", "namespace": "...", "from": ISO, "to": ISO }
+   Optional filters: asset_id, severities
+   Response: { ok, data: [{ ts, count }] }
+
+Runtime variables (injected by orbit-core UI before rendering):
+  window.__ORBIT_BASE_URL__  — API base URL (e.g. "https://prod.example.com/orbit-core")
+  window.__ORBIT_API_KEY__   — API key for authentication
+  window.__ORBIT_FROM__      — ISO start time
+  window.__ORBIT_TO__        — ISO end time
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## DATA SHAPE → VISUALIZATION MAPPING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Automatically choose the right visualization:
+- Temporal data (time series) → Line chart or Area chart (Canvas API)
+- Percentage metrics (cpu.usage_pct, memory.usage_pct, disk.usage_pct) → Gauge (SVG arc or Canvas)
+- Current values / KPIs → Big number card with trend indicator
+- Lists (events, connections) → Styled table with severity badges
+- Counts over time (EPS) → Bar chart or Area chart
+- Status / state → Status cards with colored indicators
+- Comparisons → Horizontal bar chart
+- Distribution → Donut/Pie chart (Canvas/SVG)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## DESIGN SYSTEM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Background: #040713 (main), #0a0e1a (cards), #111827 (elevated)
+Text: #e5e7eb (primary), #9ca3af (secondary), #6b7280 (muted)
+Accent colors: #55f3ff (cyan/primary), #9b7cff (purple/secondary), #3b82f6 (blue)
+Severity: critical=#ef4444, high=#f97316, medium=#eab308, low=#3b82f6, info=#6b7280
+Success: #10b981, Warning: #f59e0b, Error: #ef4444
+Font: system-ui, -apple-system, sans-serif
+Border radius: 12px (cards), 8px (buttons/inputs)
+Border: 1px solid rgba(255,255,255,0.06)
+Cards: background #0a0e1a, subtle border, padding 20px
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## HTML RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Self-contained: ALL CSS in <style>, ALL JS in <script> — NO external CDN or libraries
+2. Use Canvas API for charts (create <canvas> elements, draw with getContext('2d'))
+3. Use SVG for gauges and simple shapes
+4. Access runtime vars: window.__ORBIT_BASE_URL__, __ORBIT_API_KEY__, __ORBIT_FROM__, __ORBIT_TO__
+5. Helper for API calls:
+   async function query(body) {
+     const res = await fetch(window.__ORBIT_BASE_URL__ + '/api/v1/query', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json', 'X-Api-Key': window.__ORBIT_API_KEY__ },
+       body: JSON.stringify({ ...body, from: window.__ORBIT_FROM__, to: window.__ORBIT_TO__ })
+     });
+     return res.json();
+   }
+6. Auto-refresh every 30 seconds (setInterval)
+7. Show loading skeleton on initial load
+8. Handle errors gracefully (show message in card if API fails)
+9. Responsive grid layout using CSS Grid (auto-fill, minmax)
+10. Use ONLY asset_ids, namespaces, metrics, and event kinds from the catalog above
+11. The page body background MUST be transparent (the iframe container handles the bg)
+12. Use smooth animations: transitions on hover, fade-in on load
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## RULES (NEVER VIOLATE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Output ONLY valid JSON with keys: name, description, html
+2. html must be a complete HTML page (<!DOCTYPE html>...) as a JSON string
+3. NO external dependencies — everything inline
+4. Use ONLY data from the catalog above — never invent asset_ids or metrics
+5. All fetch calls MUST use the runtime variables for URL, API key, and time range
+6. Keep the page under 800 lines of HTML
+7. Escape the HTML properly as a JSON string value
 `;
 }

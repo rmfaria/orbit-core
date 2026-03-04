@@ -349,6 +349,22 @@ const en = {
   dash_name_required:   'Dashboard name is required.',
   dash_widget_required: 'Add at least 1 widget.',
 
+  // ── AI Designer tab ──────────────────────────────────────────────────────────
+  nav_ai_designer:    '✦ AI Designer',
+  aid_title:          'AI Designer',
+  aid_desc:           'AI-powered dashboards — describe what you want and the AI builds it.',
+  aid_placeholder:    'Describe the dashboard you want (e.g. "CPU and memory overview for all hosts")',
+  aid_generate:       '✦ Generate',
+  aid_generating:     '⏳ Generating…',
+  aid_preview:        'Preview',
+  aid_save:           'Save Dashboard',
+  aid_regenerate:     '↻ Regenerate',
+  aid_saved_title:    'Saved Dashboards',
+  aid_no_dashboards:  'No smart dashboards yet. Create the first one above.',
+  aid_confirm_del:    'Delete this smart dashboard?',
+  aid_back:           '← Back',
+  aid_new:            '+ New',
+
   // ── Error states ─────────────────────────────────────────────────────────────
   err_prefix:         'Error: ',
   err_api_key:        'API protected by key. Configure the ',
@@ -408,6 +424,22 @@ const ptBR: Partial<Translations> = {
   admin_license_confirm: 'Tem certeza? O app voltara ao modo teste.',
   confirm:               'Confirmar',
   cancel:                'Cancelar',
+
+  // ai designer
+  nav_ai_designer:    '✦ AI Designer',
+  aid_title:          'AI Designer',
+  aid_desc:           'Dashboards com IA — descreva o que quer e a IA constrói.',
+  aid_placeholder:    'Descreva o dashboard que deseja (ex: "Visão geral de CPU e memória de todos os hosts")',
+  aid_generate:       '✦ Gerar',
+  aid_generating:     '⏳ Gerando…',
+  aid_preview:        'Preview',
+  aid_save:           'Salvar Dashboard',
+  aid_regenerate:     '↻ Regerar',
+  aid_saved_title:    'Dashboards Salvos',
+  aid_no_dashboards:  'Nenhum smart dashboard ainda. Crie o primeiro acima.',
+  aid_confirm_del:    'Excluir este smart dashboard?',
+  aid_back:           '← Voltar',
+  aid_new:            '+ Novo',
 
   conn_subtab_sources:   '📡 Fontes',
   conn_subtab_templates: '📋 Templates',
@@ -731,6 +763,22 @@ const es: Translations = {
   admin_license_confirm: 'Estás seguro? La app volverá al modo prueba.',
   confirm:               'Confirmar',
   cancel:                'Cancelar',
+
+  // ai designer
+  nav_ai_designer:    '✦ AI Designer',
+  aid_title:          'AI Designer',
+  aid_desc:           'Paneles con IA — describe lo que quieres y la IA lo construye.',
+  aid_placeholder:    'Describe el panel que deseas (ej: "Vista general de CPU y memoria de todos los hosts")',
+  aid_generate:       '✦ Generar',
+  aid_generating:     '⏳ Generando…',
+  aid_preview:        'Vista previa',
+  aid_save:           'Guardar Panel',
+  aid_regenerate:     '↻ Regenerar',
+  aid_saved_title:    'Paneles Guardados',
+  aid_no_dashboards:  'Sin paneles inteligentes aún. Crea el primero arriba.',
+  aid_confirm_del:    '¿Eliminar este panel inteligente?',
+  aid_back:           '← Volver',
+  aid_new:            '+ Nuevo',
 
   conn_subtab_sources:   '📡 Fuentes',
   conn_subtab_templates: '📋 Plantillas',

@@ -22,6 +22,7 @@ import { catalogAssetsHandler, catalogMetricsHandler, catalogDimensionsHandler, 
 import { metricsHandler, metricsMiddleware } from './metrics.js';
 import { metricsPromHandler } from './metrics_prom.js';
 import { dashboardsRouter } from './routes/dashboards.js';
+import { smartDashboardsRouter } from './routes/smart-dashboards.js';
 import { aiRouter } from './routes/ai.js';
 import { alertsRouter } from './routes/alerts.js';
 import { correlationsHandler } from './routes/correlations.js';
@@ -101,6 +102,7 @@ app.post('/api/v1/ingest/events', a(ingestEventsHandler));
 
 // dashboards — CRUD + AI agent proxy
 app.use('/api/v1', dashboardsRouter(pool));
+app.use('/api/v1', smartDashboardsRouter(pool));
 app.use('/api/v1', aiRouter(pool));
 
 // alerts — rules, channels, history
