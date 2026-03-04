@@ -60,6 +60,9 @@ BEGIN
       dimensions jsonb NOT NULL DEFAULT '{}'::jsonb
     ) PARTITION BY RANGE (ts);
 
+    -- Transfer sequence ownership from old table to new partitioned table
+    ALTER SEQUENCE metric_points_id_seq OWNED BY metric_points.id;
+
     -- 4c. Create monthly partitions: 2024-01 through 2027-12 + default
     v_start := '2024-01-01';
     v_end   := '2028-01-01';
