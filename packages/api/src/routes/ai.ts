@@ -402,16 +402,9 @@ export function aiRouter(pool: Pool | null): Router {
       return res.status(502).json({ ok: false, error: 'AI returned no HTML', raw: rawText.slice(0, 500) });
     }
 
-    // Post-process: fix common AI mistakes in generated HTML
-    let html = result.html;
-    // Fix: "function query" without async (AI sometimes forgets the async keyword)
-    html = html.replace(/\bfunction query\s*\(/g, 'async function query(');
-    // Avoid double-async
-    html = html.replace(/\basync async\b/g, 'async');
-
     return res.json({
       ok: true,
-      html,
+      html: result.html,
       name: result.name ?? 'AI Dashboard',
       description: result.description ?? prompt,
     });
@@ -805,9 +798,7 @@ function buildSmartDashboardPrompt(
     eventCatalog = lines.join('\n');
   }
 
-  return `You are an ELITE web designer AI for orbit-core observability dashboards.
-You create STUNNING, PRODUCTION-READY HTML pages with embedded CSS and JS that visualize real-time monitoring data.
-Your pages look like premium SaaS dashboards — Datadog, Grafana Cloud, New Relic level quality.
+  return `You are a dashboard designer for orbit-core. You generate lightweight HTML pages that use the OrbitViz SDK to render charts.
 
 OUTPUT: Return ONLY a valid JSON object:
 { "name": "Dashboard Name", "description": "One-line description", "html": "<!DOCTYPE html>..." }
@@ -825,275 +816,99 @@ ${eventCatalog}
 IMPORTANT: Use ONLY the asset_ids, namespaces, metrics and event kinds listed above. Never invent data.
 
 ═══════════════════════════════════════════════════════
- QUERY API — HOW TO FETCH DATA
+ OrbitViz SDK — VISUALIZATION LIBRARY
 ═══════════════════════════════════════════════════════
 
-All data is fetched via POST to the query endpoint.
-Runtime variables are injected into the page before it loads:
-  window.__ORBIT_BASE_URL__  — e.g. "https://prod.example.com/orbit-core"
-  window.__ORBIT_API_KEY__   — authentication key
-  window.__ORBIT_FROM__      — ISO 8601 start time
-  window.__ORBIT_TO__        — ISO 8601 end time
+The page loads orbit-viz.js automatically (injected by the host). It provides window.OrbitViz.
+OrbitViz.init() is called automatically with baseUrl, apiKey, from, to — you do NOT need to call it.
 
-─── MANDATORY BOILERPLATE (copy exactly as-is into your <script>) ───
+── AVAILABLE METHODS ──
 
-async function query(body) {
-  try {
-    const res = await fetch(window.__ORBIT_BASE_URL__ + '/api/v1/query', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Api-Key': window.__ORBIT_API_KEY__ },
-      body: JSON.stringify(Object.assign({}, body, { from: window.__ORBIT_FROM__, to: window.__ORBIT_TO__ }))
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return await res.json();
-  } catch (e) {
-    console.error('[orbit] query error:', e);
-    return { ok: false, error: String(e) };
-  }
-}
+Each method takes a CSS selector and an options object. The library handles:
+  - querying the orbit-core API
+  - rendering (Canvas 2D, SVG, or DOM)
+  - auto-refresh every 30s
+  - loading spinners and error states
+  - DPR-aware canvas scaling
+  - card wrapper with title and unit label
 
-─── QUERY KINDS AND RESPONSE SHAPES ───
+1. OrbitViz.line(selector, opts)
+   Timeseries line chart (with area fill). For metrics over time.
+   opts: { metric, asset, namespace, title, unit, color, height }
+   Example: OrbitViz.line('#cpu', { metric: 'cpu_usage', asset: 'host:server-01', namespace: 'nagios', title: 'CPU Usage', unit: '%' })
 
-1. TIMESERIES — single metric over time
-   Query:    { kind: "timeseries", asset_id: "host:xxx", namespace: "nagios", metric: "load1" }
-   Response: { ok: true, data: [ { ts: "2025-01-01T00:00:00Z", value: 1.23 }, ... ] }
+2. OrbitViz.area(selector, opts)
+   Same as line() but always with area fill. Alias for line with fill:true.
 
-2. TIMESERIES_MULTI — multiple series overlaid (for comparison charts)
-   Query:    { kind: "timeseries_multi", series: [
-                { asset_id: "host:a", namespace: "nagios", metric: "load1", label: "Server A" },
-                { asset_id: "host:b", namespace: "nagios", metric: "load1", label: "Server B" }
-              ] }
-   Response: { ok: true, data: { "Server A": [{ ts, value }], "Server B": [{ ts, value }] } }
+3. OrbitViz.multiLine(selector, opts)
+   Multi-series line chart. For comparing metrics across assets.
+   opts: { series: [{ asset_id, namespace, metric, label }], title, unit, colors, height }
+   Example: OrbitViz.multiLine('#compare', { title: 'CPU Comparison', series: [
+     { asset_id: 'host:server-01', namespace: 'nagios', metric: 'cpu_usage', label: 'Server 01' },
+     { asset_id: 'host:server-02', namespace: 'nagios', metric: 'cpu_usage', label: 'Server 02' }
+   ]})
 
-3. EVENTS — event feed (security alerts, logs, connections)
-   Query:    { kind: "events", namespace: "wazuh", limit: 100 }
-   Optional: asset_id, severities: ["high","critical"], kinds: ["firewall"]
-   Response: { ok: true, data: [{ ts, asset_id, kind, severity, title, message }] }
+4. OrbitViz.bar(selector, opts)
+   Bar chart comparing multiple metrics. Uses last value of each metric.
+   opts: { metrics: [{ metric, asset, namespace, label }], title, unit, colors, height }
+   OR: { metrics: ['cpu_usage', 'memory_usage'], asset, namespace, title }
+   Example: OrbitViz.bar('#bars', { title: 'Resource Usage', asset: 'host:server-01', namespace: 'nagios', metrics: [
+     { metric: 'cpu_usage', label: 'CPU' },
+     { metric: 'memory_usage', label: 'Memory' },
+     { metric: 'disk_usage', label: 'Disk' }
+   ], unit: '%' })
 
-4. EVENT_COUNT — event volume over time (EPS charts)
-   Query:    { kind: "event_count", namespace: "wazuh" }
-   Optional: asset_id, severities
-   Response: { ok: true, data: [{ ts: "...", count: 42 }] }
+5. OrbitViz.gauge(selector, opts)
+   Gauge arc for percentage values. Auto-colors: green (<50%), yellow (50-75%), orange (75-90%), red (>90%).
+   opts: { metric, asset, namespace, title, unit, max, size }
+   Example: OrbitViz.gauge('#disk', { metric: 'disk_usage', asset: 'host:server-01', namespace: 'nagios', title: 'Disk', unit: '%' })
 
-═══════════════════════════════════════════════════════
- DESIGN SYSTEM — ORBIT CORE DARK THEME
-═══════════════════════════════════════════════════════
+6. OrbitViz.kpi(selector, opts)
+   Big number KPI card showing the latest value.
+   opts: { metric, asset, namespace, title, unit, subtitle, color, aggregate, queryKind }
+   Use aggregate:'sum' to sum all values instead of last. Use queryKind:'event_count' for EPS total.
+   Example: OrbitViz.kpi('#uptime', { metric: 'uptime', asset: 'host:server-01', namespace: 'nagios', title: 'Uptime', unit: 'sec' })
 
-COLORS:
-  --bg-main: #040713        --bg-card: #0a0e1a       --bg-elevated: #111827
-  --text-primary: #e5e7eb   --text-secondary: #9ca3af --text-muted: #6b7280
-  --accent-cyan: #55f3ff    --accent-purple: #9b7cff  --accent-blue: #3b82f6
-  --green: #10b981          --yellow: #f59e0b         --red: #ef4444
-  --sev-critical: #ef4444   --sev-high: #f97316       --sev-medium: #eab308
-  --sev-low: #3b82f6        --sev-info: #6b7280
+7. OrbitViz.events(selector, opts)
+   Event table with severity badges. For security alerts, logs, etc.
+   opts: { namespace, asset, severities, kinds, limit, title, height }
+   Example: OrbitViz.events('#alerts', { namespace: 'wazuh', title: 'Security Events', limit: 20 })
 
-CHART PALETTE (use these in order for multi-series):
-  ['#55f3ff','#9b7cff','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899','#a78bfa']
+8. OrbitViz.eps(selector, opts)
+   Events Per Second line chart. Uses event_count query.
+   opts: { namespace, asset, severities, title, color, height }
+   Example: OrbitViz.eps('#eps', { namespace: 'wazuh', title: 'Events/sec' })
 
-TYPOGRAPHY: font-family: system-ui, -apple-system, sans-serif
-BORDERS: 1px solid rgba(255,255,255,0.06); border-radius: 12px (cards), 8px (small)
-BODY: background: transparent (the parent container handles the background)
+9. OrbitViz.donut(selector, opts)
+   Donut chart showing event distribution. Default groups by severity.
+   opts: { namespace, asset, groupBy, title, limit, items }
+   groupBy: 'severity' (default), 'kind', 'asset_id'
+   Example: OrbitViz.donut('#sev', { namespace: 'wazuh', title: 'By Severity', groupBy: 'severity' })
 
-═══════════════════════════════════════════════════════
- PROVEN CODE PATTERNS — USE THESE EXACTLY
-═══════════════════════════════════════════════════════
+10. OrbitViz.table(selector, opts)
+    Alias for events() — same event table.
 
-─── PATTERN 1: LINE CHART (Canvas 2D) ───
-Works for timeseries and event_count data.
-
-function drawLineChart(canvas, datasets, options = {}) {
-  // datasets = [{ label, data: [{ts,value}], color }]
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width = canvas.parentElement.clientWidth;
-  const H = canvas.height = options.height || 200;
-  const pad = { top: 10, right: 10, bottom: 30, left: 50 };
-  const cw = W - pad.left - pad.right;
-  const ch = H - pad.top - pad.bottom;
-  ctx.clearRect(0, 0, W, H);
-
-  // Compute global min/max
-  let allVals = datasets.flatMap(d => d.data.map(p => p.value));
-  let allTs = datasets.flatMap(d => d.data.map(p => new Date(p.ts).getTime()));
-  if (!allVals.length) { ctx.fillStyle='#6b7280'; ctx.font='13px system-ui'; ctx.fillText('No data',W/2-25,H/2); return; }
-  let minV = Math.min(...allVals), maxV = Math.max(...allVals);
-  if (minV === maxV) { minV -= 1; maxV += 1; }
-  let minT = Math.min(...allTs), maxT = Math.max(...allTs);
-  if (minT === maxT) { minT -= 1000; maxT += 1000; }
-
-  // Y-axis labels
-  ctx.fillStyle = '#6b7280'; ctx.font = '11px system-ui'; ctx.textAlign = 'right';
-  for (let i = 0; i <= 4; i++) {
-    const v = minV + (maxV - minV) * (1 - i / 4);
-    const y = pad.top + (i / 4) * ch;
-    ctx.fillText(v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(1), pad.left - 6, y + 4);
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.beginPath();
-    ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
-  }
-
-  // X-axis labels
-  ctx.textAlign = 'center';
-  const steps = Math.min(6, Math.floor(cw / 80));
-  for (let i = 0; i <= steps; i++) {
-    const t = minT + (maxT - minT) * (i / steps);
-    const x = pad.left + (i / steps) * cw;
-    const d = new Date(t);
-    ctx.fillText(d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0'), x, H - 6);
-  }
-
-  // Draw each dataset
-  datasets.forEach((ds, di) => {
-    if (!ds.data.length) return;
-    const sorted = [...ds.data].sort((a,b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
-    ctx.beginPath(); ctx.strokeStyle = ds.color; ctx.lineWidth = 2; ctx.lineJoin = 'round';
-    sorted.forEach((p, i) => {
-      const x = pad.left + ((new Date(p.ts).getTime() - minT) / (maxT - minT)) * cw;
-      const y = pad.top + ((maxV - p.value) / (maxV - minV)) * ch;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // Fill area under line with gradient
-    if (options.fill !== false) {
-      const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ch);
-      grad.addColorStop(0, ds.color + '30'); grad.addColorStop(1, ds.color + '00');
-      const last = sorted[sorted.length - 1];
-      const lastX = pad.left + ((new Date(last.ts).getTime() - minT) / (maxT - minT)) * cw;
-      ctx.lineTo(lastX, pad.top + ch); ctx.lineTo(pad.left + ((new Date(sorted[0].ts).getTime() - minT) / (maxT - minT)) * cw, pad.top + ch);
-      ctx.fillStyle = grad; ctx.fill();
-    }
-  });
-
-  // Legend
-  if (datasets.length > 1) {
-    let lx = pad.left;
-    datasets.forEach(ds => {
-      ctx.fillStyle = ds.color; ctx.fillRect(lx, H - 18, 10, 3); ctx.fillStyle = '#9ca3af';
-      ctx.font = '10px system-ui'; ctx.textAlign = 'left';
-      ctx.fillText(ds.label, lx + 14, H - 14); lx += ctx.measureText(ds.label).width + 30;
-    });
-  }
-}
-
-─── PATTERN 2: GAUGE (SVG) ───
-For percentage metrics (cpu.usage_pct, memory.usage_pct, disk.usage_pct).
-
-function createGaugeSVG(container, value, max, label, unit) {
-  const pct = Math.min(value / max, 1);
-  const color = pct < 0.5 ? '#10b981' : pct < 0.75 ? '#f59e0b' : '#ef4444';
-  const r = 60, cx = 70, cy = 70, sw = 10;
-  const startAngle = Math.PI * 0.75, endAngle = Math.PI * 2.25;
-  const valAngle = startAngle + (endAngle - startAngle) * pct;
-  function arc(angle) { return (cx + r * Math.cos(angle)) + ',' + (cy + r * Math.sin(angle)); }
-  const bgD = 'M' + arc(startAngle) + ' A' + r + ',' + r + ' 0 1 1 ' + arc(endAngle);
-  const large = (valAngle - startAngle) > Math.PI ? 1 : 0;
-  const valD = 'M' + arc(startAngle) + ' A' + r + ',' + r + ' 0 ' + large + ' 1 ' + arc(valAngle);
-  container.innerHTML =
-    '<svg viewBox="0 0 140 100" style="width:100%;max-width:180px">' +
-    '<path d="' + bgD + '" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="' + sw + '" stroke-linecap="round"/>' +
-    '<path d="' + valD + '" fill="none" stroke="' + color + '" stroke-width="' + sw + '" stroke-linecap="round"/>' +
-    '<text x="70" y="68" text-anchor="middle" fill="' + color + '" font-size="22" font-weight="700" font-family="system-ui">' + value.toFixed(1) + '</text>' +
-    '<text x="70" y="84" text-anchor="middle" fill="#6b7280" font-size="10" font-family="system-ui">' + (unit || '%') + '</text>' +
-    '</svg>' +
-    '<div style="text-align:center;font-size:11px;color:#9ca3af;margin-top:4px">' + label + '</div>';
-}
-
-─── PATTERN 3: KPI CARD ───
-Big number with optional trend arrow.
-
-function renderKPI(container, value, label, unit, prevValue) {
-  const formatted = value >= 1000000 ? (value/1000000).toFixed(1)+'M' : value >= 1000 ? (value/1000).toFixed(1)+'k' : value.toFixed(1);
-  let trend = '';
-  if (prevValue !== undefined && prevValue !== null) {
-    const delta = ((value - prevValue) / (prevValue || 1)) * 100;
-    const arrow = delta >= 0 ? '↑' : '↓';
-    const tColor = delta >= 0 ? '#10b981' : '#ef4444';
-    trend = '<span style="font-size:12px;color:' + tColor + '">' + arrow + Math.abs(delta).toFixed(1) + '%</span>';
-  }
-  container.innerHTML = '<div style="font-size:32px;font-weight:800;color:#e5e7eb;line-height:1">' + formatted +
-    '<span style="font-size:14px;color:#6b7280;margin-left:4px">' + (unit||'') + '</span></div>' +
-    trend + '<div style="font-size:11px;color:#9ca3af;margin-top:6px">' + label + '</div>';
-}
-
-─── PATTERN 4: EVENT TABLE ───
-
-function renderEventTable(container, events) {
-  if (!events.length) { container.innerHTML = '<div style="color:#6b7280;padding:20px;text-align:center">No events</div>'; return; }
-  const sevColor = {critical:'#ef4444',high:'#f97316',medium:'#eab308',low:'#3b82f6',info:'#6b7280'};
-  const sevBg = {critical:'#450a0a',high:'#431407',medium:'#451a03',low:'#172554',info:'#1f2937'};
-  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>';
-  ['Time','Asset','Severity','Title'].forEach(h => html += '<th style="text-align:left;padding:8px 6px;color:#6b7280;border-bottom:1px solid rgba(255,255,255,0.06)">' + h + '</th>');
-  html += '</tr></thead><tbody>';
-  events.slice(0, 50).forEach(ev => {
-    const t = new Date(ev.ts);
-    const time = t.getHours().toString().padStart(2,'0') + ':' + t.getMinutes().toString().padStart(2,'0') + ':' + t.getSeconds().toString().padStart(2,'0');
-    const sev = ev.severity || 'info';
-    html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.03)">';
-    html += '<td style="padding:6px;color:#9ca3af;white-space:nowrap">' + time + '</td>';
-    html += '<td style="padding:6px;color:#9ca3af">' + (ev.asset_id||'-') + '</td>';
-    html += '<td style="padding:6px"><span style="background:' + (sevBg[sev]||'#1f2937') + ';color:' + (sevColor[sev]||'#6b7280') + ';padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;text-transform:uppercase">' + sev + '</span></td>';
-    html += '<td style="padding:6px;color:#e5e7eb;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (ev.title||'') + '</td>';
-    html += '</tr>';
-  });
-  html += '</tbody></table>';
-  container.innerHTML = html;
-}
-
-─── PATTERN 5: BAR CHART (Canvas 2D) ───
-For event_count / EPS data: [{ts, count}]
-
-function drawBarChart(canvas, data, color, options = {}) {
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width = canvas.parentElement.clientWidth;
-  const H = canvas.height = options.height || 160;
-  const pad = { top: 10, right: 10, bottom: 30, left: 45 };
-  const cw = W - pad.left - pad.right;
-  const ch = H - pad.top - pad.bottom;
-  ctx.clearRect(0, 0, W, H);
-  if (!data.length) { ctx.fillStyle='#6b7280'; ctx.font='13px system-ui'; ctx.fillText('No data',W/2-25,H/2); return; }
-  const maxV = Math.max(...data.map(d => d.count || d.value || 0), 1);
-  const barW = Math.max(1, (cw / data.length) - 1);
-  data.forEach((d, i) => {
-    const v = d.count || d.value || 0;
-    const bh = (v / maxV) * ch;
-    const x = pad.left + (i / data.length) * cw;
-    const y = pad.top + ch - bh;
-    ctx.fillStyle = color + 'cc'; ctx.fillRect(x, y, barW, bh);
-  });
-  // Y-axis
-  ctx.fillStyle = '#6b7280'; ctx.font = '10px system-ui'; ctx.textAlign = 'right';
-  for (let i = 0; i <= 3; i++) {
-    const v = maxV * (1 - i/3);
-    ctx.fillText(v >= 1000 ? (v/1000).toFixed(0)+'k' : Math.round(v).toString(), pad.left - 4, pad.top + (i/3)*ch + 4);
-  }
-}
-
-─── PATTERN 6: DONUT CHART (Canvas 2D) ───
-
-function drawDonut(canvas, slices, options = {}) {
-  // slices = [{ label, value, color }]
-  const ctx = canvas.getContext('2d');
-  const S = options.size || 160;
-  canvas.width = S; canvas.height = S;
-  const cx = S/2, cy = S/2, r = S/2 - 15, inner = r * 0.6;
-  const total = slices.reduce((s,d) => s + d.value, 0);
-  if (!total) { ctx.fillStyle='#6b7280'; ctx.font='12px system-ui'; ctx.textAlign='center'; ctx.fillText('No data',cx,cy); return; }
-  let angle = -Math.PI / 2;
-  slices.forEach(s => {
-    const sweep = (s.value / total) * Math.PI * 2;
-    ctx.beginPath(); ctx.moveTo(cx + inner * Math.cos(angle), cy + inner * Math.sin(angle));
-    ctx.arc(cx, cy, r, angle, angle + sweep); ctx.arc(cx, cy, inner, angle + sweep, angle, true);
-    ctx.fillStyle = s.color; ctx.fill();
-    angle += sweep;
-  });
-  // Center total
-  ctx.fillStyle = '#e5e7eb'; ctx.font = 'bold 20px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText(total >= 1000 ? (total/1000).toFixed(1)+'k' : total.toString(), cx, cy + 2);
-  ctx.fillStyle = '#6b7280'; ctx.font = '10px system-ui';
-  ctx.fillText('total', cx, cy + 16);
-}
+11. OrbitViz.layout(selector, { cols, gap })
+    Apply responsive CSS grid. Auto-adapts: 3→2→1 columns.
+    Example: OrbitViz.layout('#grid', { cols: 3, gap: 16 })
 
 ═══════════════════════════════════════════════════════
- PAGE STRUCTURE TEMPLATE — FOLLOW THIS SKELETON
+ DATA → VISUALIZATION MAPPING
+═══════════════════════════════════════════════════════
+
+Use the catalog above and AUTOMATICALLY choose:
+- metric with "usage" or "pct" or "%" → gauge()
+- metric over time → line() or area()
+- multiple same metrics, different assets → multiLine()
+- current/latest value → kpi()
+- event feed / security alerts → events()
+- events per second → eps()
+- severity distribution → donut() with groupBy:'severity'
+- event type distribution → donut() with groupBy:'kind'
+- comparing values across metrics → bar()
+
+═══════════════════════════════════════════════════════
+ HTML TEMPLATE — FOLLOW THIS STRUCTURE
 ═══════════════════════════════════════════════════════
 
 <!DOCTYPE html>
@@ -1104,60 +919,43 @@ function drawDonut(canvas, slices, options = {}) {
 <title>Dashboard Name</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: transparent; font-family: system-ui, -apple-system, sans-serif; color: #e5e7eb; padding: 20px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-  .card { background: #0a0e1a; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 20px; animation: fadeIn 0.4s ease; }
-  .card:hover { border-color: rgba(85,243,255,0.15); }
-  .card-title { font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
-  .card-wide { grid-column: span 2; }
-  .shimmer { height: 160px; background: linear-gradient(90deg,#111827 25%,#1a2235 50%,#111827 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 8px; }
-  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-  @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
-  .error { color: #ef4444; font-size: 12px; padding: 12px; }
-  canvas { display: block; }
-  @media (max-width: 700px) { .card-wide { grid-column: span 1; } .grid { grid-template-columns: 1fr; } }
+  body { background: transparent; font-family: 'Inter', system-ui, sans-serif; color: #e2e8f0; padding: 20px; }
+  h1 { font-size: 18px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .wide { grid-column: span 2; }
 </style>
 </head>
 <body>
-<div class="grid" id="grid">
-  <!-- Cards are created dynamically by JS -->
+<h1>Dashboard Title</h1>
+<div class="grid">
+  <div id="chart1"></div>
+  <div id="chart2"></div>
+  <div id="chart3"></div>
+  <div id="chart4" class="wide"></div>
 </div>
 <script>
-  // 1. Paste the query() function from above EXACTLY
-  // 2. Paste the drawing functions you need
-  // 3. Create cards, fetch data, render
-  // 4. Set up auto-refresh: setInterval(refresh, 30000);
+  OrbitViz.line('#chart1', { ... });
+  OrbitViz.gauge('#chart2', { ... });
+  OrbitViz.kpi('#chart3', { ... });
+  OrbitViz.events('#chart4', { ... });
 </script>
 </body>
 </html>
 
 ═══════════════════════════════════════════════════════
- SMART DATA → VISUALIZATION MAPPING
-═══════════════════════════════════════════════════════
-
-Look at the user's request + the catalog and AUTOMATICALLY choose:
-- metric with "usage_pct" or "%" → GAUGE (createGaugeSVG)
-- metric timeseries over time → LINE CHART (drawLineChart) — use area fill for single series
-- multiple metrics same type, different hosts → MULTI-LINE CHART (timeseries_multi query)
-- current value / latest reading → KPI CARD (renderKPI) with last 2 points for trend
-- event feed / security alerts → EVENT TABLE (renderEventTable)
-- events per second / volume → BAR CHART (drawBarChart) with event_count query
-- severity distribution → DONUT CHART (drawDonut)
-- comparisons between hosts → grouped KPI cards or multi-line chart
-
-═══════════════════════════════════════════════════════
- RULES — NEVER VIOLATE
+ RULES
 ═══════════════════════════════════════════════════════
 
 1. Output ONLY valid JSON: { "name": "...", "description": "...", "html": "..." }
 2. html MUST be a complete HTML page starting with <!DOCTYPE html>
-3. ZERO external dependencies — NO CDN, NO libraries. Everything inline.
-4. The query() function MUST be declared with "async" keyword. Always "async function query(...)".
-5. ALL functions that call query() MUST also be "async" and use "await query(...)".
-6. Use ONLY asset_ids, namespaces, metrics from the catalog above. NEVER invent data.
-7. ALWAYS include: loading states (shimmer), error handling, auto-refresh (30s), responsive grid.
-8. body background MUST be transparent.
-9. Use the EXACT drawing functions from the patterns above — they are TESTED and WORKING.
-10. Keep HTML under 800 lines total.
+3. NEVER write Canvas, SVG, or fetch() code manually. ALWAYS use OrbitViz.* methods.
+4. OrbitViz.init() is called automatically — do NOT call it yourself.
+5. Use ONLY asset_ids, namespaces, metrics from the catalog above. NEVER invent data.
+6. body background MUST be transparent.
+7. Keep HTML under 200 lines — OrbitViz handles all rendering logic.
+8. Use class="wide" for wider charts like events tables or multi-line comparisons.
+9. Create a visually balanced dashboard with a mix of chart types appropriate to the data.
 `;
 }

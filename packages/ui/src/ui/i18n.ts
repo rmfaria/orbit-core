@@ -299,7 +299,6 @@ const en = {
   admin_license_remove:  'Remove License',
   admin_license_confirm: 'Are you sure? The app will revert to trial mode.',
   confirm:               'Confirm',
-  cancel:                'Cancel',
 
   // ── Sources tab (extra) ───────────────────────────────────────────────────────
   sources_active:      'ACTIVE',
@@ -762,7 +761,6 @@ const es: Translations = {
   admin_license_remove:  'Eliminar Licencia',
   admin_license_confirm: 'Estás seguro? La app volverá al modo prueba.',
   confirm:               'Confirmar',
-  cancel:                'Cancelar',
 
   // ai designer
   nav_ai_designer:    '✦ AI Designer',

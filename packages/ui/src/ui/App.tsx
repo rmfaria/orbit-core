@@ -4547,7 +4547,17 @@ function SmartDashboardIframe({ html, timePreset }: { html: string; timePreset: 
       window.__ORBIT_API_KEY__  = ${JSON.stringify(apiKey)};
       window.__ORBIT_FROM__     = ${JSON.stringify(from)};
       window.__ORBIT_TO__       = ${JSON.stringify(to)};
-      console.log('[orbit-iframe] base=' + window.__ORBIT_BASE_URL__ + ' from=' + window.__ORBIT_FROM__ + ' to=' + window.__ORBIT_TO__);
+    </script>
+    <script src="${baseUrl}/orbit-viz.js"></script>
+    <script>
+      if (window.OrbitViz) {
+        OrbitViz.init({
+          baseUrl: ${JSON.stringify(baseUrl + '/api/v1')},
+          apiKey:  ${JSON.stringify(apiKey)},
+          from:    ${JSON.stringify(from)},
+          to:      ${JSON.stringify(to)},
+        });
+      }
     </script>`;
 
     const injected = html.replace('</head>', injection + '\n</head>');
