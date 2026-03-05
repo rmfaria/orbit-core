@@ -1,88 +1,194 @@
 digraph orbitcore {
-  rankdir=LR;
-  graph [fontname="Inter,Helvetica,Arial", fontsize=10, labelloc=t, label="orbit-core — Architecture (educational)", bgcolor="white"];
-  node  [shape=box, style="rounded,filled", fontname="Inter,Helvetica,Arial", fontsize=10, fillcolor="#F8FAFC", color="#CBD5E1"];
-  edge  [color="#94A3B8"];
+  rankdir=TB;
+  graph [
+    fontname="Inter,Helvetica,Arial", fontsize=12, labelloc=t,
+    label="ORBIT CORE — ARCHITECTURE\nUnified Observability Platform | v1.6",
+    bgcolor="#040713", fontcolor="#e2e8f0", pad=0.5
+  ];
+  node [
+    shape=box, style="rounded,filled", fontname="Inter,Helvetica,Arial",
+    fontsize=9, fillcolor="#0d1528", color="#1a2540", fontcolor="#e2e8f0"
+  ];
+  edge [color="#334155", fontname="Inter,Helvetica,Arial", fontsize=7, fontcolor="#8892b0"];
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Sources (systems that produce signals)
-  // ───────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SOURCES (left column)
+  // ═══════════════════════════════════════════════════════════════════════════
   subgraph cluster_sources {
-    label="Sources (signals)";
-    color="#E2E8F0";
-    NAGIOS     [label="Nagios Core\nperfdata + HARD state changes"];
-    WAZUH      [label="Wazuh Manager\nalerts.json + OpenSearch"];
-    FORTIGATE  [label="Fortigate\n(syslog → Wazuh)"];
-    N8N        [label="n8n\n(executions + errors)"];
+    label="Sources"; labeljust=l; fontcolor="#fbbf24"; color="#fbbf2440";
+    style=dashed;
+
+    NAGIOS      [label="Nagios XI\nHost checks + metrics",       fillcolor="#1a0a2e", color="#9b7cff"];
+    WAZUH       [label="Wazuh / FortiGate\nSecurity alerts (SIEM)",  fillcolor="#2a0a0a", color="#f87171"];
+    SURICATA    [label="Suricata IDS\nEVE JSON network events",  fillcolor="#0a2a2a", color="#34d399"];
+    N8N         [label="n8n Workflows\nPull-mode automation",    fillcolor="#0a1a2a", color="#38bdf8"];
+    OTEL        [label="OpenTelemetry (OTLP)\n",                fillcolor="#2a1a0a", color="#fb923c"];
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Connectors (deterministic, cron-friendly)
-  // ───────────────────────────────────────────────────────────────────────────
-  subgraph cluster_connectors {
-    label="Connectors / Shippers (no-AI)";
-    color="#E2E8F0";
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SHIPPERS (second column)
+  // ═══════════════════════════════════════════════════════════════════════════
+  subgraph cluster_shippers {
+    label="Shippers"; labeljust=l; fontcolor="#fbbf24"; color="#fbbf2440";
+    style=dashed;
 
-    MS [label="Nagios metrics shipper (Python)\nship_metrics.py\nreads perfdata files\n→ ingest/metrics"];
-    ES [label="Nagios events shipper (Python)\nship_events.py\nreads JSONL spool\n→ ingest/events"];
-    NH [label="Nagios HARD event writer (Python)\nwrite_hard_event.py\nglobal event handler\n→ neb-hard-events.jsonl"];
-
-    WZ [label="Wazuh events shipper (Python)\nship_events.py\nreads alerts.json\n→ ingest/events"];
-    WZO [label="Wazuh OpenSearch shipper (optional)\nship_events_opensearch.py\nwindowed queries\n→ ingest/events"];
-
-    N8S [label="n8n shipper (Python)\nship_events.py\npoll REST API\n→ ingest/events"];
-    N8T [label="n8n Error Trigger workflow\norbit_error_reporter.json\nrealtime errors\n→ ingest/events"];
+    NAGIOS_SHIP    [label="nagios-shipper\nPython · push · cron",     fillcolor="#0d1528", color="#9b7cff"];
+    WAZUH_SHIP     [label="wazuh-shipper\nPython · push · cron",     fillcolor="#0d1528", color="#f87171"];
+    SURICATA_SHIP  [label="suricata-shipper\nPython · push · cron",  fillcolor="#0d1528", color="#34d399"];
+    N8N_ENGINE     [label="n8n engine\nTypeScript · pull",           fillcolor="#0d1528", color="#38bdf8"];
+    SDK_DIRECT     [label="SDK / Direct\n",                         fillcolor="#0d1528", color="#fb923c"];
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // Edge (deployment boundary)
-  // ───────────────────────────────────────────────────────────────────────────
-  subgraph cluster_edge {
-    label="Edge";
-    color="#E2E8F0";
-    RP [label="Reverse proxy (Traefik/nginx)\nTLS + BasicAuth\n(optional) subpath routing"];
+  // ═══════════════════════════════════════════════════════════════════════════
+  // API SERVER (center)
+  // ═══════════════════════════════════════════════════════════════════════════
+  subgraph cluster_api {
+    label="orbit-core API"; labeljust=l; fontcolor="#55f3ff"; color="#55f3ff40";
+    style=dashed;
+
+    NGINX [label="nginx\nHTTPS termination · static files\nreverse proxy · /orbit-core/*",
+           fillcolor="#1a2a1a", color="#4ade80"];
+
+    MIDDLEWARE [label="Middleware Chain\nCORS → JSON → Pino → Metrics → ReqID\nRate Limit (300/min) → License → Auth",
+               fillcolor="#1a1a2e", color="#818cf8"];
+
+    AUTH [label="Auth System\nFirst-access setup · scrypt hash\nAPI key (env or DB) · 60s cache",
+          fillcolor="#2a0a1a", color="#f472b6"];
+
+    subgraph cluster_routes_ai {
+      label=""; color="#1a254040";
+
+      ROUTES [label="Routes\n\n/ingest/*\n/query\n/catalog\n/connectors\n/dashboards\n/alerts\n/ai\n/otlp",
+              fillcolor="#0d1528", color="#55f3ff"];
+
+      AI_ENGINE [label="AI Engine\n\nAnthropic API\nConnector Gen\nSmart Filter\nEvent Analysis",
+                 fillcolor="#0d1528", color="#a78bfa"];
+    }
+
+    COMPONENTS [label="Components\n\nCatalog · Connectors · Alerts\nDashboard Builder · Settings · License",
+                fillcolor="#1a1a2e", color="#818cf8"];
   }
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // orbit-core
-  // ───────────────────────────────────────────────────────────────────────────
-  subgraph cluster_core {
-    label="orbit-core";
-    color="#E2E8F0";
+  // ═══════════════════════════════════════════════════════════════════════════
+  // UI (right column)
+  // ═══════════════════════════════════════════════════════════════════════════
+  subgraph cluster_ui {
+    label="orbit-core UI (SPA)"; labeljust=l; fontcolor="#55f3ff"; color="#55f3ff40";
+    style=dashed;
 
-    UI [label="UI (Vite/React)\nHome + Sources\n+ Explore (events/metrics)"]; 
-    STUDIO [label="orbit-studio (static UI)\npropose DashboardSpec\nvalidate via API"];
+    AUTHGATE [label="AuthGate\nFirst-access setup · Login form\nscrypt password · API key → localStorage",
+              fillcolor="#1a2a1a", color="#4ade80"];
 
-    API [label="API (Node/Express)\n\n- ingest/metrics + ingest/events\n- query (orbitql, safe limits)\n- catalog/*\n- dashboards/validate\n- metrics/prom\n- correlations (optional)"]; 
+    DASHBOARD [label="Dashboard\nReal-time charts · Volume counters\nTimeseries · Severity breakdown",
+               fillcolor="#1a1a2e", color="#818cf8"];
 
-    PG [shape=cylinder, label="Postgres 16\nCanonical schema\nassets / metric_points / orbit_events\nrollups: 5m + 1h\nretention: 14d/90d/180d" , fillcolor="#EEF2FF", color="#A5B4FC"];
+    LIVEFEED [label="Live Feed\nEvents stream\nNamespace filters",
+              fillcolor="#1a1a2e", color="#818cf8"];
+
+    SOURCES_TAB [label="Sources\nNagios · Wazuh\nSuricata · n8n",
+                 fillcolor="#2a1a0a", color="#fb923c"];
   }
 
-  // Flows
-  NAGIOS -> NH;
-  NH -> ES;
-  NAGIOS -> MS;
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DATABASE
+  // ═══════════════════════════════════════════════════════════════════════════
+  subgraph cluster_db {
+    label="Storage"; labeljust=l; fontcolor="#4ade80"; color="#4ade8040";
+    style=dashed;
 
-  WAZUH -> WZ;
-  WAZUH -> WZO [style=dashed];
-  FORTIGATE -> WAZUH;
+    PG [shape=cylinder,
+        label="PostgreSQL 16\n\norbit_events\nmetric_points\norbit_settings",
+        fillcolor="#0a1a0a", color="#4ade80"];
 
-  N8N -> N8S;
-  N8N -> N8T;
+    MIGRATIONS [label="Migrations\n\n0001..0020\nstorage-pg\nauto on boot",
+                fillcolor="#0a1a0a", color="#4ade80"];
 
-  MS -> RP [label="POST /api/v1/ingest/metrics"];
-  ES -> RP [label="POST /api/v1/ingest/events"];
-  WZ -> RP [label="POST /api/v1/ingest/events"];
-  WZO -> RP [style=dashed, label="POST /api/v1/ingest/events"];
-  N8S -> RP [label="POST /api/v1/ingest/events"];
-  N8T -> RP [label="POST /api/v1/ingest/events"];
+    TABLES [label="Tables: events · metrics · settings · connectors · dashboards · alerts",
+            fillcolor="#0d1528", color="#1a2540"];
+  }
 
-  RP -> API;
-  RP -> UI;
-  RP -> STUDIO;
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EVENT PIPELINE
+  // ═══════════════════════════════════════════════════════════════════════════
+  subgraph cluster_push_pipeline {
+    label="EVENT PIPELINE — Push Mode (Nagios / Wazuh / Suricata)";
+    labeljust=l; fontcolor="#f87171"; color="#f8717140"; style=dashed;
 
-  UI -> RP [label="fetch catalog + query"];
-  STUDIO -> RP [label="POST dashboards/validate"];
+    LOGFILE   [label="Log File\nJSON / EVE",     fillcolor="#0d1528", color="#1a2540"];
+    SHIPPER   [label="Shipper\nbyte offset\nstate.json", fillcolor="#0d1528", color="#1a2540"];
+    POST_ING  [label="POST /ingest\nbatch=200\nX-Api-Key", fillcolor="#0d1528", color="#1a2540"];
+    PG_EVENTS [label="PostgreSQL\norbit_events",  fillcolor="#0d1528", color="#1a2540"];
+  }
 
-  API -> PG;
+  subgraph cluster_pull_pipeline {
+    label="Pull Mode (n8n)";
+    labeljust=l; fontcolor="#38bdf8"; color="#38bdf840"; style=dashed;
+
+    SCHEDULER  [label="Scheduler\nworker.ts\n30s interval",  fillcolor="#0d1528", color="#1a2540"];
+    EXT_API    [label="External API\nHTTP fetch\nDSL mapping", fillcolor="#0d1528", color="#1a2540"];
+    NORMALIZE  [label="Normalize\nconnector\nspec.json",     fillcolor="#0d1528", color="#1a2540"];
+    PG_PULL    [label="PostgreSQL\norbit_events",             fillcolor="#0d1528", color="#1a2540"];
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INFRASTRUCTURE
+  // ═══════════════════════════════════════════════════════════════════════════
+  subgraph cluster_infra {
+    label="Infrastructure"; labeljust=l; fontcolor="#fbbf24"; color="#fbbf2440";
+    style=dashed;
+
+    COMPOSE [label="Docker Compose (Local)\n\npostgres · migrate · api · ui\nHTTPS (self-signed) · ports 80/443",
+             fillcolor="#1a0a1a", color="#f472b6"];
+
+    SWARM   [label="Docker Swarm (Prod)\n\nTraefik reverse proxy\nprod.nesecurity.com.br",
+             fillcolor="#1a0a1a", color="#f472b6"];
+
+    CRON    [label="Cron Jobs\n\nnagios-shipper (1min)\nwazuh-shipper (1min)\nsuricata-shipper (1min)",
+             fillcolor="#2a1a0a", color="#fb923c"];
+
+    AUTHFLOW [label="Auth Flow\n\n1. GET /auth/status → setup?\n2. POST /auth/setup → create password\n3. POST /auth/login → get API key\n4. X-Api-Key header on all requests",
+              fillcolor="#0a1a1a", color="#34d399"];
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EDGES — Sources → Shippers
+  // ═══════════════════════════════════════════════════════════════════════════
+  NAGIOS   -> NAGIOS_SHIP;
+  WAZUH    -> WAZUH_SHIP;
+  SURICATA -> SURICATA_SHIP;
+  N8N      -> N8N_ENGINE;
+  OTEL     -> SDK_DIRECT;
+
+  // Shippers → API
+  NAGIOS_SHIP   -> NGINX [label="HTTPS"];
+  WAZUH_SHIP    -> NGINX [label="HTTPS"];
+  SURICATA_SHIP -> NGINX [label="HTTPS"];
+  N8N_ENGINE    -> NGINX [label="HTTPS"];
+  SDK_DIRECT    -> NGINX [label="HTTPS"];
+
+  // API internal flow
+  NGINX -> MIDDLEWARE;
+  MIDDLEWARE -> AUTH;
+  AUTH -> ROUTES;
+  ROUTES -> AI_ENGINE;
+  ROUTES -> COMPONENTS;
+
+  // API → DB
+  ROUTES -> PG [label="SQL queries"];
+  PG -> MIGRATIONS [dir=back];
+
+  // UI flow
+  AUTHGATE -> NGINX [label="REST API calls", dir=back];
+  AUTHGATE -> DASHBOARD [style=invis];
+  DASHBOARD -> LIVEFEED [style=invis];
+  LIVEFEED -> SOURCES_TAB [style=invis];
+
+  NGINX -> AUTHGATE [label="static files"];
+
+  // UI → API queries
+  DASHBOARD -> NGINX [label="query/events", style=dashed];
+
+  // Event pipeline
+  LOGFILE -> SHIPPER -> POST_ING -> PG_EVENTS;
+  SCHEDULER -> EXT_API -> NORMALIZE -> PG_PULL;
 }

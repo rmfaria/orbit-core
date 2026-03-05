@@ -6586,12 +6586,6 @@ export function App() {
       <TopBar tab={tab} setTab={setTab} onLocaleChange={_forceLocale} />
       <div style={{ flex: 1, minWidth: 0, padding: isMobile ? '14px 12px' : '22px 24px' }}>
         {licenseStatus === 'grace' && <LicenseBanner msg={licenseMsg} onActivated={() => { setLicenseStatus('valid'); setLicenseMsg(''); }} />}
-        {licenseStatus === 'valid' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', marginBottom: 14, background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: 12, fontSize: 13, color: '#34d399' }}>
-            <span style={{ fontSize: 14 }}>&#x2714;</span>
-            <span style={{ fontWeight: 700 }}>{t('license_valid')}</span>
-          </div>
-        )}
         {needsKey && tab !== 'admin' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', marginBottom: 18, background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.35)', borderRadius: 12, fontSize: 13, color: '#fbbf24' }}>
             <span style={{ fontSize: 18 }}>⚠</span>
