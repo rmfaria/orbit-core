@@ -1,18 +1,28 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Pool } from 'pg';
-import { sendWebhook, sendTelegram, type NotifyPayload } from '../alerting/notify.js';
+import { sendWebhook, sendTelegram, sendEmail, type NotifyPayload, type SmtpConfig } from '../alerting/notify.js';
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
 const ChannelSchema = z.object({
   id:   z.string().min(1).regex(/^[a-z0-9-]+$/, 'id must be lowercase alphanumeric with dashes'),
   name: z.string().min(1),
-  kind: z.enum(['webhook', 'telegram']),
+  kind: z.enum(['webhook', 'telegram', 'email']),
   config: z.union([
     z.object({ url: z.string().url(), headers: z.record(z.string()).optional() }),
     z.object({ bot_token: z.string().min(1), chat_id: z.string().min(1) }),
+    z.object({ recipients: z.array(z.string().email()).min(1) }),
   ]),
+});
+
+const SmtpSchema = z.object({
+  host: z.string().min(1),
+  port: z.coerce.number().int().min(1).max(65535).default(587),
+  secure: z.boolean().default(false),
+  user: z.string().min(1),
+  pass: z.string().min(1),
+  from: z.string().min(1),
 });
 
 const ConditionSchema = z.discriminatedUnion('kind', [
@@ -108,8 +118,56 @@ export function alertsRouter(pool?: Pool | null): Router {
         await sendWebhook(ch.config.url, ch.config.headers ?? {}, payload);
       } else if (ch.kind === 'telegram') {
         await sendTelegram(ch.config.bot_token, ch.config.chat_id, payload);
+      } else if (ch.kind === 'email') {
+        const sr = await pool.query(`SELECT value FROM orbit_settings WHERE key = 'smtp_config'`);
+        if (!sr.rows.length) return res.status(400).json({ ok: false, error: 'SMTP not configured — go to Alerts → SMTP settings' });
+        const smtp: SmtpConfig = JSON.parse(sr.rows[0].value);
+        await sendEmail(smtp, ch.config.recipients ?? [], payload);
       }
       return res.json({ ok: true, message: 'notification sent successfully' });
+    } catch (e: any) {
+      return res.status(502).json({ ok: false, error: String(e?.message ?? e) });
+    }
+  });
+
+  // ── SMTP Settings ───────────────────────────────────────────────────────
+
+  r.get('/alerts/smtp', async (_req, res) => {
+    if (!pool) return res.json({ ok: true, smtp: null });
+    const { rows } = await pool.query(`SELECT value FROM orbit_settings WHERE key = 'smtp_config'`);
+    if (!rows.length) return res.json({ ok: true, smtp: null });
+    const cfg = JSON.parse(rows[0].value);
+    return res.json({ ok: true, smtp: { host: cfg.host, port: cfg.port, secure: cfg.secure, user: cfg.user, from: cfg.from } });
+  });
+
+  r.post('/alerts/smtp', async (req, res) => {
+    if (!pool) return res.status(503).json({ ok: false, error: 'no database' });
+    const parsed = SmtpSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.errors });
+    await pool.query(
+      `INSERT INTO orbit_settings (key, value) VALUES ('smtp_config', $1)
+       ON CONFLICT (key) DO UPDATE SET value = $1`,
+      [JSON.stringify(parsed.data)]
+    );
+    return res.json({ ok: true });
+  });
+
+  r.post('/alerts/smtp/test', async (req, res) => {
+    if (!pool) return res.status(503).json({ ok: false, error: 'no database' });
+    const { rows } = await pool.query(`SELECT value FROM orbit_settings WHERE key = 'smtp_config'`);
+    if (!rows.length) return res.status(400).json({ ok: false, error: 'SMTP not configured' });
+    const smtp: SmtpConfig = JSON.parse(rows[0].value);
+    const to = req.body.to as string;
+    if (!to) return res.status(400).json({ ok: false, error: 'missing "to" field' });
+    const payload: NotifyPayload = {
+      event: 'firing', rule_name: 'SMTP Test — orbit-core',
+      asset_id: 'host:test', namespace: 'nagios', metric: 'cpu',
+      condition: { kind: 'threshold', op: '>', value: 80, window_min: 5, agg: 'avg' },
+      value: 95.5, severity: 'high', fired_at: new Date().toISOString(),
+    };
+    try {
+      await sendEmail(smtp, [to], payload);
+      return res.json({ ok: true, message: `Test email sent to ${to}` });
     } catch (e: any) {
       return res.status(502).json({ ok: false, error: String(e?.message ?? e) });
     }

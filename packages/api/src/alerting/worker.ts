@@ -1,7 +1,7 @@
 import type { Pool } from 'pg';
 import pino from 'pino';
 import { evaluate } from './evaluate.js';
-import { sendWebhook, sendTelegram, type NotifyPayload } from './notify.js';
+import { sendWebhook, sendTelegram, sendEmail, type NotifyPayload, type SmtpConfig } from './notify.js';
 import { heartbeat, workerError } from '../worker-registry.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 'alerts' });
@@ -28,6 +28,13 @@ async function dispatch(
     fired_at:  new Date().toISOString(),
   };
 
+  // Load SMTP config once (for email channels)
+  let smtpCfg: SmtpConfig | null = null;
+  if (channels.some(c => c.kind === 'email')) {
+    const sr = await pool.query(`SELECT value FROM orbit_settings WHERE key = 'smtp_config'`);
+    if (sr.rows.length) smtpCfg = JSON.parse(sr.rows[0].value);
+  }
+
   for (const ch of channels) {
     let ok = false;
     let error: string | null = null;
@@ -36,6 +43,9 @@ async function dispatch(
         await sendWebhook(ch.config.url, ch.config.headers ?? {}, payload);
       } else if (ch.kind === 'telegram') {
         await sendTelegram(ch.config.bot_token, ch.config.chat_id, payload);
+      } else if (ch.kind === 'email') {
+        if (!smtpCfg) throw new Error('SMTP not configured');
+        await sendEmail(smtpCfg, ch.config.recipients ?? [], payload);
       }
       ok = true;
       logger.info({ rule: rule.name, channel: ch.id, event }, 'alert notification sent');
