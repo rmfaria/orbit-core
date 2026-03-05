@@ -9,7 +9,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { IngestEventsRequest, IngestMetricsRequest } from '@orbit/core-contracts';
 import { pool } from '../db.js';
-import { ensureAssets } from '../connectors/ingest.js';
+import { ensureAssets, logRun } from '../connectors/ingest.js';
 
 const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const isoTs = z.string().regex(ISO8601_RE, 'ts must be ISO 8601 with timezone (e.g. 2024-01-01T00:00:00Z)');
@@ -45,6 +45,7 @@ const IngestEventsSchema = z.object({
 });
 
 export async function ingestMetricsHandler(req: Request, res: Response) {
+  const startedAt = new Date();
   const body: IngestMetricsRequest = IngestMetricsSchema.parse(req.body);
   if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
@@ -67,10 +68,18 @@ export async function ingestMetricsHandler(req: Request, res: Response) {
     );
   }
 
+  // Record connector run when X-Source-Id header is present
+  const sourceId = req.headers['x-source-id'] as string | undefined;
+  if (sourceId && pool) {
+    const rawSize = req.headers['content-length'] ? parseInt(req.headers['content-length'] as string, 10) : 0;
+    await logRun(pool, sourceId, startedAt, body.metrics.length, rawSize, null);
+  }
+
   res.json({ ok: true, inserted: body.metrics.length });
 }
 
 export async function ingestEventsHandler(req: Request, res: Response) {
+  const startedAt = new Date();
   const body: IngestEventsRequest = IngestEventsSchema.parse(req.body);
   if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
@@ -113,6 +122,13 @@ export async function ingestEventsHandler(req: Request, res: Response) {
         events.map(e => JSON.stringify(e.attributes ?? {})),
       ]
     );
+  }
+
+  // Record connector run when X-Source-Id header is present
+  const sourceId = req.headers['x-source-id'] as string | undefined;
+  if (sourceId && pool) {
+    const rawSize = req.headers['content-length'] ? parseInt(req.headers['content-length'] as string, 10) : 0;
+    await logRun(pool, sourceId, startedAt, events.length, rawSize, null);
   }
 
   res.json({ ok: true, inserted: body.events.length });

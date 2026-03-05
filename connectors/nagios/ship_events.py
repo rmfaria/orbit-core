@@ -153,6 +153,7 @@ def main():
         })
 
     s = requests.Session()
+    s.headers["X-Source-Id"] = "nagios"
     if ORBIT_API_KEY:
         s.headers["X-Api-Key"] = ORBIT_API_KEY
     else:

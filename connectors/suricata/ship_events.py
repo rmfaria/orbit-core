@@ -315,6 +315,7 @@ def main():
         return
 
     s = requests.Session()
+    s.headers["X-Source-Id"] = "suricata"
     if ORBIT_API_KEY:
         s.headers["X-Api-Key"] = ORBIT_API_KEY
     else:
