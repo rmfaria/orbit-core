@@ -4672,6 +4672,7 @@ function AiDesignerTab() {
     setLoading(true);
     try {
       const r = await fetch('api/v1/smart-dashboards', { headers: apiGetHeaders() });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       if (j.ok) setDashboards(j.dashboards ?? []);
     } catch (e: any) {
@@ -4696,7 +4697,11 @@ function AiDesignerTab() {
         headers: { ...apiHeaders(), 'x-ai-key': aiKey, 'x-ai-model': aiModel },
         body: JSON.stringify({ prompt }),
       });
-      const j = await r.json();
+      const text = await r.text();
+      let j: any;
+      try { j = JSON.parse(text); } catch {
+        throw new Error(`Invalid server response (HTTP ${r.status}): ${text.slice(0, 150)}`);
+      }
       if (!j.ok) throw new Error(j.error ?? JSON.stringify(j));
       setGenHtml(j.html);
       setGenName(j.name ?? 'AI Dashboard');

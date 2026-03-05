@@ -43,9 +43,26 @@
   }
 
   function _query(body) {
+    if (!_cfg.baseUrl) {
+      // Auto-init from window globals injected by SmartDashboardIframe
+      if (window.__ORBIT_BASE_URL__) {
+        init({
+          baseUrl: window.__ORBIT_BASE_URL__ + '/api/v1',
+          apiKey:  window.__ORBIT_API_KEY__  || '',
+          from:    window.__ORBIT_FROM__     || '',
+          to:      window.__ORBIT_TO__       || '',
+        });
+      }
+      if (!_cfg.baseUrl) {
+        return Promise.reject(new Error('OrbitViz not initialized — baseUrl is empty'));
+      }
+    }
     return fetch(_cfg.baseUrl + '/query', {
       method: 'POST', headers: _headers(), body: JSON.stringify(body)
-    }).then(function (r) { return r.json(); });
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
   }
 
   function _timeseries(opts) {
