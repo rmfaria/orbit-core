@@ -5,15 +5,24 @@ import { sendWebhook, sendTelegram, sendEmail, type NotifyPayload, type SmtpConf
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
+const WebhookConfig  = z.object({ url: z.string().url(), headers: z.record(z.string()).optional() });
+const TelegramConfig = z.object({ bot_token: z.string().min(1), chat_id: z.string().min(1) });
+const EmailConfig    = z.object({ recipients: z.array(z.string().email()).min(1) });
+
 const ChannelSchema = z.object({
   id:   z.string().min(1).regex(/^[a-z0-9-]+$/, 'id must be lowercase alphanumeric with dashes'),
   name: z.string().min(1),
   kind: z.enum(['webhook', 'telegram', 'email']),
-  config: z.union([
-    z.object({ url: z.string().url(), headers: z.record(z.string()).optional() }),
-    z.object({ bot_token: z.string().min(1), chat_id: z.string().min(1) }),
-    z.object({ recipients: z.array(z.string().email()).min(1) }),
-  ]),
+  config: z.record(z.any()),
+}).superRefine((data, ctx) => {
+  const r = data.kind === 'webhook' ? WebhookConfig.safeParse(data.config)
+          : data.kind === 'telegram' ? TelegramConfig.safeParse(data.config)
+          : EmailConfig.safeParse(data.config);
+  if (!r.success) {
+    for (const issue of r.error.issues) {
+      ctx.addIssue({ ...issue, path: ['config', ...issue.path] });
+    }
+  }
 });
 
 const SmtpSchema = z.object({
