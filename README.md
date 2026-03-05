@@ -106,8 +106,9 @@ See [INSTALL.md](INSTALL.md) for production hardening, TLS, Docker Swarm and rev
 | 📡 | **OpenTelemetry OTLP/HTTP** | Built-in receiver for traces, metrics and logs. No Collector required |
 | 📊 | **Live dashboards** | Timeseries charts, KPI cards, event feeds — auto-refresh every 30s |
 | 🖥️ | **System monitoring** | Live infrastructure panel: CPU, memory, disk usage, network I/O, PostgreSQL I/O & stats, worker health |
-| 🔔 | **Alerts** | Threshold + absence rules, evaluated every 60s, dispatched via webhook or Telegram |
+| 🔔 | **Alerts** | Threshold + absence rules, evaluated every 60s, dispatched via webhook, Telegram or email (SMTP) |
 | 🔗 | **Auto-correlation** | Z-score anomaly detection links metric spikes to concurrent events |
+| ✦ | **AI Designer (Smart Dashboards)** | Describe a dashboard in plain text — AI generates a standalone HTML/CSS/JS page with live data from your catalog |
 | 🤖 | **AI dashboard builder** | Claude-powered — describe a dashboard in plain text, it builds the spec from your real catalog |
 | 🗄️ | **Rollups + retention** | Automatic 5m and 1h rollups; query engine picks the best source table |
 | 🐳 | **Docker standalone** | Single `docker compose up -d` — migrations run automatically on first boot |
@@ -145,7 +146,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full breakdown.
 | Source | Mode | Namespace | Guide |
 |--------|------|-----------|-------|
 | Nagios | push (cron + event handler) | `nagios` | [connectors/nagios](connectors/nagios/INSTALL.md) |
-| Wazuh | push (webhook) | `wazuh` | [connectors/wazuh](connectors/wazuh/INSTALL.md) |
+| Suricata | push (cron, EVE-JSON) | `suricata` | [connectors/suricata](connectors/suricata/README.md) |
+| Wazuh | push (OpenSearch polling) | `wazuh` | [connectors/wazuh](connectors/wazuh/INSTALL.md) |
 | Fortigate | via Wazuh syslog | `wazuh/fortigate` | [connectors/fortigate](connectors/fortigate/INSTALL.md) |
 | n8n | push (Error Trigger) | `n8n` | [connectors/n8n](connectors/n8n/INSTALL.md) |
 | macOS | push (LaunchAgent) | `macos` | via AI-generated connector + LaunchAgent |
@@ -204,6 +206,8 @@ Query your data without writing SQL:
 | `GET` | `/api/v1/correlations` | Anomaly ↔ event links |
 | `*` | `/api/v1/alerts/rules` | Alert rules CRUD |
 | `*` | `/api/v1/alerts/channels` | Notification channels CRUD |
+| `*` | `/api/v1/alerts/smtp` | SMTP settings (GET/POST) |
+| `POST` | `/api/v1/alerts/smtp/test` | Send test email |
 | `GET` | `/api/v1/alerts/history` | Notification log |
 | `*` | `/api/v1/dashboards` | Dashboard CRUD (JSON spec) |
 | `POST` | `/api/v1/ai/dashboard` | AI-assisted dashboard generation |

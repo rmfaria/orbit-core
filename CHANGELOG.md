@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.6.2] - 2026-03-05
+
+### Added
+
+- **Email alerting channel**: new `email` channel type with configurable recipients, SMTP settings stored globally in `orbit_settings`, and dark-themed orbit-style HTML email template via `nodemailer`
+- **SMTP settings management**: `GET/POST /api/v1/alerts/smtp` endpoints for saving SMTP config, `POST /api/v1/alerts/smtp/test` for sending test emails, and SMTP modal in the UI
+- **AI Designer (Smart Dashboards)**: new tab that generates complete HTML/CSS/JS dashboards from natural language descriptions using Claude — saved as standalone pages rendered in iframes
+- **orbit-viz.js visualization engine**: standalone chart/gauge/table renderer (`<orbit-chart>`, `<orbit-gauge>`, `<orbit-table>`) used by AI-generated Smart Dashboards, served with short nginx cache (5min)
+- **Analysis navigation group**: Events, Metrics and Correlations grouped under an "Analysis" dropdown in the desktop nav and section header in the mobile nav
+- **Connector run tracking for canonical endpoints**: `/ingest/events` and `/ingest/metrics` now record `connector_runs` entries when the shipper sends the `X-Source-Id` header — enables Run History in the Connectors UI for Suricata, Nagios and Wazuh
+
+### Changed
+
+- **AlertsTab fully rewritten**: modernized card-based UI with channel grid (visual cards per type with icons), rule cards with colored left border (green=ok, red=firing, yellow=silenced, gray=disabled), severity as color pills, channel multi-select chips, expandable rule details, compact history table — replaces the previous 3-subtab layout
+- **Channel form redesigned**: 3 clickable type-selector cards (Email/Telegram/Webhook) with dynamic fields per type, asset/namespace/metric dropdowns populated from the catalog API
+- **Channel validation improved**: replaced `z.union` with `superRefine` kind-based config validation — produces clear errors per channel type instead of confusing union failures
+- **Chart picker independence**: "Add chart" picker now allows selecting any asset independently of the main "view" filter
+- **License banner hidden when active**: removed the persistent green "Licensed" banner; only the grace/trial banner shows when unlicensed
+
+### Fixed
+
+- **orbit-viz.js gauge/chart duplication**: `_renderer()` factory with monotonic version counter prevents stale async renders from painting over current content
+- **orbit-viz.js cache**: separate nginx location with `max-age=300` instead of immutable year-long cache
+- **AI Designer iframe base URL**: strip filename from base URL for correct relative path resolution
+- **AI Designer async fix**: auto-fix missing `async` keyword on query functions in generated code
+- **Migration 0021 partitioning**: fixed sequence ownership transfer and index recreation order
+- **Performance improvements**: optimized API queries, DB indexes and UI rendering across the stack
+
+---
+
 ## [1.6.1] - 2026-03-04
 
 ### Added
@@ -146,6 +176,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.6.2]: https://github.com/rmfaria/orbit-core/compare/v1.6.1...v1.6.2
+[1.6.1]: https://github.com/rmfaria/orbit-core/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/rmfaria/orbit-core/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/rmfaria/orbit-core/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/rmfaria/orbit-core/compare/v1.3.0...v1.4.0
