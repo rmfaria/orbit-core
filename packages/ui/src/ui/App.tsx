@@ -774,8 +774,9 @@ function SystemTab() {
 
 function TopBar({ tab, setTab, onLocaleChange }: { tab: Tab; setTab: (t: Tab) => void; onLocaleChange: () => void }) {
   const isMobile = useIsMobile();
-  const [fontesDdOpen,  setFontesDdOpen]  = React.useState(false);
-  const [gearDdOpen,    setGearDdOpen]    = React.useState(false);
+  const [fontesDdOpen,   setFontesDdOpen]   = React.useState(false);
+  const [analysisDdOpen, setAnalysisDdOpen] = React.useState(false);
+  const [gearDdOpen,     setGearDdOpen]     = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
   const [apiKey, setApiKey] = React.useState(() => localStorage.getItem('orbit_api_key') ?? '');
   const [locale, setLoc] = React.useState<Locale>(getLocale);
@@ -790,8 +791,9 @@ function TopBar({ tab, setTab, onLocaleChange }: { tab: Tab; setTab: (t: Tab) =>
   React.useEffect(() => {
     function handle(e: MouseEvent) {
       const tgt = e.target as HTMLElement;
-      if (!tgt.closest('[data-dd="fontes"]')) setFontesDdOpen(false);
-      if (!tgt.closest('[data-dd="gear"]'))   setGearDdOpen(false);
+      if (!tgt.closest('[data-dd="fontes"]'))   setFontesDdOpen(false);
+      if (!tgt.closest('[data-dd="analysis"]')) setAnalysisDdOpen(false);
+      if (!tgt.closest('[data-dd="gear"]'))     setGearDdOpen(false);
     }
     document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
@@ -965,9 +967,60 @@ function TopBar({ tab, setTab, onLocaleChange }: { tab: Tab; setTab: (t: Tab) =>
               )}
             </div>
 
-            {navTabBtn('events',       t('nav_events'))}
-            {navTabBtn('metrics',      t('nav_metrics'))}
-            {navTabBtn('correlations', t('nav_correlations'))}
+            {/* Analysis dropdown */}
+            {(() => {
+              const analysisTabs: Tab[] = ['events', 'metrics', 'correlations'];
+              const analysisLabels = [t('nav_events'), t('nav_metrics'), t('nav_correlations')];
+              const isAnalysisActive = analysisTabs.includes(tab);
+              return (
+                <div data-dd="analysis" style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setAnalysisDdOpen(x => !x)}
+                    style={{
+                      background: isAnalysisActive ? 'rgba(85,243,255,0.12)' : 'transparent',
+                      border: isAnalysisActive ? '1px solid rgba(85,243,255,0.28)' : '1px solid transparent',
+                      borderRadius: 8,
+                      color: isAnalysisActive ? '#55f3ff' : 'rgba(233,238,255,0.60)',
+                      padding: '5px 12px',
+                      margin: '0 2px',
+                      height: 34,
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      fontWeight: isAnalysisActive ? 700 : 500,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      transition: 'all 0.15s',
+                      whiteSpace: 'nowrap' as const,
+                    }}
+                  >
+                    {t('nav_analysis')}
+                    <span style={{ fontSize: 10, opacity: 0.7 }}>{analysisDdOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {analysisDdOpen && (
+                    <div style={ddBase}>
+                      {analysisTabs.map((tid, i) => {
+                        const active = tab === tid;
+                        return (
+                          <button
+                            key={tid}
+                            onClick={() => { setTab(tid); setAnalysisDdOpen(false); }}
+                            style={{
+                              ...ddBtn,
+                              background: active ? 'rgba(85,243,255,0.07)' : 'transparent',
+                              color: active ? '#e9eeff' : 'rgba(233,238,255,0.75)',
+                              fontWeight: active ? 700 : 400,
+                            }}
+                          >
+                            {analysisLabels[i]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {navTabBtn('alerts',       t('nav_alerts'))}
             {navTabBtn('connectors',   t('nav_connectors'))}
             {navTabBtn('dashboards',   t('nav_dashboards'))}
@@ -1171,9 +1224,14 @@ function TopBar({ tab, setTab, onLocaleChange }: { tab: Tab; setTab: (t: Tab) =>
                 );
               })}
 
+              {/* Analysis section */}
+              <div style={{ padding: '10px 20px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase' as const }}>
+                {t('nav_analysis')}
+              </div>
               {navDrawerBtn('events',       t('nav_events'))}
               {navDrawerBtn('metrics',      t('nav_metrics'))}
               {navDrawerBtn('correlations', t('nav_correlations'))}
+
               {navDrawerBtn('alerts',       t('nav_alerts'))}
               {navDrawerBtn('connectors',   t('nav_connectors'))}
               {navDrawerBtn('dashboards',   t('nav_dashboards'))}
