@@ -2351,12 +2351,13 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
   const [chartLayout, setChartLayout] = React.useState<'side' | 'cols1' | 'cols2' | 'cols3'>('side');
 
   // Extra charts (up to 2, for a max total of 6)
-  type ExtraChartCfg = { id: string; ns: string; metric: string; label: string };
+  type ExtraChartCfg = { id: string; ns: string; metric: string; label: string; asset: string };
   const [extraCharts, setExtraCharts] = React.useState<ExtraChartCfg[]>([]);
   const [extraRows, setExtraRows] = React.useState<Record<string, Row[]>>({});
 
   // Add-chart picker state
   const [showAddChart, setShowAddChart] = React.useState(false);
+  const [addAsset, setAddAsset] = React.useState('');
   const [addNs, setAddNs] = React.useState('');
   const [addMetric, setAddMetric] = React.useState('');
   const [addLabel, setAddLabel] = React.useState('');
@@ -2396,20 +2397,21 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
     setAssetId(prefer.asset_id);
   }, [assets, assetId]);
 
-  // load available metrics for the add-chart picker
+  // load available metrics for the add-chart picker (based on picker's own asset selector)
+  const pickerAsset = addAsset || assetId;
   React.useEffect(() => {
-    if (!assetId) return;
-    fetch(`api/v1/catalog/metrics?asset_id=${encodeURIComponent(assetId)}`, { headers: apiGetHeaders() })
+    if (!pickerAsset) return;
+    fetch(`api/v1/catalog/metrics?asset_id=${encodeURIComponent(pickerAsset)}`, { headers: apiGetHeaders() })
       .then(r => r.json())
       .then(j => {
         const opts: MetricOpt[] = j.metrics ?? [];
         setMetricOpts(opts);
-        if (!addNs && opts.length) setAddNs(opts[0].namespace);
-        if (!addMetric && opts.length) setAddMetric(opts[0].metric);
+        if (opts.length) { setAddNs(opts[0].namespace); setAddMetric(opts[0].metric); }
+        else { setAddNs(''); setAddMetric(''); }
       })
       .catch(e => console.error("[orbit]", e));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetId]);
+  }, [pickerAsset]);
 
   async function runPulse() {
     if (!assetId) return;
@@ -2466,9 +2468,9 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
           fetch('api/v1/query', q({ kind: 'events', namespace: ns, from, to, limit: 40 }))
             .then(r => r.json()).then(j => (j.result?.rows ?? []) as EventRow[])
         ),
-        // Extra user-added charts.
+        // Extra user-added charts (each uses its own asset).
         ...extraCharts.map(cfg =>
-          fetch('api/v1/query', q({ kind: 'timeseries', asset_id: assetId,
+          fetch('api/v1/query', q({ kind: 'timeseries', asset_id: cfg.asset,
             namespace: cfg.ns, metric: cfg.metric, from, to, agg: 'avg', limit: LIMIT,
           })).then(r => r.json()).then(j => ({ id: cfg.id, rows: (j.result?.rows ?? []).map((x: any) => ({ ts: x.ts, value: Number(x.value) })) }))
         ),
@@ -2762,6 +2764,11 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
             {/* Add-chart picker */}
             {showAddChart && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', padding: '10px 12px', marginBottom: 8, background: 'rgba(12,18,40,.8)', border: '1px solid rgba(140,160,255,.18)', borderRadius: 12 }}>
+                <select className="orbit-pill" value={addAsset || assetId}
+                  onChange={e => { setAddAsset(e.target.value); setAddNs(''); setAddMetric(''); }}
+                  style={{ padding: '4px 8px' }}>
+                  {assets.map(a => <option key={a.asset_id} value={a.asset_id}>{a.asset_id}</option>)}
+                </select>
                 <select className="orbit-pill" value={addNs}
                   onChange={e => { setAddNs(e.target.value); setAddMetric(''); }}
                   style={{ padding: '4px 8px' }}>
@@ -2782,14 +2789,16 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
                 <button className="orbit-badge" style={{ cursor: 'pointer', background: 'rgba(85,243,255,.12)', color: '#55f3ff', borderColor: 'rgba(85,243,255,.3)' }}
                   onClick={() => {
                     if (!addMetric) return;
-                    const id = `${addNs}:${addMetric}:${Date.now()}`;
+                    const chartAsset = addAsset || assetId;
+                    const id = `${chartAsset}:${addNs}:${addMetric}:${Date.now()}`;
                     const label = addLabel || addMetric;
-                    setExtraCharts(prev => [...prev, { id, ns: addNs, metric: addMetric, label }]);
+                    setExtraCharts(prev => [...prev, { id, ns: addNs, metric: addMetric, label, asset: chartAsset }]);
                     setShowAddChart(false);
                     setAddLabel('');
+                    setAddAsset('');
                   }}>Adicionar</button>
                 <button className="orbit-badge" style={{ cursor: 'pointer' }}
-                  onClick={() => setShowAddChart(false)}>Cancelar</button>
+                  onClick={() => { setShowAddChart(false); setAddAsset(''); }}>Cancelar</button>
               </div>
             )}
 
@@ -2825,7 +2834,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               )}
               {extraCharts[0] && (
                 <div className="orbit-chart-box">
-                  <div className="orbit-chart-tag">{extraCharts[0].label}</div>
+                  <div className="orbit-chart-tag">{extraCharts[0].label}{extraCharts[0].asset !== assetId ? ` · ${extraCharts[0].asset}` : ''}</div>
                   <button className="orbit-chart-close" title={t('chart_remove')}
                     onClick={() => {
                       setExtraCharts(prev => prev.filter((_, i) => i !== 0));
@@ -2838,7 +2847,7 @@ function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => v
               )}
               {extraCharts[1] && (
                 <div className="orbit-chart-box">
-                  <div className="orbit-chart-tag">{extraCharts[1].label}</div>
+                  <div className="orbit-chart-tag">{extraCharts[1].label}{extraCharts[1].asset !== assetId ? ` · ${extraCharts[1].asset}` : ''}</div>
                   <button className="orbit-chart-close" title={t('chart_remove')}
                     onClick={() => {
                       setExtraCharts(prev => prev.filter((_, i) => i !== 1));
