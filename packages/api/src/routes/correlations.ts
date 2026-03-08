@@ -55,29 +55,43 @@ export async function correlationsSummaryHandler(req: Request, res: Response): P
     return;
   }
 
-  const corrConds: string[] = [];
-  const corrParams: unknown[] = [];
-  const evtConds: string[] = ['TRUE'];
-  const evtParams: unknown[] = [];
+  // Build WHERE clauses. For standalone queries each uses its own $1,$2.
+  // For combined queries (byNamespace, byAsset) we build offset versions.
+  const fromTs = req.query.from as string | undefined;
+  const toTs   = req.query.to   as string | undefined;
 
-  if (req.query.from) {
-    corrParams.push(req.query.from);
+  const corrParams: unknown[] = [];
+  const corrConds: string[] = [];
+  const evtParams: unknown[] = [];
+  const evtConds: string[] = ['TRUE'];
+
+  if (fromTs) {
+    corrParams.push(fromTs);
     corrConds.push(`event_ts >= $${corrParams.length}::timestamptz`);
-    evtParams.push(req.query.from);
+    evtParams.push(fromTs);
     evtConds.push(`ts >= $${evtParams.length}::timestamptz`);
   }
-  if (req.query.to) {
-    corrParams.push(req.query.to);
+  if (toTs) {
+    corrParams.push(toTs);
     corrConds.push(`event_ts <= $${corrParams.length}::timestamptz`);
-    evtParams.push(req.query.to);
+    evtParams.push(toTs);
     evtConds.push(`ts <= $${evtParams.length}::timestamptz`);
   }
 
   const corrWhere = corrConds.length ? 'WHERE ' + corrConds.join(' AND ') : '';
   const evtWhere  = 'WHERE ' + evtConds.join(' AND ');
 
+  // For combined queries: corr params first, then evt params with offset placeholders
+  const comboParams = [...corrParams, ...evtParams];
+  const offset = corrParams.length;
+  const evtCondsOffset: string[] = ['TRUE'];
+  let evtIdx = offset;
+  if (fromTs) { evtIdx++; evtCondsOffset.push(`ts >= $${evtIdx}::timestamptz`); }
+  if (toTs)   { evtIdx++; evtCondsOffset.push(`ts <= $${evtIdx}::timestamptz`); }
+  const evtWhereOffset = 'WHERE ' + evtCondsOffset.join(' AND ');
+
   // Run all aggregation queries in parallel
-  const [kpis, byNamespace, byAsset, timeline, topAnomalies, allAssets, eventSources] = await Promise.all([
+  const [kpis, byNamespace, byAsset, timelineEvts, timelineCorr, topAnomalies, allAssets, eventSources] = await Promise.all([
     // KPIs from correlations
     pool.query(`
       SELECT
@@ -110,7 +124,7 @@ export async function correlationsSummaryHandler(req: Request, res: Response): P
                count(*)::int AS event_count,
                count(DISTINCT asset_id)::int AS evt_asset_count,
                count(*) FILTER (WHERE severity IN ('high','critical'))::int AS severe_events
-        FROM orbit_events ${evtWhere}
+        FROM orbit_events ${evtWhereOffset}
         GROUP BY namespace
       )
       SELECT COALESCE(c.ns, e.ns)                      AS metric_ns,
@@ -125,7 +139,7 @@ export async function correlationsSummaryHandler(req: Request, res: Response): P
       FROM corr_ns c
       FULL OUTER JOIN evt_ns e ON c.ns = e.ns
       ORDER BY COALESCE(c.anomaly_count, 0) + COALESCE(e.event_count, 0) DESC
-    `, [...corrParams, ...evtParams]),
+    `, comboParams),
 
     // Per-asset: ALL assets with correlation stats + event severity summary
     pool.query(`
@@ -147,7 +161,7 @@ export async function correlationsSummaryHandler(req: Request, res: Response): P
                count(*) FILTER (WHERE severity = 'critical')::int AS crit_events,
                count(*) FILTER (WHERE severity = 'high')::int AS high_events,
                max(ts) AS last_event
-        FROM orbit_events ${evtWhere}
+        FROM orbit_events ${evtWhereOffset}
         GROUP BY asset_id
       )
       SELECT a.asset_id,
@@ -168,21 +182,28 @@ export async function correlationsSummaryHandler(req: Request, res: Response): P
       LEFT JOIN evt_a  e ON e.asset_id = a.asset_id
       WHERE c.asset_id IS NOT NULL OR e.asset_id IS NOT NULL
       ORDER BY COALESCE(c.anomaly_count,0) + COALESCE(e.crit_events,0) DESC, a.asset_id
-    `, [...corrParams, ...evtParams]),
+    `, comboParams),
 
-    // Timeline (hourly buckets) — from events, colored by severity
+    // Timeline (hourly buckets) — events only (anomaly count added client-side if needed)
     pool.query(`
       SELECT
         date_trunc('hour', ts)::text AS bucket,
         count(*)::int AS event_count,
-        count(*) FILTER (WHERE severity IN ('high','critical'))::int AS severe_count,
-        (SELECT count(*)::int FROM orbit_correlations oc
-         WHERE oc.event_ts >= date_trunc('hour', oe.ts)
-           AND oc.event_ts <  date_trunc('hour', oe.ts) + interval '1 hour') AS anomaly_count
-      FROM orbit_events oe ${evtWhere}
+        count(*) FILTER (WHERE severity IN ('high','critical'))::int AS severe_count
+      FROM orbit_events ${evtWhere}
       GROUP BY 1
       ORDER BY 1 ASC
     `, evtParams),
+
+    // Timeline anomaly counts (separate query to avoid param index conflict)
+    pool.query(`
+      SELECT
+        date_trunc('hour', event_ts)::text AS bucket,
+        count(*)::int AS anomaly_count
+      FROM orbit_correlations ${corrWhere}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `, corrParams),
 
     // Top anomalies by z-score (from correlations)
     pool.query(`
@@ -206,6 +227,14 @@ export async function correlationsSummaryHandler(req: Request, res: Response): P
 
   const kpiRow = kpis.rows[0] ?? {};
 
+  // Merge timeline events + correlation anomaly counts by bucket
+  const corrByBucket: Record<string, number> = {};
+  for (const r of timelineCorr.rows) corrByBucket[r.bucket] = r.anomaly_count;
+  const timeline = timelineEvts.rows.map((r: { bucket: string; event_count: number; severe_count: number }) => ({
+    ...r,
+    anomaly_count: corrByBucket[r.bucket] ?? 0,
+  }));
+
   res.json({
     ok: true,
     kpis: {
@@ -215,7 +244,7 @@ export async function correlationsSummaryHandler(req: Request, res: Response): P
     },
     by_namespace: byNamespace.rows,
     by_asset: byAsset.rows,
-    timeline: timeline.rows,
+    timeline,
     top_anomalies: topAnomalies.rows,
     event_sources: eventSources.rows,
   });
