@@ -4216,13 +4216,14 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
     chart.update('none');
   }, [summary]);
 
-  // ── Timeline chart ──
+  // ── Timeline chart — create/destroy when view changes ──
   React.useEffect(() => {
+    if (view !== 'timeline') return;
     const c = timelineRef.current;
     if (!c) return;
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    timelineChart.current = new Chart(ctx, {
+    const chart = new Chart(ctx, {
       type: 'bar',
       data: { labels: [], datasets: [] },
       options: {
@@ -4248,43 +4249,22 @@ function CorrelationsTab({ assets }: { assets: AssetOpt[] }) {
         },
       },
     });
-    return () => { timelineChart.current?.destroy(); timelineChart.current = null; };
-  }, []);
+    timelineChart.current = chart;
 
-  // Update timeline data
-  React.useEffect(() => {
-    const chart = timelineChart.current;
-    if (!chart || !summary || !summary.timeline.length) return;
-    const tl = summary.timeline;
-    chart.data.labels = tl.map(t => { const d = new Date(t.bucket); return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}h`; });
-    chart.data.datasets = [
-      {
-        label: 'Events',
-        data: tl.map(t => t.event_count),
-        backgroundColor: 'rgba(85,243,255,.30)',
-        borderColor: 'rgba(85,243,255,.65)',
-        borderWidth: 1,
-        borderRadius: 3,
-      },
-      {
-        label: 'Severe',
-        data: tl.map(t => t.severe_count),
-        backgroundColor: 'rgba(248,113,113,.45)',
-        borderColor: 'rgba(248,113,113,.80)',
-        borderWidth: 1,
-        borderRadius: 3,
-      },
-      {
-        label: t('corr_anomalies'),
-        data: tl.map(t => t.anomaly_count),
-        backgroundColor: 'rgba(167,139,250,.50)',
-        borderColor: 'rgba(167,139,250,.85)',
-        borderWidth: 1,
-        borderRadius: 3,
-      },
-    ];
-    chart.update('none');
-  }, [summary]);
+    // Populate immediately if data is available
+    if (summary && summary.timeline.length) {
+      const tl = summary.timeline;
+      chart.data.labels = tl.map(t => { const d = new Date(t.bucket); return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}h`; });
+      chart.data.datasets = [
+        { label: 'Events', data: tl.map(t => t.event_count), backgroundColor: 'rgba(85,243,255,.30)', borderColor: 'rgba(85,243,255,.65)', borderWidth: 1, borderRadius: 3 },
+        { label: 'Severe', data: tl.map(t => t.severe_count), backgroundColor: 'rgba(248,113,113,.45)', borderColor: 'rgba(248,113,113,.80)', borderWidth: 1, borderRadius: 3 },
+        { label: t('corr_anomalies'), data: tl.map(t => t.anomaly_count), backgroundColor: 'rgba(167,139,250,.50)', borderColor: 'rgba(167,139,250,.85)', borderWidth: 1, borderRadius: 3 },
+      ];
+      chart.update('none');
+    }
+
+    return () => { chart.destroy(); timelineChart.current = null; };
+  }, [view, summary]);
 
   const fmtNum = (n: number | null) =>
     n == null ? '—' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(3);
