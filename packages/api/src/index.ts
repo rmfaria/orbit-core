@@ -26,7 +26,7 @@ import { dashboardsRouter } from './routes/dashboards.js';
 import { smartDashboardsRouter } from './routes/smart-dashboards.js';
 import { aiRouter } from './routes/ai.js';
 import { alertsRouter } from './routes/alerts.js';
-import { correlationsHandler } from './routes/correlations.js';
+import { correlationsHandler, correlationsSummaryHandler } from './routes/correlations.js';
 import { connectorsRouter } from './routes/connectors.js';
 import { systemHandler } from './routes/system.js';
 import { otlpRouter } from './routes/otlp.js';
@@ -126,6 +126,7 @@ app.use('/api/v1', alertsRouter(pool));
 
 // correlations
 app.get('/api/v1/correlations', a(correlationsHandler));
+app.get('/api/v1/correlations/summary', a(correlationsSummaryHandler));
 
 // AI connector framework — specs CRUD + universal raw ingest
 app.use('/api/v1', connectorsRouter(pool));
