@@ -16,6 +16,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import { ingestMapped, logRun } from '../connectors/ingest.js';
+import { recordEvents } from '../eps-tracker.js';
 
 // ── OTLP JSON type stubs ──────────────────────────────────────────────────────
 
@@ -197,6 +198,7 @@ export function otlpRouter(pool?: Pool | null): Router {
       if (metrics.length) { const r = await ingestMapped(pool, 'metric', metrics); ingested += r.ingested; }
       if (events.length)  { const r = await ingestMapped(pool, 'event',  events);  ingested += r.ingested; }
     } catch (e) { runError = String(e); }
+    recordEvents('otlp', ingested);
     await logRun(pool, 'otlp', startedAt, ingested, req.headers['content-length'] ? Number(req.headers['content-length']) : 0, runError);
   });
 
@@ -263,6 +265,7 @@ export function otlpRouter(pool?: Pool | null): Router {
 
       if (points.length) { const r = await ingestMapped(pool, 'metric', points); ingested += r.ingested; }
     } catch (e) { runError = String(e); }
+    recordEvents('otlp', ingested);
     await logRun(pool, 'otlp', startedAt, ingested, req.headers['content-length'] ? Number(req.headers['content-length']) : 0, runError);
   });
 
@@ -317,6 +320,7 @@ export function otlpRouter(pool?: Pool | null): Router {
 
       if (events.length) { const r = await ingestMapped(pool, 'event', events); ingested += r.ingested; }
     } catch (e) { runError = String(e); }
+    recordEvents('otlp', ingested);
     await logRun(pool, 'otlp', startedAt, ingested, req.headers['content-length'] ? Number(req.headers['content-length']) : 0, runError);
   });
 

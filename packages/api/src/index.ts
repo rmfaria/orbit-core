@@ -12,6 +12,7 @@ import { pinoHttp } from 'pino-http';
 import { ZodError } from 'zod';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { randomUUID } from 'crypto';
+import { isPrivateUrl } from './ssrf-guard.js';
 
 import { loadEnv } from './env.js';
 import { makeAuthMiddleware } from './auth.js';
@@ -29,6 +30,7 @@ import { correlationsHandler } from './routes/correlations.js';
 import { connectorsRouter } from './routes/connectors.js';
 import { systemHandler } from './routes/system.js';
 import { otlpRouter } from './routes/otlp.js';
+import { wazuhRouter } from './routes/wazuh.js';
 import { startConnectorWorker } from './connectors/worker.js';
 import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
@@ -48,7 +50,9 @@ const env = loadEnv();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
 const app = express();
-app.use(cors());
+// C1-fix: restrict CORS to known origins (env ORBIT_CORS_ORIGINS or same-origin only)
+const allowedOrigins = (process.env.ORBIT_CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors(allowedOrigins.length ? { origin: allowedOrigins, credentials: true } : { origin: true, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 app.use(pinoHttp({ logger }));
 app.use(metricsMiddleware);
@@ -78,6 +82,18 @@ const limiter = rateLimit({
   keyGenerator: (req) => (req.headers['x-api-key'] as string) || ipKeyGenerator(req.ip ?? 'anon'),
 });
 app.use('/api/v1', limiter);
+
+// H3-fix: strict rate limiter on login/setup (5 req/min per IP)
+const authLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? 'anon'),
+  message: { ok: false, error: 'Too many attempts, try again later' },
+});
+app.use('/api/v1/auth/login', authLimiter);
+app.use('/api/v1/auth/setup', authLimiter);
 
 // License check: blocks requests when unlicensed and grace period expired.
 app.use(makeLicenseMiddleware(pool));
@@ -117,6 +133,9 @@ app.use('/api/v1', connectorsRouter(pool));
 // OpenTelemetry OTLP/HTTP receiver — traces, metrics, logs from instrumented apps
 app.use('/', otlpRouter(pool));
 
+// Wazuh dashboard — structured data for the Wazuh UI tab
+app.use('/api/v1', wazuhRouter(pool));
+
 // System / infra metrics — process, CPU, memory, network, workers, DB pool
 app.get('/api/v1/system', a(systemHandler(pool)));
 
@@ -125,7 +144,9 @@ app.get('/api/v1/system', a(systemHandler(pool)));
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof ZodError) {
-    return res.status(400).json({ ok: false, error: 'validation error', details: err.errors });
+    // M1-fix: return field names only, not full Zod schema details
+    const fields = err.errors.map(e => e.path.join('.') || e.message);
+    return res.status(400).json({ ok: false, error: 'validation error', fields });
   }
   logger.error({ err }, 'unhandled error');
   res.status(500).json({ ok: false, error: 'internal server error' });

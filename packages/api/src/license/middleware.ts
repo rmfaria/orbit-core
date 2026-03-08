@@ -79,8 +79,9 @@ export function makeLicenseMiddleware(pool: Pool | null) {
         register_url: 'https://orbit-core.org/register',
       });
     } catch (err) {
-      logger.error({ err }, 'license check failed — allowing request');
-      next();
+      // C4-fix: fail-closed — deny access when license check fails
+      logger.error({ err }, 'license check failed — denying request');
+      res.status(503).json({ ok: false, error: 'license_check_unavailable' });
     }
   };
 }

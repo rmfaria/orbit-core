@@ -39,6 +39,8 @@ import { z } from 'zod';
 import type { Pool } from 'pg';
 import { applySpec, type FieldMapping, type ConnectorSpec } from '../connectors/dsl.js';
 import { ingestMapped, logRun, validateMapped } from '../connectors/ingest.js';
+import { recordEvents, getEpsSnapshot, getSourceEps } from '../eps-tracker.js';
+import { isPrivateUrl } from '../ssrf-guard.js';
 
 // ── Zod Schemas ───────────────────────────────────────────────────────────────
 
@@ -106,6 +108,12 @@ const GenerateSchema = z.object({
 export function connectorsRouter(pool?: Pool | null): Router {
   const r = Router();
 
+  // ── EPS snapshot ─────────────────────────────────────────────────────────
+
+  r.get('/connectors/eps', async (_req, res) => {
+    return res.json({ ok: true, ...getEpsSnapshot() });
+  });
+
   // ── List specs ────────────────────────────────────────────────────────────
 
   r.get('/connectors', async (_req, res) => {
@@ -116,7 +124,11 @@ export function connectorsRouter(pool?: Pool | null): Router {
        FROM connector_specs
        ORDER BY created_at DESC`
     );
-    return res.json({ ok: true, connectors: rows });
+    const connectors = rows.map((row: Record<string, unknown>) => ({
+      ...row,
+      eps: getSourceEps(row.source_id as string),
+    }));
+    return res.json({ ok: true, connectors });
   });
 
   // ── AI-generate spec from sample payload ─────────────────────────────────
@@ -168,7 +180,7 @@ export function connectorsRouter(pool?: Pool | null): Router {
         }),
       });
     } catch (err: unknown) {
-      return res.status(502).json({ ok: false, error: 'Failed to reach Anthropic API', detail: String(err) });
+      return res.status(502).json({ ok: false, error: 'Failed to reach Anthropic API' });
     }
 
     if (!anthropicRes.ok) {
@@ -228,7 +240,7 @@ export function connectorsRouter(pool?: Pool | null): Router {
            d.description ?? `Auto-generated connector for ${sourceType}`]
         );
       } catch (e) {
-        return res.status(500).json({ ok: false, error: 'Failed to save connector', detail: String(e) });
+        return res.status(500).json({ ok: false, error: 'Failed to save connector' });
       }
     }
 
@@ -357,6 +369,10 @@ export function connectorsRouter(pool?: Pool | null): Router {
       payload = req.body.payload;
       source  = 'provided';
     } else if (mode === 'pull' && pull_url) {
+      // C3-fix: SSRF protection — block private/internal URLs
+      if (await isPrivateUrl(pull_url)) {
+        return res.status(400).json({ ok: false, error: 'pull_url targets a private or reserved address' });
+      }
       // Fetch from pull_url using stored auth
       const controller = new AbortController();
       const timeout    = setTimeout(() => controller.abort(), 30_000);
@@ -384,7 +400,7 @@ export function connectorsRouter(pool?: Pool | null): Router {
         source  = 'fetched';
       } catch (err: unknown) {
         clearTimeout(timeout);
-        return res.status(502).json({ ok: false, error: `Fetch failed: ${String(err)}` });
+        return res.status(502).json({ ok: false, error: 'Fetch failed' });
       }
     } else {
       return res.status(400).json({ ok: false, error: 'No payload provided and connector has no pull_url' });
@@ -486,6 +502,7 @@ export function connectorsRouter(pool?: Pool | null): Router {
     }
 
     const { ingested, skipped, errors } = await ingestMapped(pool, connType as 'metric' | 'event', items);
+    recordEvents(source_id, ingested);
     await logRun(pool, source_id, startedAt, ingested, rawSize, null);
     return res.json({ ok: true, ingested, skipped, ...(errors.length ? { errors } : {}) });
   });

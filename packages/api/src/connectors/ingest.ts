@@ -27,7 +27,7 @@ export async function ensureAssets(pool: Pool, assetIds: string[]): Promise<void
   const rowsSql = uniq.map((_, i) => `($${i + 1}, 'custom', $${i + 1})`).join(',');
   await pool.query(
     `INSERT INTO assets(asset_id, type, name) VALUES ${rowsSql}
-     ON CONFLICT (asset_id) DO NOTHING`,
+     ON CONFLICT (asset_id) DO UPDATE SET last_seen = now()`,
     uniq
   );
 }

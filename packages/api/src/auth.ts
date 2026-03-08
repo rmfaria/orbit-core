@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { Pool } from 'pg';
+import { timingSafeEqual } from 'crypto';
 import type { Env } from './env.js';
 
 let _cachedDbKey: string | null = null;
@@ -16,7 +17,8 @@ async function getDbApiKey(pool: Pool): Promise<string> {
     _cachedDbKey = rows[0]?.value ?? '';
     _cacheTs = now;
   } catch {
-    _cachedDbKey = '';
+    // C2-fix: preserve last known good key on DB failure instead of clearing
+    if (_cachedDbKey === null) _cachedDbKey = '';
     _cacheTs = now;
   }
   return _cachedDbKey ?? '';
@@ -41,13 +43,17 @@ export function makeAuthMiddleware(env: Env, pool?: Pool | null) {
       const fromBearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
       const supplied = fromHeader ?? fromBearer;
 
-      if (supplied === envKey) return next();
+      // H1-fix: timing-safe comparison
+      if (typeof supplied === 'string' && supplied.length === envKey.length &&
+          timingSafeEqual(Buffer.from(supplied), Buffer.from(envKey))) return next();
       res.status(401).json({ ok: false, error: 'unauthorized' });
     };
   }
 
-  // No env key — check DB for auto-generated key
-  if (!pool) return (_req: Request, _res: Response, next: NextFunction) => next();
+  // C2-fix: deny all when no pool and no env key (no open setup mode)
+  if (!pool) return (_req: Request, res: Response) => {
+    res.status(503).json({ ok: false, error: 'database not configured' });
+  };
 
   return async (req: Request, res: Response, next: NextFunction) => {
     const dbKey = await getDbApiKey(pool);
@@ -60,7 +66,9 @@ export function makeAuthMiddleware(env: Env, pool?: Pool | null) {
     const fromBearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
     const supplied = fromHeader ?? fromBearer;
 
-    if (supplied === dbKey) return next();
+    // H1-fix: timing-safe comparison
+    if (typeof supplied === 'string' && supplied.length === dbKey.length &&
+        timingSafeEqual(Buffer.from(supplied), Buffer.from(dbKey))) return next();
     res.status(401).json({ ok: false, error: 'unauthorized' });
   };
 }

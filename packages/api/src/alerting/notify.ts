@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { isPrivateUrl } from '../ssrf-guard.js';
 
 export type SmtpConfig = {
   host: string; port: number; secure: boolean;
@@ -22,6 +23,10 @@ export async function sendWebhook(
   headers: Record<string, string>,
   payload: NotifyPayload
 ): Promise<void> {
+  // C3-fix: SSRF protection — block private/internal URLs
+  if (await isPrivateUrl(url)) {
+    throw new Error('webhook URL targets a private or reserved address');
+  }
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },

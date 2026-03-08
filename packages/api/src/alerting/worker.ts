@@ -113,8 +113,14 @@ async function runSafe(pool: Pool): Promise<void> {
 }
 
 export function startAlertWorker(pool: Pool): () => void {
-  const tInit     = setTimeout(() => runSafe(pool), INIT_DELAY);
-  const tInterval = setInterval(() => runSafe(pool), INTERVAL_MS);
+  let running = false;
+  async function tick() {
+    if (running) { logger.warn('alert worker tick skipped — previous run still active'); return; }
+    running = true;
+    try { await runSafe(pool); } finally { running = false; }
+  }
+  const tInit     = setTimeout(tick, INIT_DELAY);
+  const tInterval = setInterval(tick, INTERVAL_MS);
   logger.info({ interval_ms: INTERVAL_MS, init_delay_ms: INIT_DELAY }, 'alert worker started');
   return () => { clearTimeout(tInit); clearInterval(tInterval); };
 }

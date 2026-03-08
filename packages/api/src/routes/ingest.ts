@@ -10,6 +10,7 @@ import { z } from 'zod';
 import type { IngestEventsRequest, IngestMetricsRequest } from '@orbit/core-contracts';
 import { pool } from '../db.js';
 import { ensureAssets, logRun } from '../connectors/ingest.js';
+import { recordEvents } from '../eps-tracker.js';
 
 const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const isoTs = z.string().regex(ISO8601_RE, 'ts must be ISO 8601 with timezone (e.g. 2024-01-01T00:00:00Z)');
@@ -75,7 +76,23 @@ export async function ingestMetricsHandler(req: Request, res: Response) {
     await logRun(pool, sourceId, startedAt, body.metrics.length, rawSize, null);
   }
 
+  // Infer source from namespace if no X-Source-Id header
+  const inferredSource = sourceId ?? inferSource(body.metrics.map(m => m.namespace));
+  recordEvents(inferredSource, body.metrics.length);
+
   res.json({ ok: true, inserted: body.metrics.length });
+}
+
+/** Infer source label from the most common namespace in the batch */
+function inferSource(namespaces: string[]): string {
+  if (!namespaces.length) return 'unknown';
+  const counts: Record<string, number> = {};
+  for (const ns of namespaces) counts[ns] = (counts[ns] ?? 0) + 1;
+  let best = 'unknown'; let max = 0;
+  for (const [ns, c] of Object.entries(counts)) {
+    if (c > max) { max = c; best = ns; }
+  }
+  return best;
 }
 
 export async function ingestEventsHandler(req: Request, res: Response) {
@@ -130,6 +147,9 @@ export async function ingestEventsHandler(req: Request, res: Response) {
     const rawSize = req.headers['content-length'] ? parseInt(req.headers['content-length'] as string, 10) : 0;
     await logRun(pool, sourceId, startedAt, events.length, rawSize, null);
   }
+
+  const inferredSource = sourceId ?? inferSource(events.map(e => e.namespace));
+  recordEvents(inferredSource, events.length);
 
   res.json({ ok: true, inserted: body.events.length });
 }

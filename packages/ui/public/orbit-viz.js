@@ -614,7 +614,11 @@
         paintFn(container, body, j, opts);
       }).catch(function (err) {
         if (myVer !== ver) return;
-        body.innerHTML = '<div style="padding:16px;color:' + theme.red + ';font-family:' + theme.font + ';font-size:12px;text-align:center;">Query failed: ' + (err.message || err) + '</div>';
+        var errDiv = document.createElement('div');
+        errDiv.style.cssText = 'padding:16px;color:' + theme.red + ';font-family:' + theme.font + ';font-size:12px;text-align:center;';
+        errDiv.textContent = 'Query failed: ' + (err.message || err);
+        body.innerHTML = '';
+        body.appendChild(errDiv);
       });
     }
     render();

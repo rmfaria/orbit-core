@@ -35,3 +35,19 @@
   STATE_PATH=/var/lib/orbit-core/wazuh-opensearch-events.state.json \
   python3 /opt/orbit-core/connectors/wazuh/ship_events_opensearch.py \
   >>/var/log/orbit-core/wazuh_os_shipper.log 2>&1
+
+# ── OPTION C: Wazuh REST API (structured data) ──────────────────────────────
+# Pulls agents, SCA, MITRE ATT&CK, syscollector, vulnerabilities, and manager
+# stats from the Wazuh REST API. Complements OPTION A/B (which ship alerts).
+# Run every 5 minutes.
+
+*/5 * * * * root \
+  WAZUH_API_URL=https://wazuh-manager:55000 \
+  WAZUH_API_USER=wazuh-wui \
+  WAZUH_API_PASS=<your-wazuh-api-password> \
+  WAZUH_VERIFY_TLS=false \
+  ORBIT_API=https://prod.example.com/orbit-core \
+  ORBIT_API_KEY=<sua-chave> \
+  SOURCE_ID=wazuh-api \
+  python3 /opt/orbit-core/connectors/wazuh/ship_wazuh_api.py \
+  >>/var/log/orbit-core/wazuh_api_shipper.log 2>&1

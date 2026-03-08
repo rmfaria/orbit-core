@@ -291,7 +291,7 @@
 
 /* KPI strip: smaller cards on very small screens */
 @media (max-width: 480px) {
-  .orbit-kpi       { min-width: 150px; }
+  .orbit-kpi       { min-width: 120px; }
   .orbit-kpi .kpi-value { font-size: 14px; }
   .orbit-panel-head { flex-wrap: wrap; gap: 8px; }
 }
@@ -300,4 +300,9 @@
 @media (max-width: 480px) {
   .orbit-feed { padding: 8px 10px 12px; }
   .orbit-feed-row { padding: 8px 10px; gap: 8px; }
+}
+
+/* Chart height reduction on small screens */
+@media (max-width: 480px) {
+  .orbit-chart-canvas-wrap { height: 140px; }
 }
