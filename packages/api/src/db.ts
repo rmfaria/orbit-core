@@ -8,7 +8,7 @@ const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 
 export const pool = env.DATABASE_URL
   ? new pg.Pool({
       connectionString: env.DATABASE_URL,
-      max: 20,
+      max: 50,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
       statement_timeout: 30_000,

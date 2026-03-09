@@ -53,7 +53,7 @@ const app = express();
 // C1-fix: restrict CORS to known origins (env ORBIT_CORS_ORIGINS or same-origin only)
 const allowedOrigins = (process.env.ORBIT_CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors(allowedOrigins.length ? { origin: allowedOrigins, credentials: true } : { origin: true, credentials: true }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '5mb' }));
 app.use(pinoHttp({ logger }));
 app.use(metricsMiddleware);
 
@@ -72,7 +72,7 @@ if (pool) {
   app.use('/api/v1', authRouter(pool));
 }
 
-// Rate limiting: 300 req/min keyed by API key or IP.
+// Rate limiting: 300 req/min for general API, 3000 req/min for ingest.
 // Applied after /health so probes are never throttled.
 const limiter = rateLimit({
   windowMs: 60_000,
@@ -81,6 +81,14 @@ const limiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => (req.headers['x-api-key'] as string) || ipKeyGenerator(req.ip ?? 'anon'),
 });
+const ingestLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 3000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.headers['x-api-key'] as string) || ipKeyGenerator(req.ip ?? 'anon'),
+});
+app.use('/api/v1/ingest', ingestLimiter);
 app.use('/api/v1', limiter);
 
 // H3-fix: strict rate limiter on login/setup (5 req/min per IP)

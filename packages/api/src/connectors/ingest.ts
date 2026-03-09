@@ -19,17 +19,25 @@ export interface IngestResult {
   errors:   string[];
 }
 
-// ── Asset upsert ──────────────────────────────────────────────────────────────
+// ── Asset upsert (with in-memory cache to reduce DB round-trips) ─────────────
+
+const knownAssets = new Set<string>();
+const ASSET_CACHE_MAX = 10_000;
 
 export async function ensureAssets(pool: Pool, assetIds: string[]): Promise<void> {
   const uniq = Array.from(new Set(assetIds)).filter(Boolean);
-  if (!uniq.length) return;
-  const rowsSql = uniq.map((_, i) => `($${i + 1}, 'custom', $${i + 1})`).join(',');
+  // Only upsert assets not already seen in this process lifetime
+  const unknown = uniq.filter(id => !knownAssets.has(id));
+  if (!unknown.length) return;
+  const rowsSql = unknown.map((_, i) => `($${i + 1}, 'custom', $${i + 1})`).join(',');
   await pool.query(
     `INSERT INTO assets(asset_id, type, name) VALUES ${rowsSql}
      ON CONFLICT (asset_id) DO UPDATE SET last_seen = now()`,
-    uniq
+    unknown
   );
+  // Evict oldest entries if cache grows too large
+  if (knownAssets.size > ASSET_CACHE_MAX) knownAssets.clear();
+  for (const id of unknown) knownAssets.add(id);
 }
 
 // ── Bulk ingest ───────────────────────────────────────────────────────────────
