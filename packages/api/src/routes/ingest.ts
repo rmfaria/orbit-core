@@ -15,14 +15,17 @@ import { recordEvents } from '../eps-tracker.js';
 const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const isoTs = z.string().regex(ISO8601_RE, 'ts must be ISO 8601 with timezone (e.g. 2024-01-01T00:00:00Z)');
 
+// Helper: accept null from JSON and coerce to undefined for TS compat.
+const nullToUndef = <T>(s: z.ZodType<T>) => s.nullable().transform(v => v ?? undefined).optional();
+
 const MetricPointSchema = z.object({
   ts: isoTs,
   asset_id: z.string().min(1),
   namespace: z.string().min(1),
   metric: z.string().min(1),
   value: z.number(),
-  unit: z.string().optional(),
-  dimensions: z.record(z.string()).optional()
+  unit: nullToUndef(z.string()),
+  dimensions: nullToUndef(z.record(z.string()))
 });
 
 const EventSchema = z.object({
@@ -32,9 +35,9 @@ const EventSchema = z.object({
   kind: z.string().min(1),
   severity: z.enum(['info','low','medium','high','critical']),
   title: z.string().min(1),
-  message: z.string().optional(),
-  fingerprint: z.string().optional(),
-  attributes: z.record(z.any()).optional()
+  message: nullToUndef(z.string()),
+  fingerprint: nullToUndef(z.string()),
+  attributes: nullToUndef(z.record(z.any()))
 });
 
 const IngestMetricsSchema = z.object({
