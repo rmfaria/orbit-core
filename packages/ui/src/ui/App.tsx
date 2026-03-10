@@ -127,11 +127,7 @@ function isoToLocal(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// If built with VITE_ORBIT_API_KEY, seed localStorage on first load.
-const _builtInKey = import.meta.env.VITE_ORBIT_API_KEY as string | undefined;
-if (_builtInKey && !localStorage.getItem('orbit_api_key')) {
-  localStorage.setItem('orbit_api_key', _builtInKey);
-}
+// VITE_ORBIT_API_KEY is no longer auto-seeded — AuthGate handles login.
 
 // Build fetch headers — reads API key from localStorage if present.
 function apiHeaders(): HeadersInit {

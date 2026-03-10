@@ -205,7 +205,7 @@ def main():
 
     for i in range(0, len(events), BATCH_SIZE):
         batch = events[i : i + BATCH_SIZE]
-        r = s.post(ENDPOINT, json={"events": batch}, timeout=25)
+        r = s.post(ENDPOINT, json={"events": batch}, timeout=60)
         if r.status_code not in (200, 201):
             raise SystemExit(f"orbit ingest events failed HTTP {r.status_code}: {r.text[:300]}")
 

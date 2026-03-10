@@ -2,55 +2,505 @@ import { Router } from 'express';
 import type { Pool } from 'pg';
 import { DashboardSpecSchema } from '@orbit/core-contracts';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── RAG Catalog Types ───────────────────────────────────────────────────────
 
-interface AssetMetric {
-  asset_id:  string;
-  namespace: string;
-  metric:    string;
-  pts:       number;
+interface RagAsset {
+  asset_id: string;
+  type:     string;
+  name:     string;
+  enabled:  boolean;
+  last_seen: string;
 }
 
-interface EventNsStat {
+interface RagMetric {
+  asset_id:   string;
+  namespace:  string;
+  metric:     string;
+  pts:        number;
+  val_min:    number;
+  val_max:    number;
+  last_value: number;
+  unit:       string | null;
+}
+
+interface RagEventNs {
   namespace: string;
   total:     number;
   last_seen: string | null;
+  kinds:     string[];
+  agents:    string[];
+  severities: Array<{ severity: string; cnt: number }>;
 }
 
-interface EventKindStat {
-  namespace: string;
-  kind:      string;
-  cnt:       number;
+interface RagConnector {
+  id:          string;
+  source_id:   string;
+  mode:        string;
+  type:        string;
+  status:      string;
+  description: string | null;
 }
 
-interface EventAgentStat {
-  namespace: string;
-  asset_id:  string;
-  cnt:       number;
+interface RagCatalog {
+  generated_at: string;
+  assets:       RagAsset[];
+  metrics:      RagMetric[];
+  events:       RagEventNs[];
+  connectors:   RagConnector[];
 }
 
-interface EventSevStat {
-  namespace: string;
-  severity:  string;
-  cnt:       number;
+// ─── RAG Cache ───────────────────────────────────────────────────────────────
+
+const RAG_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let ragCache: { data: RagCatalog; ts: number } | null = null;
+
+async function buildRagCatalog(pool: Pool): Promise<RagCatalog> {
+  const [assetsR, metricsR, evNsR, evKindsR, evAgentsR, evSevsR, connectorsR] = await Promise.all([
+    // Assets
+    pool.query<RagAsset>(
+      `SELECT asset_id, type, name, enabled, last_seen::text
+       FROM assets ORDER BY last_seen DESC LIMIT 200`
+    ),
+    // Metrics with value ranges and unit (last 7 days for performance)
+    pool.query<RagMetric>(
+      `SELECT asset_id, namespace, metric,
+              count(*)::int AS pts,
+              min(value)::float AS val_min,
+              max(value)::float AS val_max,
+              (ARRAY_AGG(value ORDER BY ts DESC))[1]::float AS last_value,
+              (ARRAY_AGG(unit ORDER BY ts DESC))[1] AS unit
+       FROM metric_points
+       WHERE ts > now() - interval '7 days'
+       GROUP BY asset_id, namespace, metric
+       ORDER BY pts DESC
+       LIMIT 500`
+    ),
+    // Event namespace stats
+    pool.query<{ namespace: string; total: number; last_seen: string | null }>(
+      `SELECT namespace, count(*)::int AS total, max(ts)::text AS last_seen
+       FROM orbit_events
+       GROUP BY namespace ORDER BY total DESC LIMIT 20`
+    ),
+    // Event kinds per namespace
+    pool.query<{ namespace: string; kind: string; cnt: number }>(
+      `SELECT namespace, kind, count(*)::int AS cnt
+       FROM orbit_events GROUP BY namespace, kind ORDER BY cnt DESC LIMIT 100`
+    ),
+    // Event agents per namespace
+    pool.query<{ namespace: string; asset_id: string; cnt: number }>(
+      `SELECT namespace, asset_id, count(*)::int AS cnt
+       FROM orbit_events GROUP BY namespace, asset_id ORDER BY cnt DESC LIMIT 100`
+    ),
+    // Severity distribution
+    pool.query<{ namespace: string; severity: string; cnt: number }>(
+      `SELECT namespace, severity, count(*)::int AS cnt
+       FROM orbit_events GROUP BY namespace, severity ORDER BY namespace, cnt DESC`
+    ),
+    // Connectors
+    pool.query<RagConnector>(
+      `SELECT id, source_id, mode, type, status, description
+       FROM connector_specs ORDER BY created_at DESC`
+    ).catch(() => ({ rows: [] as RagConnector[] })),
+  ]);
+
+  // Assemble event namespaces with nested kinds/agents/sevs
+  const events: RagEventNs[] = evNsR.rows.map(ns => ({
+    namespace:  ns.namespace,
+    total:      ns.total,
+    last_seen:  ns.last_seen,
+    kinds:      evKindsR.rows.filter(k => k.namespace === ns.namespace).map(k => k.kind),
+    agents:     evAgentsR.rows.filter(a => a.namespace === ns.namespace).map(a => a.asset_id),
+    severities: evSevsR.rows.filter(s => s.namespace === ns.namespace).map(s => ({ severity: s.severity, cnt: s.cnt })),
+  }));
+
+  return {
+    generated_at: new Date().toISOString(),
+    assets:       assetsR.rows,
+    metrics:      metricsR.rows,
+    events,
+    connectors:   connectorsR.rows,
+  };
 }
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+async function getRagCatalog(pool: Pool): Promise<RagCatalog> {
+  const now = Date.now();
+  if (ragCache && (now - ragCache.ts) < RAG_TTL_MS) return ragCache.data;
+  const data = await buildRagCatalog(pool);
+  ragCache = { data, ts: now };
+  return data;
+}
+
+// ─── Prompt Builders ─────────────────────────────────────────────────────────
+
+function formatMetricCatalog(catalog: RagCatalog): string {
+  const assetMap = new Map(catalog.assets.map(a => [a.asset_id, a.name]));
+
+  // Group metrics by asset
+  const byAsset = new Map<string, RagMetric[]>();
+  for (const m of catalog.metrics) {
+    const arr = byAsset.get(m.asset_id) ?? [];
+    arr.push(m);
+    byAsset.set(m.asset_id, arr);
+  }
+
+  if (byAsset.size === 0) return '  (no metrics registered yet)';
+
+  const lines: string[] = [];
+  for (const [assetId, mets] of byAsset) {
+    const label = assetMap.get(assetId) ?? assetId;
+    const asset = catalog.assets.find(a => a.asset_id === assetId);
+    const typeStr = asset ? ` [${asset.type}]` : '';
+    lines.push(`  Asset: ${assetId}  (${label})${typeStr}`);
+    for (const m of mets.slice(0, 20)) {
+      const unitStr = m.unit ? `, unit: ${m.unit}` : '';
+      const rangeStr = m.val_min !== null ? `, range: ${round2(m.val_min)}–${round2(m.val_max)}, last: ${round2(m.last_value)}` : '';
+      lines.push(`    - namespace=${m.namespace}  metric=${m.metric}  (${m.pts} pts${rangeStr}${unitStr})`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function formatEventCatalog(catalog: RagCatalog): string {
+  if (catalog.events.length === 0) return '  (no events registered yet)';
+
+  const lines: string[] = [];
+  for (const ns of catalog.events) {
+    lines.push(`  Namespace: ${ns.namespace}  (${ns.total.toLocaleString()} events, last: ${ns.last_seen ?? 'never'})`);
+    if (ns.kinds.length) lines.push(`    Kinds: ${ns.kinds.join(', ')}`);
+    if (ns.agents.length) lines.push(`    Agents: ${ns.agents.join(', ')}`);
+    if (ns.severities.length) lines.push(`    Severities: ${ns.severities.map(s => `${s.severity}(${s.cnt})`).join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+function formatConnectorCatalog(catalog: RagCatalog): string {
+  if (catalog.connectors.length === 0) return '  (no connectors configured)';
+  return catalog.connectors
+    .map(c => `  - ${c.id} (${c.mode}, ${c.type}, ${c.status})${c.description ? ' — ' + c.description : ''}`)
+    .join('\n');
+}
+
+function round2(n: number): string {
+  return Number.isFinite(n) ? (Math.round(n * 100) / 100).toString() : '?';
+}
+
+function pickExamples(catalog: RagCatalog) {
+  const assetMap = new Map(catalog.assets.map(a => [a.asset_id, a.name]));
+  const first = catalog.metrics[0];
+  const exAssetId = first?.asset_id ?? 'host:server1';
+  const exNs      = first?.namespace ?? 'nagios';
+  const exMetric  = first?.metric    ?? 'load1';
+
+  // Multi-series: up to 3 distinct assets sharing same namespace+metric
+  const distinctAssets = [...new Set(catalog.metrics.map(m => m.asset_id))].slice(0, 3);
+  const multiSeries = distinctAssets.map(aid => ({
+    asset_id:  aid,
+    namespace: exNs,
+    metric:    catalog.metrics.find(m => m.asset_id === aid && m.namespace === exNs)?.metric ?? exMetric,
+    label:     assetMap.get(aid) ?? aid,
+  }));
+
+  // Event examples
+  const firstEvNs     = catalog.events[0]?.namespace ?? 'wazuh';
+  const firstEvKind   = catalog.events[0]?.kinds[0];
+  const firstEvAgent  = catalog.events[0]?.agents[0];
+  const highSev       = catalog.events[0]?.severities.some(s => s.severity === 'high' || s.severity === 'critical');
+
+  return { exAssetId, exNs, exMetric, multiSeries, firstEvNs, firstEvKind, firstEvAgent, highSev };
+}
+
+// ─── ALLOWED DATA LIST (for strict validation prompt section) ────────────────
+
+function buildAllowedList(catalog: RagCatalog): string {
+  const assetIds  = [...new Set(catalog.metrics.map(m => m.asset_id))];
+  const namespaces = [...new Set([
+    ...catalog.metrics.map(m => m.namespace),
+    ...catalog.events.map(e => e.namespace),
+  ])];
+  const metricNames = [...new Set(catalog.metrics.map(m => m.metric))];
+
+  return `
+ALLOWED asset_ids (use ONLY these): ${assetIds.join(', ') || 'none'}
+ALLOWED namespaces (use ONLY these): ${namespaces.join(', ') || 'none'}
+ALLOWED metric names (use ONLY these): ${metricNames.join(', ') || 'none'}
+ALLOWED event kinds: ${catalog.events.flatMap(e => e.kinds).join(', ') || 'none'}
+`;
+}
+
+// ─── System Prompt: Dashboard Spec ───────────────────────────────────────────
+
+function buildSystemPrompt(catalog: RagCatalog): string {
+  const metricCatalog = formatMetricCatalog(catalog);
+  const eventCatalog  = formatEventCatalog(catalog);
+  const connCatalog   = formatConnectorCatalog(catalog);
+  const allowed       = buildAllowedList(catalog);
+  const ex = pickExamples(catalog);
+
+  const evKindFilter  = ex.firstEvKind  ? `, "kinds": ["${ex.firstEvKind}"]` : '';
+  const evAgentFilter = ex.firstEvAgent ? `, "asset_id": "${ex.firstEvAgent}"` : '';
+  const evSevFilter   = ex.highSev      ? `, "severities": ["high", "critical"]` : '';
+
+  return `You are an orbit-core Dashboard Builder AI. Output ONLY a single valid JSON object (no markdown, no explanation).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## METRIC CATALOG (asset → namespace → metric with value ranges)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${metricCatalog}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## EVENT CATALOG (namespace → kinds / agents / severities)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${eventCatalog}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## ACTIVE CONNECTORS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${connCatalog}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## DASHBOARD SPEC SCHEMA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{
+  id, name, description?, version: "v1",
+  time: { preset: "60m"|"6h"|"24h"|"7d"|"30d" },
+  tags: string[],
+  widgets: WidgetSpec[]   // 1–20
+}
+WidgetSpec = { id, title, kind, layout: {x:0,y:0,w:1|2,h:1}, query }
+  kind: "timeseries" | "timeseries_multi" | "events" | "eps" | "kpi" | "gauge"
+  w=1 → half width,  w=2 → full width
+  query must NOT contain "from" or "to"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## QUERY FORMAT — EXACT REQUIRED STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### timeseries (w=1) — REQUIRES asset_id
+{ "kind": "timeseries", "asset_id": "${ex.exAssetId}", "namespace": "${ex.exNs}", "metric": "${ex.exMetric}" }
+
+### timeseries_multi (w=2) — REQUIRES series array with asset_id per entry
+{
+  "kind": "timeseries_multi",
+  "series": ${JSON.stringify(ex.multiSeries, null, 2).replace(/\n/g, '\n  ')}
+}
+
+### kpi (w=1) — latest value, REQUIRES asset_id (same query as timeseries)
+{ "kind": "timeseries", "asset_id": "${ex.exAssetId}", "namespace": "${ex.exNs}", "metric": "${ex.exMetric}" }
+
+### gauge (w=1) — use val_min/val_max from catalog for min/max; if unit=% use 0/100
+{ "kind": "timeseries", "asset_id": "${ex.exAssetId}", "namespace": "${ex.exNs}", "metric": "${ex.exMetric}", "min": 0, "max": 100 }
+
+### events (w=1 or w=2)
+{ "kind": "events", "namespace": "${ex.firstEvNs}", "limit": 20 }
+{ "kind": "events", "namespace": "${ex.firstEvNs}"${evKindFilter}, "limit": 20 }
+{ "kind": "events", "namespace": "${ex.firstEvNs}"${evSevFilter}, "limit": 50 }
+{ "kind": "events", "namespace": "${ex.firstEvNs}"${evAgentFilter}, "limit": 20 }
+
+### eps (w=2) — events-per-second line chart
+{ "kind": "event_count", "namespace": "${ex.firstEvNs}" }
+{ "kind": "event_count", "namespace": "${ex.firstEvNs}"${evAgentFilter} }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## STRICT DATA RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${allowed}
+
+CRITICAL CONSTRAINTS:
+1. Return ONLY the JSON object — no markdown fences, no text outside JSON
+2. NEVER include "from" or "to" in any query
+3. timeseries, kpi and gauge MUST have "asset_id" — use ONLY asset_ids from the list above
+4. gauge MUST have "min" and "max" — use value ranges from the catalog
+5. timeseries_multi MUST have "series" array — each entry MUST have asset_id+namespace+metric+label
+6. eps query.kind MUST be "event_count"
+7. events query.kind MUST be "events"
+8. NEVER invent or guess asset_ids, metrics, or namespaces. If the user asks for data that does not exist, use the closest available match and explain in the dashboard description.
+9. If there are no metrics or events available, create an empty dashboard with a description explaining no data is available.
+`;
+}
+
+// ─── System Prompt: Smart Dashboard HTML ─────────────────────────────────────
+
+function buildSmartDashboardPrompt(catalog: RagCatalog): string {
+  const metricCatalog = formatMetricCatalog(catalog);
+  const eventCatalog  = formatEventCatalog(catalog);
+  const connCatalog   = formatConnectorCatalog(catalog);
+  const allowed       = buildAllowedList(catalog);
+
+  return `You are a dashboard designer for orbit-core. You generate lightweight HTML pages that use the OrbitViz SDK to render charts.
+
+OUTPUT: Return ONLY a valid JSON object:
+{ "name": "Dashboard Name", "description": "One-line description", "html": "<!DOCTYPE html>..." }
+
+═══════════════════════════════════════════════════════
+ DATA CATALOG — REAL DATA FROM THIS INSTANCE
+═══════════════════════════════════════════════════════
+
+METRICS (asset_id → namespace → metric with value ranges):
+${metricCatalog}
+
+EVENTS (namespace → kinds / agents / severities):
+${eventCatalog}
+
+CONNECTORS:
+${connCatalog}
+
+═══════════════════════════════════════════════════════
+ STRICT DATA VALIDATION
+═══════════════════════════════════════════════════════
+${allowed}
+
+You MUST ONLY use identifiers from the lists above.
+If the user asks for data that does not exist, pick the closest match and note it in the description.
+
+═══════════════════════════════════════════════════════
+ OrbitViz SDK — VISUALIZATION LIBRARY
+═══════════════════════════════════════════════════════
+
+The page loads orbit-viz.js automatically (injected by the host). It provides window.OrbitViz.
+OrbitViz.init() is called automatically with baseUrl, apiKey, from, to — you do NOT need to call it.
+
+── AVAILABLE METHODS ──
+
+Each method takes a CSS selector and an options object. The library handles:
+  - querying the orbit-core API
+  - rendering (Canvas 2D, SVG, or DOM)
+  - auto-refresh every 30s
+  - loading spinners and error states
+  - DPR-aware canvas scaling
+  - card wrapper with title and unit label
+
+1. OrbitViz.line(selector, opts)
+   Timeseries line chart (with area fill). For metrics over time.
+   opts: { metric, asset, namespace, title, unit, color, height }
+
+2. OrbitViz.area(selector, opts)
+   Same as line() but always with area fill.
+
+3. OrbitViz.multiLine(selector, opts)
+   Multi-series line chart comparing metrics across assets.
+   opts: { series: [{ asset_id, namespace, metric, label }], title, unit, colors, height }
+
+4. OrbitViz.bar(selector, opts)
+   Bar chart comparing multiple metrics (last value).
+   opts: { metrics: [{ metric, asset, namespace, label }], title, unit, colors, height }
+
+5. OrbitViz.gauge(selector, opts)
+   Gauge arc for percentage values. Auto-colors by range.
+   opts: { metric, asset, namespace, title, unit, max, size }
+   Use val_min/val_max from catalog for gauge range. If unit=%, use max:100.
+
+6. OrbitViz.kpi(selector, opts)
+   Big number KPI card (latest value).
+   opts: { metric, asset, namespace, title, unit, subtitle, color, aggregate, queryKind }
+
+7. OrbitViz.events(selector, opts)
+   Event table with severity badges.
+   opts: { namespace, asset, severities, kinds, limit, title, height }
+
+8. OrbitViz.eps(selector, opts)
+   Events Per Second line chart.
+   opts: { namespace, asset, severities, title, color, height }
+
+9. OrbitViz.donut(selector, opts)
+   Donut chart for event distribution.
+   opts: { namespace, asset, groupBy, title, limit, items }
+   groupBy: 'severity' (default), 'kind', 'asset_id'
+
+10. OrbitViz.table(selector, opts)
+    Alias for events().
+
+11. OrbitViz.layout(selector, { cols, gap })
+    Apply responsive CSS grid.
+
+═══════════════════════════════════════════════════════
+ DATA → VISUALIZATION MAPPING
+═══════════════════════════════════════════════════════
+
+Use the catalog above and AUTOMATICALLY choose:
+- metric with "usage" or "pct" or "%" → gauge()
+- metric over time → line() or area()
+- multiple same metrics, different assets → multiLine()
+- current/latest value → kpi()
+- event feed / security alerts → events()
+- events per second → eps()
+- severity distribution → donut() with groupBy:'severity'
+- event type distribution → donut() with groupBy:'kind'
+- comparing values across metrics → bar()
+
+═══════════════════════════════════════════════════════
+ HTML TEMPLATE — FOLLOW THIS STRUCTURE
+═══════════════════════════════════════════════════════
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Name</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: transparent; font-family: 'Inter', system-ui, sans-serif; color: #e2e8f0; padding: 20px; }
+  h1 { font-size: 18px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .wide { grid-column: span 2; }
+  .full { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<h1>Dashboard Title</h1>
+<div class="grid">
+  <div id="chart1"></div>
+  <div id="chart2"></div>
+  <div id="chart3"></div>
+  <div id="chart4" class="wide"></div>
+</div>
+<script>
+  OrbitViz.line('#chart1', { ... });
+  OrbitViz.gauge('#chart2', { ... });
+  OrbitViz.kpi('#chart3', { ... });
+  OrbitViz.events('#chart4', { ... });
+</script>
+</body>
+</html>
+
+═══════════════════════════════════════════════════════
+ RULES (NEVER VIOLATE)
+═══════════════════════════════════════════════════════
+
+1. Output ONLY valid JSON: { "name": "...", "description": "...", "html": "..." }
+2. html MUST be a complete HTML page starting with <!DOCTYPE html>
+3. NEVER write Canvas, SVG, or fetch() code manually. ALWAYS use OrbitViz.* methods.
+4. OrbitViz.init() is called automatically — do NOT call it yourself.
+5. Use ONLY asset_ids, namespaces, metrics from the ALLOWED lists above. NEVER invent data.
+6. body background MUST be transparent.
+7. Keep HTML under 200 lines — OrbitViz handles all rendering logic.
+8. Use class="wide" for wider charts, class="full" for full-width.
+9. Create a visually balanced dashboard with a mix of chart types appropriate to the data.
+10. If the user asks for data that does not exist in the catalog, use the closest match and note it in the description.
+`;
+}
+
+// ─── Router ──────────────────────────────────────────────────────────────────
 
 export function aiRouter(pool: Pool | null): Router {
   const r = Router();
 
-  // ── AI Plugin Generator ───────────────────────────────────────────────────
-  //
-  // POST /api/v1/ai/plugin
-  // Headers: X-Ai-Key, X-Ai-Model
-  // Body:    { description: string, source_type?: string }
-  //
-  // Returns three downloadable artefacts:
-  //   connector_spec  — orbit-core DSL spec (JSON object)
-  //   agent_script    — shell/Python script to run on target machine (string)
-  //   readme          — markdown install instructions (string)
+  // ── RAG Catalog Endpoint ──────────────────────────────────────────────────
+  r.get('/ai/rag', async (_req, res) => {
+    if (!pool) return res.status(503).json({ ok: false, error: 'No database connection' });
 
+    try {
+      const catalog = await getRagCatalog(pool);
+      const cached = ragCache !== null && (Date.now() - ragCache.ts) < 1000; // fresh if just built
+      return res.json({ ok: true, cached: !cached, ...catalog });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: 'Failed to build RAG catalog', detail: String(err) });
+    }
+  });
+
+  // ── AI Plugin Generator ─────────────────────────────────────────────────
   r.post('/ai/plugin', async (req, res) => {
     const aiKey   = req.headers['x-ai-key']   as string | undefined;
     const aiModel = req.headers['x-ai-model'] as string | undefined;
@@ -123,6 +573,7 @@ export function aiRouter(pool: Pool | null): Router {
     return res.json({ ok: true, ...(plugin as Record<string, unknown>) });
   });
 
+  // ── AI Dashboard Spec Generator ─────────────────────────────────────────
   r.post('/ai/dashboard', async (req, res) => {
     const aiKey   = req.headers['x-ai-key']   as string | undefined;
     const aiModel = req.headers['x-ai-model'] as string | undefined;
@@ -135,76 +586,14 @@ export function aiRouter(pool: Pool | null): Router {
       return res.status(400).json({ ok: false, error: 'Missing prompt in body' });
     }
 
-    // ── Fetch rich catalog from DB ─────────────────────────────────────────
-    let assetMetrics:  AssetMetric[]   = [];
-    let eventNsStats:  EventNsStat[]   = [];
-    let eventKinds:    EventKindStat[] = [];
-    let eventAgents:   EventAgentStat[]= [];
-    let eventSevs:     EventSevStat[]  = [];
-    let assetNames:    Map<string, string> = new Map();
-
+    // Fetch RAG catalog (cached)
+    let catalog: RagCatalog = { generated_at: new Date().toISOString(), assets: [], metrics: [], events: [], connectors: [] };
     if (pool) {
-      try {
-        const [amr, anr, ensr, ekr, ear, esr] = await Promise.all([
-          // Metrics: asset + namespace + metric with point counts (top by volume)
-          pool.query<AssetMetric>(
-            `SELECT asset_id, namespace, metric, count(*)::int AS pts
-             FROM metric_points
-             GROUP BY asset_id, namespace, metric
-             ORDER BY pts DESC
-             LIMIT 400`
-          ),
-          // Asset names
-          pool.query<{ asset_id: string; name: string }>(
-            'SELECT asset_id, name FROM assets ORDER BY last_seen DESC LIMIT 100'
-          ),
-          // Event namespace stats
-          pool.query<EventNsStat>(
-            `SELECT namespace,
-                    count(*)::int          AS total,
-                    max(ts)::text          AS last_seen
-             FROM orbit_events
-             GROUP BY namespace
-             ORDER BY total DESC
-             LIMIT 20`
-          ),
-          // Event kinds per namespace (top 30 by volume)
-          pool.query<EventKindStat>(
-            `SELECT namespace, kind, count(*)::int AS cnt
-             FROM orbit_events
-             GROUP BY namespace, kind
-             ORDER BY cnt DESC
-             LIMIT 50`
-          ),
-          // Event agents per namespace (top 20 by volume)
-          pool.query<EventAgentStat>(
-            `SELECT namespace, asset_id, count(*)::int AS cnt
-             FROM orbit_events
-             GROUP BY namespace, asset_id
-             ORDER BY cnt DESC
-             LIMIT 50`
-          ),
-          // Severity distribution per namespace
-          pool.query<EventSevStat>(
-            `SELECT namespace, severity, count(*)::int AS cnt
-             FROM orbit_events
-             GROUP BY namespace, severity
-             ORDER BY namespace, cnt DESC`
-          ),
-        ]);
-
-        assetMetrics = amr.rows;
-        assetNames   = new Map(anr.rows.map(a => [a.asset_id, a.name]));
-        eventNsStats = ensr.rows;
-        eventKinds   = ekr.rows;
-        eventAgents  = ear.rows;
-        eventSevs    = esr.rows;
-      } catch { /* catalog may be empty — continue */ }
+      try { catalog = await getRagCatalog(pool); } catch { /* empty catalog fallback */ }
     }
 
-    const systemPrompt = buildSystemPrompt(assetMetrics, assetNames, eventNsStats, eventKinds, eventAgents, eventSevs);
+    const systemPrompt = buildSystemPrompt(catalog);
 
-    // ── Call Anthropic API ─────────────────────────────────────────────────
     let anthropicRes: Response;
     try {
       anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -221,7 +610,7 @@ export function aiRouter(pool: Pool | null): Router {
           messages:   [{ role: 'user', content: prompt }],
         }),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       return res.status(502).json({ ok: false, error: 'Failed to reach Anthropic API', detail: String(err) });
     }
 
@@ -237,7 +626,6 @@ export function aiRouter(pool: Pool | null): Router {
     const anthropicJson = await anthropicRes.json() as { content?: Array<{ text: string }> };
     const rawText = anthropicJson?.content?.[0]?.text ?? '';
 
-    // Strip markdown fences if the model wrapped in ```json ... ```
     const jsonText = rawText
       .replace(/^```(?:json)?\s*/m, '')
       .replace(/\s*```\s*$/m, '')
@@ -254,7 +642,6 @@ export function aiRouter(pool: Pool | null): Router {
       });
     }
 
-    // Inject defaults the model may have omitted
     if (spec && typeof spec === 'object') {
       const s = spec as Record<string, unknown>;
       if (!s['id'])      s['id']      = `dash-${Date.now()}`;
@@ -274,7 +661,7 @@ export function aiRouter(pool: Pool | null): Router {
     return res.json({ ok: true, spec: parsed.data });
   });
 
-  // ── AI Smart Dashboard (HTML/CSS/JS generator) ────────────────────────────
+  // ── AI Smart Dashboard (HTML/CSS/JS generator) ──────────────────────────
   r.post('/ai/smart-dashboard', async (req, res) => {
     const aiKey   = req.headers['x-ai-key']   as string | undefined;
     const aiModel = req.headers['x-ai-model'] as string | undefined;
@@ -287,68 +674,13 @@ export function aiRouter(pool: Pool | null): Router {
       return res.status(400).json({ ok: false, error: 'Provide a prompt of at least 5 characters' });
     }
 
-    // Reuse catalog queries
-    let assetMetrics:  AssetMetric[]   = [];
-    let eventNsStats:  EventNsStat[]   = [];
-    let eventKinds:    EventKindStat[] = [];
-    let eventAgents:   EventAgentStat[]= [];
-    let eventSevs:     EventSevStat[]  = [];
-    let assetNames:    Map<string, string> = new Map();
-
+    // Fetch RAG catalog (cached)
+    let catalog: RagCatalog = { generated_at: new Date().toISOString(), assets: [], metrics: [], events: [], connectors: [] };
     if (pool) {
-      try {
-        const [amr, anr, ensr, ekr, ear, esr] = await Promise.all([
-          pool.query<AssetMetric>(
-            `SELECT asset_id, namespace, metric, count(*)::int AS pts
-             FROM metric_points
-             GROUP BY asset_id, namespace, metric
-             ORDER BY pts DESC
-             LIMIT 400`
-          ),
-          pool.query<{ asset_id: string; name: string }>(
-            'SELECT asset_id, name FROM assets ORDER BY last_seen DESC LIMIT 100'
-          ),
-          pool.query<EventNsStat>(
-            `SELECT namespace,
-                    count(*)::int          AS total,
-                    max(ts)::text          AS last_seen
-             FROM orbit_events
-             GROUP BY namespace
-             ORDER BY total DESC
-             LIMIT 20`
-          ),
-          pool.query<EventKindStat>(
-            `SELECT namespace, kind, count(*)::int AS cnt
-             FROM orbit_events
-             GROUP BY namespace, kind
-             ORDER BY cnt DESC
-             LIMIT 50`
-          ),
-          pool.query<EventAgentStat>(
-            `SELECT namespace, asset_id, count(*)::int AS cnt
-             FROM orbit_events
-             GROUP BY namespace, asset_id
-             ORDER BY cnt DESC
-             LIMIT 50`
-          ),
-          pool.query<EventSevStat>(
-            `SELECT namespace, severity, count(*)::int AS cnt
-             FROM orbit_events
-             GROUP BY namespace, severity
-             ORDER BY namespace, cnt DESC`
-          ),
-        ]);
-
-        assetMetrics = amr.rows;
-        assetNames   = new Map(anr.rows.map(a => [a.asset_id, a.name]));
-        eventNsStats = ensr.rows;
-        eventKinds   = ekr.rows;
-        eventAgents  = ear.rows;
-        eventSevs    = esr.rows;
-      } catch { /* catalog may be empty */ }
+      try { catalog = await getRagCatalog(pool); } catch { /* empty catalog fallback */ }
     }
 
-    const systemPrompt = buildSmartDashboardPrompt(assetMetrics, assetNames, eventNsStats, eventKinds, eventAgents, eventSevs);
+    const systemPrompt = buildSmartDashboardPrompt(catalog);
 
     let anthropicRes: Response;
     try {
@@ -390,7 +722,6 @@ export function aiRouter(pool: Pool | null): Router {
     try {
       result = JSON.parse(jsonText);
     } catch {
-      // If the model returned raw HTML, wrap it
       if (rawText.includes('<!DOCTYPE') || rawText.includes('<html')) {
         result = { html: rawText.trim(), name: 'AI Dashboard', description: prompt };
       } else {
@@ -413,7 +744,7 @@ export function aiRouter(pool: Pool | null): Router {
   return r;
 }
 
-// ─── Plugin system prompt ─────────────────────────────────────────────────────
+// ─── Plugin system prompt (unchanged) ────────────────────────────────────────
 
 function buildPluginSystemPrompt(): string {
   return `You are orbit-core Plugin Builder AI. Given a description of a data source,
@@ -558,404 +889,5 @@ Keep each section short and practical. Use code blocks for commands.
 4. Use realistic field names derived from the described data source
 5. ORBIT_URL, ORBIT_SOURCE_ID, ORBIT_API_KEY are always placeholder strings — never fill real values
 6. Keep connector_spec namespace as a short slug (lowercase, no spaces)
-`;
-}
-
-// ─── System prompt builder ────────────────────────────────────────────────────
-
-function buildSystemPrompt(
-  assetMetrics: AssetMetric[],
-  assetNames:   Map<string, string>,
-  eventNsStats: EventNsStat[],
-  eventKinds:   EventKindStat[],
-  eventAgents:  EventAgentStat[],
-  eventSevs:    EventSevStat[],
-): string {
-
-  // ── Group metrics by asset ───────────────────────────────────────────────
-  const byAsset = new Map<string, { namespace: string; metric: string; pts: number }[]>();
-  for (const am of assetMetrics) {
-    const arr = byAsset.get(am.asset_id) ?? [];
-    arr.push({ namespace: am.namespace, metric: am.metric, pts: am.pts });
-    byAsset.set(am.asset_id, arr);
-  }
-
-  let metricCatalog = '';
-  if (byAsset.size === 0) {
-    metricCatalog = '  (no metrics registered yet)';
-  } else {
-    const lines: string[] = [];
-    for (const [assetId, mets] of byAsset) {
-      const label = assetNames.get(assetId) ?? assetId;
-      lines.push(`  Asset: ${assetId}  (${label})`);
-      for (const m of mets.slice(0, 20)) {
-        lines.push(`    - namespace=${m.namespace}  metric=${m.metric}  (${m.pts} points)`);
-      }
-    }
-    metricCatalog = lines.join('\n');
-  }
-
-  // ── Build event namespace sections ──────────────────────────────────────
-  let eventCatalog = '';
-  if (eventNsStats.length === 0) {
-    eventCatalog = '  (no events registered yet — use wazuh/n8n connectors to ingest)';
-  } else {
-    const lines: string[] = [];
-    for (const ns of eventNsStats) {
-      lines.push(`  Namespace: ${ns.namespace}  (${ns.total.toLocaleString()} events, last: ${ns.last_seen ?? 'never'})`);
-
-      const kinds = eventKinds.filter(k => k.namespace === ns.namespace);
-      if (kinds.length) {
-        lines.push(`    Event kinds: ${kinds.map(k => `${k.kind}(${k.cnt})`).join(', ')}`);
-      }
-
-      const agents = eventAgents.filter(a => a.namespace === ns.namespace);
-      if (agents.length) {
-        lines.push(`    Agents (asset_id): ${agents.map(a => `${a.asset_id}(${a.cnt})`).join(', ')}`);
-      }
-
-      const sevs = eventSevs.filter(s => s.namespace === ns.namespace);
-      if (sevs.length) {
-        lines.push(`    Severities: ${sevs.map(s => `${s.severity}(${s.cnt})`).join(', ')}`);
-      }
-    }
-    eventCatalog = lines.join('\n');
-  }
-
-  // ── Pick real examples for query templates ───────────────────────────────
-  const firstAssetEntry = assetMetrics[0];
-  const exAssetId  = firstAssetEntry?.asset_id ?? 'host:server1';
-  const exNs       = firstAssetEntry?.namespace ?? 'nagios';
-  const exMetric   = firstAssetEntry?.metric    ?? 'load1';
-
-  // Pick up to 3 distinct assets for timeseries_multi example
-  const distinctAssets = [...new Set(assetMetrics.map(m => m.asset_id))].slice(0, 3);
-  const multiNs     = firstAssetEntry?.namespace ?? 'nagios';
-  const multiMetric = assetMetrics.find(m => m.namespace === multiNs && distinctAssets.includes(m.asset_id))?.metric ?? exMetric;
-  const multiSeries = distinctAssets.map(aid => ({
-    asset_id:  aid,
-    namespace: multiNs,
-    metric:    multiMetric,
-    label:     assetNames.get(aid) ?? aid,
-  }));
-
-  // Pick first event namespace for examples
-  const firstEvNs     = eventNsStats[0]?.namespace ?? 'wazuh';
-  const firstEvKind   = eventKinds.find(k => k.namespace === firstEvNs)?.kind;
-  const firstEvAgent  = eventAgents.find(a => a.namespace === firstEvNs)?.asset_id;
-  const highSevExists = eventSevs.some(s => s.namespace === firstEvNs && (s.severity === 'high' || s.severity === 'critical'));
-
-  // Build Wazuh/event-specific widget examples
-  const evNsLabel = firstEvNs;
-  const evKindFilter = firstEvKind ? `, "kinds": ["${firstEvKind}"]` : '';
-  const evAgentFilter = firstEvAgent ? `, "asset_id": "${firstEvAgent}"` : '';
-  const evSevFilter = highSevExists ? `, "severities": ["high", "critical"]` : '';
-
-  return `You are an orbit-core Dashboard Builder AI. Output ONLY a single valid JSON object (no markdown, no explanation).
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## METRIC CATALOG (asset → namespace → metric)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${metricCatalog}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## EVENT CATALOG (namespace → kinds / agents / severities)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${eventCatalog}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## DASHBOARD SPEC SCHEMA
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{
-  id, name, description?, version: "v1",
-  time: { preset: "60m"|"6h"|"24h"|"7d"|"30d" },
-  tags: string[],
-  widgets: WidgetSpec[]   // 1–20
-}
-WidgetSpec = { id, title, kind, layout: {x:0,y:0,w:1|2,h:1}, query }
-  kind: "timeseries" | "timeseries_multi" | "events" | "eps" | "kpi" | "gauge"
-  w=1 → half width,  w=2 → full width
-  query must NOT contain "from" or "to"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## QUERY FORMAT — EXACT REQUIRED STRUCTURE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-### timeseries (w=1) — REQUIRES asset_id
-{ "kind": "timeseries", "asset_id": "${exAssetId}", "namespace": "${exNs}", "metric": "${exMetric}" }
-
-### timeseries_multi (w=2) — REQUIRES series array with asset_id per entry
-{
-  "kind": "timeseries_multi",
-  "series": ${JSON.stringify(multiSeries, null, 2).replace(/\n/g, '\n  ')}
-}
-
-### kpi (w=1) — latest value, REQUIRES asset_id (same query as timeseries)
-{ "kind": "timeseries", "asset_id": "${exAssetId}", "namespace": "${exNs}", "metric": "${exMetric}" }
-
-### gauge (w=1) — half-donut gauge, color-coded by value percentage; REQUIRES asset_id + min + max
-{ "kind": "timeseries", "asset_id": "${exAssetId}", "namespace": "${exNs}", "metric": "${exMetric}", "min": 0, "max": 100 }
-  # Use gauge for percentage-like metrics (CPU %, disk %, latency ms with known ceiling)
-  # min/max set the display range: green=0-50%, yellow=50-75%, red=75-100%
-
-### events (w=1 or w=2) — event feed table
-{ "kind": "events", "namespace": "${evNsLabel}", "limit": 20 }
-
-  # With kind filter (when event kinds are available):
-  { "kind": "events", "namespace": "${evNsLabel}"${evKindFilter}, "limit": 20 }
-
-  # With severity filter (for security dashboards):
-  { "kind": "events", "namespace": "${evNsLabel}"${evSevFilter}, "limit": 50 }
-
-  # Per specific agent:
-  { "kind": "events", "namespace": "${evNsLabel}"${evAgentFilter}, "limit": 20 }
-
-### eps (w=2) — events-per-second line chart
-{ "kind": "event_count", "namespace": "${evNsLabel}" }
-
-  # Per specific agent (if agents are available):
-  { "kind": "event_count", "namespace": "${evNsLabel}"${evAgentFilter} }
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## WAZUH DASHBOARD GUIDE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-For Wazuh security monitoring use these widget combinations:
-- eps (w=2): global EPS + per-agent EPS for each known agent
-- events (w=2): all events, or filtered by severity=["high","critical"]
-- events (w=1): per-agent feed using asset_id from the agent list above
-- events (w=2): specific event kinds (e.g. fortigate firewall logs)
-- kpi (w=1): total event count is NOT available as a KPI — use eps instead
-
-Wazuh severities: critical > high > medium > low > info
-Use severities=["high","critical"] for security-critical feeds.
-Use severities=["medium","high","critical"] for broader monitoring.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## RULES (NEVER VIOLATE)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Return ONLY the JSON object — no markdown fences, no text outside JSON
-2. NEVER include "from" or "to" in any query
-3. timeseries, kpi and gauge MUST have "asset_id" — use real asset_ids from the catalog
-3b. gauge MUST have "min" and "max" numeric fields (e.g. 0/100 for percentages)
-4. timeseries_multi MUST have "series" array — each entry MUST have asset_id+namespace+metric+label
-5. eps query.kind MUST be "event_count"
-6. events query.kind MUST be "events"
-7. Use only asset_ids that appear in the catalog above
-8. Use only metric names that appear in the catalog above
-9. Use only namespace values that appear in the catalog above
-`;
-}
-
-// ─── Smart Dashboard HTML prompt ─────────────────────────────────────────────
-
-function buildSmartDashboardPrompt(
-  assetMetrics: AssetMetric[],
-  assetNames:   Map<string, string>,
-  eventNsStats: EventNsStat[],
-  eventKinds:   EventKindStat[],
-  eventAgents:  EventAgentStat[],
-  eventSevs:    EventSevStat[],
-): string {
-
-  // Build metric catalog
-  const byAsset = new Map<string, { namespace: string; metric: string; pts: number }[]>();
-  for (const am of assetMetrics) {
-    const arr = byAsset.get(am.asset_id) ?? [];
-    arr.push({ namespace: am.namespace, metric: am.metric, pts: am.pts });
-    byAsset.set(am.asset_id, arr);
-  }
-
-  let metricCatalog = '';
-  if (byAsset.size === 0) {
-    metricCatalog = '  (no metrics registered yet)';
-  } else {
-    const lines: string[] = [];
-    for (const [assetId, mets] of byAsset) {
-      const label = assetNames.get(assetId) ?? assetId;
-      lines.push(`  Asset: ${assetId}  (${label})`);
-      for (const m of mets.slice(0, 20)) {
-        lines.push(`    - namespace=${m.namespace}  metric=${m.metric}  (${m.pts} points)`);
-      }
-    }
-    metricCatalog = lines.join('\n');
-  }
-
-  // Build event catalog
-  let eventCatalog = '';
-  if (eventNsStats.length === 0) {
-    eventCatalog = '  (no events registered yet)';
-  } else {
-    const lines: string[] = [];
-    for (const ns of eventNsStats) {
-      lines.push(`  Namespace: ${ns.namespace}  (${ns.total.toLocaleString()} events, last: ${ns.last_seen ?? 'never'})`);
-      const kinds = eventKinds.filter(k => k.namespace === ns.namespace);
-      if (kinds.length) lines.push(`    Kinds: ${kinds.map(k => `${k.kind}(${k.cnt})`).join(', ')}`);
-      const agents = eventAgents.filter(a => a.namespace === ns.namespace);
-      if (agents.length) lines.push(`    Agents: ${agents.map(a => `${a.asset_id}(${a.cnt})`).join(', ')}`);
-      const sevs = eventSevs.filter(s => s.namespace === ns.namespace);
-      if (sevs.length) lines.push(`    Severities: ${sevs.map(s => `${s.severity}(${s.cnt})`).join(', ')}`);
-    }
-    eventCatalog = lines.join('\n');
-  }
-
-  return `You are a dashboard designer for orbit-core. You generate lightweight HTML pages that use the OrbitViz SDK to render charts.
-
-OUTPUT: Return ONLY a valid JSON object:
-{ "name": "Dashboard Name", "description": "One-line description", "html": "<!DOCTYPE html>..." }
-
-═══════════════════════════════════════════════════════
- DATA CATALOG — REAL DATA FROM THIS INSTANCE
-═══════════════════════════════════════════════════════
-
-METRICS (asset_id → namespace → metric):
-${metricCatalog}
-
-EVENTS (namespace → kinds / agents / severities):
-${eventCatalog}
-
-IMPORTANT: Use ONLY the asset_ids, namespaces, metrics and event kinds listed above. Never invent data.
-
-═══════════════════════════════════════════════════════
- OrbitViz SDK — VISUALIZATION LIBRARY
-═══════════════════════════════════════════════════════
-
-The page loads orbit-viz.js automatically (injected by the host). It provides window.OrbitViz.
-OrbitViz.init() is called automatically with baseUrl, apiKey, from, to — you do NOT need to call it.
-
-── AVAILABLE METHODS ──
-
-Each method takes a CSS selector and an options object. The library handles:
-  - querying the orbit-core API
-  - rendering (Canvas 2D, SVG, or DOM)
-  - auto-refresh every 30s
-  - loading spinners and error states
-  - DPR-aware canvas scaling
-  - card wrapper with title and unit label
-
-1. OrbitViz.line(selector, opts)
-   Timeseries line chart (with area fill). For metrics over time.
-   opts: { metric, asset, namespace, title, unit, color, height }
-   Example: OrbitViz.line('#cpu', { metric: 'cpu_usage', asset: 'host:server-01', namespace: 'nagios', title: 'CPU Usage', unit: '%' })
-
-2. OrbitViz.area(selector, opts)
-   Same as line() but always with area fill. Alias for line with fill:true.
-
-3. OrbitViz.multiLine(selector, opts)
-   Multi-series line chart. For comparing metrics across assets.
-   opts: { series: [{ asset_id, namespace, metric, label }], title, unit, colors, height }
-   Example: OrbitViz.multiLine('#compare', { title: 'CPU Comparison', series: [
-     { asset_id: 'host:server-01', namespace: 'nagios', metric: 'cpu_usage', label: 'Server 01' },
-     { asset_id: 'host:server-02', namespace: 'nagios', metric: 'cpu_usage', label: 'Server 02' }
-   ]})
-
-4. OrbitViz.bar(selector, opts)
-   Bar chart comparing multiple metrics. Uses last value of each metric.
-   opts: { metrics: [{ metric, asset, namespace, label }], title, unit, colors, height }
-   OR: { metrics: ['cpu_usage', 'memory_usage'], asset, namespace, title }
-   Example: OrbitViz.bar('#bars', { title: 'Resource Usage', asset: 'host:server-01', namespace: 'nagios', metrics: [
-     { metric: 'cpu_usage', label: 'CPU' },
-     { metric: 'memory_usage', label: 'Memory' },
-     { metric: 'disk_usage', label: 'Disk' }
-   ], unit: '%' })
-
-5. OrbitViz.gauge(selector, opts)
-   Gauge arc for percentage values. Auto-colors: green (<50%), yellow (50-75%), orange (75-90%), red (>90%).
-   opts: { metric, asset, namespace, title, unit, max, size }
-   Example: OrbitViz.gauge('#disk', { metric: 'disk_usage', asset: 'host:server-01', namespace: 'nagios', title: 'Disk', unit: '%' })
-
-6. OrbitViz.kpi(selector, opts)
-   Big number KPI card showing the latest value.
-   opts: { metric, asset, namespace, title, unit, subtitle, color, aggregate, queryKind }
-   Use aggregate:'sum' to sum all values instead of last. Use queryKind:'event_count' for EPS total.
-   Example: OrbitViz.kpi('#uptime', { metric: 'uptime', asset: 'host:server-01', namespace: 'nagios', title: 'Uptime', unit: 'sec' })
-
-7. OrbitViz.events(selector, opts)
-   Event table with severity badges. For security alerts, logs, etc.
-   opts: { namespace, asset, severities, kinds, limit, title, height }
-   Example: OrbitViz.events('#alerts', { namespace: 'wazuh', title: 'Security Events', limit: 20 })
-
-8. OrbitViz.eps(selector, opts)
-   Events Per Second line chart. Uses event_count query.
-   opts: { namespace, asset, severities, title, color, height }
-   Example: OrbitViz.eps('#eps', { namespace: 'wazuh', title: 'Events/sec' })
-
-9. OrbitViz.donut(selector, opts)
-   Donut chart showing event distribution. Default groups by severity.
-   opts: { namespace, asset, groupBy, title, limit, items }
-   groupBy: 'severity' (default), 'kind', 'asset_id'
-   Example: OrbitViz.donut('#sev', { namespace: 'wazuh', title: 'By Severity', groupBy: 'severity' })
-
-10. OrbitViz.table(selector, opts)
-    Alias for events() — same event table.
-
-11. OrbitViz.layout(selector, { cols, gap })
-    Apply responsive CSS grid. Auto-adapts: 3→2→1 columns.
-    Example: OrbitViz.layout('#grid', { cols: 3, gap: 16 })
-
-═══════════════════════════════════════════════════════
- DATA → VISUALIZATION MAPPING
-═══════════════════════════════════════════════════════
-
-Use the catalog above and AUTOMATICALLY choose:
-- metric with "usage" or "pct" or "%" → gauge()
-- metric over time → line() or area()
-- multiple same metrics, different assets → multiLine()
-- current/latest value → kpi()
-- event feed / security alerts → events()
-- events per second → eps()
-- severity distribution → donut() with groupBy:'severity'
-- event type distribution → donut() with groupBy:'kind'
-- comparing values across metrics → bar()
-
-═══════════════════════════════════════════════════════
- HTML TEMPLATE — FOLLOW THIS STRUCTURE
-═══════════════════════════════════════════════════════
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard Name</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: transparent; font-family: 'Inter', system-ui, sans-serif; color: #e2e8f0; padding: 20px; }
-  h1 { font-size: 18px; margin-bottom: 16px; }
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
-  .wide { grid-column: span 2; }
-</style>
-</head>
-<body>
-<h1>Dashboard Title</h1>
-<div class="grid">
-  <div id="chart1"></div>
-  <div id="chart2"></div>
-  <div id="chart3"></div>
-  <div id="chart4" class="wide"></div>
-</div>
-<script>
-  OrbitViz.line('#chart1', { ... });
-  OrbitViz.gauge('#chart2', { ... });
-  OrbitViz.kpi('#chart3', { ... });
-  OrbitViz.events('#chart4', { ... });
-</script>
-</body>
-</html>
-
-═══════════════════════════════════════════════════════
- RULES
-═══════════════════════════════════════════════════════
-
-1. Output ONLY valid JSON: { "name": "...", "description": "...", "html": "..." }
-2. html MUST be a complete HTML page starting with <!DOCTYPE html>
-3. NEVER write Canvas, SVG, or fetch() code manually. ALWAYS use OrbitViz.* methods.
-4. OrbitViz.init() is called automatically — do NOT call it yourself.
-5. Use ONLY asset_ids, namespaces, metrics from the catalog above. NEVER invent data.
-6. body background MUST be transparent.
-7. Keep HTML under 200 lines — OrbitViz handles all rendering logic.
-8. Use class="wide" for wider charts like events tables or multi-line comparisons.
-9. Create a visually balanced dashboard with a mix of chart types appropriate to the data.
 `;
 }
