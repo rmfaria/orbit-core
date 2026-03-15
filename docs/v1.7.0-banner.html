@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit Core v1.7.0 — MISP Threat Intelligence</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #040713;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .banner {
+    width: 1200px;
+    height: 628px;
+    background: linear-gradient(135deg, #040713 0%, #0d1020 30%, #12082a 60%, #0a0f1e 100%);
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 56px 80px;
+  }
+
+  /* Fuchsia glow — top right */
+  .banner::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -60px;
+    width: 480px;
+    height: 480px;
+    background: radial-gradient(circle, rgba(232, 121, 249, 0.10) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Cyan glow — bottom left */
+  .banner::after {
+    content: '';
+    position: absolute;
+    bottom: -120px;
+    left: -40px;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(85, 243, 255, 0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Shield watermark */
+  .shield {
+    position: absolute;
+    right: 60px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 280px;
+    height: 320px;
+    opacity: 0.04;
+    pointer-events: none;
+  }
+  .shield svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Grid pattern */
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232, 121, 249, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232, 121, 249, 0.025) 1px, transparent 1px);
+    background-size: 44px 44px;
+    pointer-events: none;
+  }
+
+  .content { position: relative; z-index: 1; }
+
+  .version-badge {
+    display: inline-block;
+    background: rgba(232, 121, 249, 0.12);
+    border: 1px solid rgba(232, 121, 249, 0.35);
+    color: #e879f9;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 22px;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: 50px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 14px;
+    letter-spacing: -0.02em;
+  }
+  h1 .white {
+    color: #ffffff;
+  }
+  h1 .accent {
+    background: linear-gradient(135deg, #e879f9 0%, #55f3ff 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    font-size: 20px;
+    color: #8892b0;
+    margin-bottom: 36px;
+    line-height: 1.5;
+    max-width: 700px;
+  }
+
+  .features {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 36px;
+  }
+
+  .feature {
+    flex: 1;
+    background: rgba(13, 16, 32, 0.7);
+    border: 1px solid rgba(232, 121, 249, 0.12);
+    border-radius: 12px;
+    padding: 18px 20px;
+    transition: border-color 0.2s;
+  }
+  .feature:hover {
+    border-color: rgba(232, 121, 249, 0.3);
+  }
+
+  .feature-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+
+  .feature-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e879f9;
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  .feature-desc {
+    font-size: 12px;
+    color: #7a8198;
+    line-height: 1.45;
+  }
+
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #e879f9, #55f3ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 18px;
+    color: #040713;
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+
+  .url {
+    font-size: 16px;
+    color: #e879f9;
+    font-weight: 600;
+  }
+
+  .tags {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tag {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .tag.misp {
+    background: rgba(232, 121, 249, 0.12);
+    border: 1px solid rgba(232, 121, 249, 0.25);
+    color: #e879f9;
+  }
+  .tag.oss {
+    background: rgba(85, 243, 255, 0.08);
+    border: 1px solid rgba(85, 243, 255, 0.2);
+    color: #55f3ff;
+  }
+  .tag.sec {
+    background: rgba(74, 222, 128, 0.08);
+    border: 1px solid rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+  }
+
+  /* IoC type pills floating decoration */
+  .ioc-pills {
+    position: absolute;
+    right: 70px;
+    top: 55px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 1;
+    opacity: 0.65;
+  }
+  .ioc-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(12, 16, 32, 0.8);
+    border: 1px solid rgba(232, 121, 249, 0.15);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .ioc-pill .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .ioc-pill .type {
+    color: #e879f9;
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .ioc-pill .val {
+    color: #7a8198;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+  }
+  .ioc-pill.hit {
+    border-color: rgba(248, 113, 113, 0.3);
+    background: rgba(248, 113, 113, 0.06);
+  }
+  .ioc-pill.hit .type {
+    color: #f87171;
+  }
+  .ioc-pill.hit::after {
+    content: 'HIT';
+    background: rgba(248, 113, 113, 0.2);
+    color: #f87171;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="grid-bg"></div>
+
+  <!-- Decorative IoC pills -->
+  <div class="ioc-pills">
+    <div class="ioc-pill">
+      <span class="dot" style="background: #e879f9;"></span>
+      <span class="type">ip-src</span>
+      <span class="val">185.220.101.34</span>
+    </div>
+    <div class="ioc-pill hit">
+      <span class="dot" style="background: #f87171;"></span>
+      <span class="type">domain</span>
+      <span class="val">evil-c2.example.com</span>
+    </div>
+    <div class="ioc-pill">
+      <span class="dot" style="background: #fbbf24;"></span>
+      <span class="type">sha256</span>
+      <span class="val">e3b0c442...b855</span>
+    </div>
+    <div class="ioc-pill hit">
+      <span class="dot" style="background: #f87171;"></span>
+      <span class="type">ip-dst</span>
+      <span class="val">91.219.236.222</span>
+    </div>
+    <div class="ioc-pill">
+      <span class="dot" style="background: #4ade80;"></span>
+      <span class="type">url</span>
+      <span class="val">phishing-login.example.com</span>
+    </div>
+    <div class="ioc-pill">
+      <span class="dot" style="background: #60a5fa;"></span>
+      <span class="type">md5</span>
+      <span class="val">d41d8cd9...427e</span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="version-badge">v1.7.0 Release</div>
+    <h1>
+      <span class="white">MISP</span> <span class="accent">Threat Intelligence</span><br>
+      <span class="white">Built In</span>
+    </h1>
+    <p class="subtitle">
+      IoCs flow from MISP to your events automatically. Every IP, domain, and hash is correlated in real time against Wazuh, Suricata, and Nagios — no manual triage.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">&#x1F6E1;</div>
+        <div class="feature-title">MISP Connector</div>
+        <div class="feature-desc">Pulls IoC attributes every 5 min. IPs, domains, hashes, URLs — with TLP tags and threat levels.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x26A1;</div>
+        <div class="feature-title">Auto Correlation</div>
+        <div class="feature-desc">Background worker matches incoming events against active indicators every 2 minutes. Fires ioc.hit alerts on match.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4CA;</div>
+        <div class="feature-title">Threat Intel Dashboard</div>
+        <div class="feature-desc">Overview, indicators browser, match history, and timeline — all IoC activity in one place.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F517;</div>
+        <div class="feature-title">7 New API Endpoints</div>
+        <div class="feature-desc">Full IoC lifecycle: ingest, search, match lookup, stats, correlation hits, and timeline breakdowns.</div>
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="logo-area">
+        <div class="logo-dot">O</div>
+        <span class="logo-text">Orbit Core</span>
+      </div>
+      <div class="tags">
+        <span class="tag misp">MISP</span>
+        <span class="tag sec">Self-Hosted</span>
+        <span class="tag oss">Apache-2.0</span>
+      </div>
+      <div class="url">orbit-core.org</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
