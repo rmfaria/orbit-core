@@ -9,6 +9,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { Pool } from 'pg';
 import { logRun } from '../connectors/ingest.js';
+import { recordEvents } from '../eps-tracker.js';
 
 const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const optIso = z.string().regex(ISO8601_RE).optional();
@@ -103,12 +104,13 @@ export function threatIntelRouter(pool: Pool | null): Router {
 
       await client.query('COMMIT');
 
-      // Log connector run
+      // Log connector run + EPS tracking
       const sourceId = req.headers['x-source-id'] as string | undefined;
       if (sourceId) {
         const rawSize = req.headers['content-length'] ? parseInt(req.headers['content-length'] as string, 10) : 0;
         await logRun(pool, sourceId, startedAt, indicators.length, rawSize, null);
       }
+      recordEvents(sourceId ?? 'misp', indicators.length);
 
       res.json({ ok: true, upserted: indicators.length });
     } catch (err) {
