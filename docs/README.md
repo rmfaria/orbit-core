@@ -13,6 +13,7 @@ This directory is the canonical documentation for orbit-core.
 ## Practical references
 
 - **Wazuh queries**: [`wazuh-queries.md`](./wazuh-queries.md)
+- **MISP connector**: [`../connectors/misp/README.md`](../connectors/misp/README.md)
 
 ## Product
 

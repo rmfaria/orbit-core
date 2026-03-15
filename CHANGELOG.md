@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.0] - 2026-03-15
+
+### Added
+
+- **MISP threat intelligence integration**: full IoC lifecycle — ingest, correlate, visualize
+- **Threat indicators table** (`threat_indicators`): stores IoCs with type, value, threat level, TLP tags, expiration, and MISP metadata; trigram index for fuzzy matching
+- **Threat matches table** (`threat_matches`): records correlations between live events and known IoCs with matched field/value tracking
+- **MISP Python connector** (`connectors/misp/ship_misp.py`): cron-driven REST API poller that pulls attributes from MISP, transforms to orbit indicators, and ships high/medium IoCs as orbit events for dashboard visibility
+- **Threat intel correlation worker**: background worker (2-minute interval) that scans recent events, extracts IPs/domains/hashes from attributes, and matches against active threat indicators — generates `ioc.hit` events on match
+- **Threat Intel API endpoints**: `POST /api/v1/threat-intel/indicators` (batch upsert), `GET /api/v1/threat-intel/indicators` (search/paginate), `GET /api/v1/threat-intel/indicators/match` (exact IoC lookup), `GET /api/v1/threat-intel/stats` (aggregated statistics), `DELETE /api/v1/threat-intel/indicators/:id`, `GET /api/v1/threat-intel/matches` (IoC hit history with event join), `GET /api/v1/threat-intel/matches/summary` (timeline, by-type, by-asset breakdowns)
+- **Threat Intel dashboard tab**: 4 views — Overview (KPIs, severity bar, timeline chart, type doughnut, affected assets), Indicators (searchable table with tag pills, TLP colors, expandable details), Matches (IoC hits with original event context), Timeline (match activity + breakdown)
+- **ThreatIndicator type** in `@orbit/core-contracts`: shared type definition for cross-package use
+
+### Changed
+
+- Worker registry expanded to 5 workers: `rollup`, `correlate`, `alerts`, `connectors`, `threat-intel`
+- System endpoint reports threat-intel worker health with 5-minute stale threshold
+- Analysis dropdown includes Threat Intel (desktop + mobile navigation)
+
+### Fixed
+
+- **MISP connector timezone bug**: replaced `strftime("%s")` (locale-dependent) with `.timestamp()` for UTC-safe epoch calculation
+
+---
+
+## [1.6.4] - 2026-03-09
+
+### Added
+
+- **AI RAG dashboard engine**: AI Designer generates dashboards using real catalog data as context
+- **EPS Radar chart**: live events-per-second visualization on the Home tab
+- **UI component extraction**: refactored App.tsx (6200 lines) into 17 separate tab/component files for maintainability
+
+### Fixed
+
+- **AuthGate session persistence**: fixed cookie-based session not surviving page reload
+- **Infrastructure hardening**: post-outage fixes for Docker Swarm startup order, PG shared_buffers, Wazuh shipper timeouts
+
+---
+
+## [1.6.3] - 2026-03-08
+
+### Added
+
+- **Performance indexes**: composite indexes on orbit_events (namespace, kind, ts), rollup tables, and alert notifications
+- **Retention cleanup**: `purge_connector_alert_data()` function for connector_runs (30d) and alert_notifications (90d)
+
+### Fixed
+
+- Dropped redundant fingerprint-only index (covered by fingerprint+ts unique constraint)
+
+---
+
 ## [1.6.2] - 2026-03-05
 
 ### Added
@@ -176,6 +229,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.7.0]: https://github.com/rmfaria/orbit-core/compare/v1.6.4...v1.7.0
+[1.6.4]: https://github.com/rmfaria/orbit-core/compare/v1.6.3...v1.6.4
+[1.6.3]: https://github.com/rmfaria/orbit-core/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/rmfaria/orbit-core/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/rmfaria/orbit-core/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/rmfaria/orbit-core/compare/v1.5.0...v1.6.0

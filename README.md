@@ -108,6 +108,7 @@ See [INSTALL.md](INSTALL.md) for production hardening, TLS, Docker Swarm and rev
 | 🖥️ | **System monitoring** | Live infrastructure panel: CPU, memory, disk usage, network I/O, PostgreSQL I/O & stats, worker health |
 | 🔔 | **Alerts** | Threshold + absence rules, evaluated every 60s, dispatched via webhook, Telegram or email (SMTP) |
 | 🔗 | **Auto-correlation** | Z-score anomaly detection links metric spikes to concurrent events |
+| 🛡️ | **MISP Threat Intelligence** | IoC ingestion from MISP, automatic correlation with live events, dedicated dashboard with indicators, matches and timeline |
 | ✦ | **AI Designer (Smart Dashboards)** | Describe a dashboard in plain text — AI generates a standalone HTML/CSS/JS page with live data from your catalog |
 | 🤖 | **AI dashboard builder** | Claude-powered — describe a dashboard in plain text, it builds the spec from your real catalog |
 | 🗄️ | **Rollups + retention** | Automatic 5m and 1h rollups; query engine picks the best source table |
@@ -133,7 +134,7 @@ Any API   ──pull──▶     connector worker                 OrbitQL API
 Custom    ──push──▶     /ingest/raw/:id                  Prometheus /prom
 ```
 
-Four background workers run continuously: `rollup` · `correlate` · `alerts` · `connectors`
+Five background workers run continuously: `rollup` · `correlate` · `alerts` · `connectors` · `threat-intel`
 
 <img width="1800" alt="orbit-core architecture diagram" src="./docs/orbit-core-architecture.png" />
 
@@ -152,6 +153,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full breakdown.
 | n8n | push (Error Trigger) | `n8n` | [connectors/n8n](connectors/n8n/INSTALL.md) |
 | macOS | push (LaunchAgent) | `macos` | via AI-generated connector + LaunchAgent |
 | OpenTelemetry | push (OTLP/HTTP) | `otel` | [OTLP receiver](#opentelemetry-otlp-receiver) |
+| MISP | push (cron, REST API) | `misp` | [connectors/misp](connectors/misp/README.md) |
 | **Any HTTP API** | **AI-generated** | any | [AI Connector Generator](#-ai-connector-generator) |
 
 ### OpenTelemetry OTLP receiver
@@ -204,6 +206,11 @@ Query your data without writing SQL:
 | `POST` | `/api/v1/query` | OrbitQL query |
 | `GET` | `/api/v1/catalog/*` | Assets, metrics, dimensions |
 | `GET` | `/api/v1/correlations` | Anomaly ↔ event links |
+| `*` | `/api/v1/threat-intel/indicators` | Threat indicators CRUD (IoCs from MISP) |
+| `GET` | `/api/v1/threat-intel/indicators/match` | Check a value against active IoCs |
+| `GET` | `/api/v1/threat-intel/stats` | Threat intel summary statistics |
+| `GET` | `/api/v1/threat-intel/matches` | IoC correlation hits (event ↔ indicator) |
+| `GET` | `/api/v1/threat-intel/matches/summary` | Match timeline and breakdown |
 | `*` | `/api/v1/alerts/rules` | Alert rules CRUD |
 | `*` | `/api/v1/alerts/channels` | Notification channels CRUD |
 | `*` | `/api/v1/alerts/smtp` | SMTP settings (GET/POST) |

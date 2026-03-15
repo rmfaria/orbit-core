@@ -315,6 +315,40 @@ Set the `ORBIT_API` and `ORBIT_API_KEY` credentials in the workflow's HTTP Reque
 
 ---
 
+### MISP Connector (Threat Intelligence)
+
+Ships IoC attributes from a MISP instance as threat indicators, with automatic correlation against live events.
+
+**Files:** `connectors/misp/`
+
+**Requirements:** MISP instance with API access enabled, Python 3 with `requests` library.
+
+```bash
+# /etc/cron.d/orbit-misp
+1-59/5 * * * * root \
+  MISP_URL=https://YOUR_MISP_HOST \
+  MISP_API_KEY=YOUR_MISP_AUTOMATION_KEY \
+  MISP_VERIFY_TLS=false \
+  ORBIT_API=http://YOUR_ORBIT_HOST \
+  ORBIT_API_KEY=YOUR_KEY \
+  STATE_PATH=/var/lib/orbit-core/misp.state.json \
+  python3 /path/to/connectors/misp/ship_misp.py >> /var/log/orbit-core/misp-shipper.log 2>&1
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MISP_URL` | — | MISP base URL (e.g. `https://misp.example.com`) |
+| `MISP_API_KEY` | — | MISP automation key (found in MISP → Administration → Auth Keys) |
+| `MISP_VERIFY_TLS` | `true` | Set `false` for self-signed certificates |
+| `ONLY_IDS` | `true` | Only pull attributes marked as IoCs (`to_ids=true`) |
+| `INCLUDE_TYPES` | *(all)* | Comma-separated filter (e.g. `ip-src,ip-dst,domain,md5,sha256,url`) |
+| `INITIAL_LOOKBACK_HOURS` | `24` | How far back to look on first run |
+| `STATE_PATH` | `/var/lib/orbit-core/misp.state.json` | Timestamp cursor file |
+
+The Threat Intel dashboard is available in the UI under **Analysis → Threat Intel**.
+
+---
+
 ### Fortigate Connector
 
 Fortigate integration is handled via Wazuh — no standalone connector needed.

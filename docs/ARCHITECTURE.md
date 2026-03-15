@@ -1,6 +1,6 @@
 # orbit-core — Architecture (current)
 
-Last updated: 2026-02-28
+Last updated: 2026-03-15
 
 ## 1) Overview
 
@@ -12,8 +12,10 @@ Last updated: 2026-02-28
 - **Dashboards** (`dashboards`)
 - **Alert rules + channels** (`alert_rules`, `alert_channels`)
 - **Connector specs** (`connectors`)
+- **Threat indicators** (`threat_indicators`) — IoCs from MISP and other threat intel sources
+- **Threat matches** (`threat_matches`) — correlations between events and IoCs
 
-Deterministic connectors (Nagios, Wazuh, Fortigate via Wazuh, n8n, macOS) ship data to ingest endpoints.
+Deterministic connectors (Nagios, Wazuh, Fortigate via Wazuh, n8n, MISP, macOS) ship data to ingest endpoints.
 Consumers query data via `POST /api/v1/query`.
 
 An optional **AI agent** can assist with dashboard authoring by:
@@ -120,6 +122,7 @@ Four background workers run continuously inside the API process:
 | `correlate` | Z-score anomaly detection; writes correlation records |
 | `alerts` | Evaluates alert rules every 60s; dispatches webhook / Telegram notifications |
 | `connectors` | Pulls data from approved connector specs every 5 min; posts to ingest endpoints |
+| `threat-intel` | Scans recent events every 2 min; extracts IPs/domains/hashes and matches against active threat indicators; generates `ioc.hit` events |
 
 ### 3.5 Postgres
 
@@ -138,6 +141,8 @@ Canonical schema with automated rollups and retention:
 | `alert_channels` | Webhook / Telegram notification channel configs | — |
 | `alert_history` | Notification dispatch log | — |
 | `connectors` | Connector spec definitions | — |
+| `threat_indicators` | IoC indicators (IPs, domains, hashes, URLs) from MISP | — |
+| `threat_matches` | Event ↔ indicator correlation hits | — |
 
 ## 4) Data flow
 
@@ -152,6 +157,8 @@ Fortigate syslog → Wazuh → connectors/wazuh/ship_events.py  → POST /api/v1
 macOS LaunchAgent       → AI-generated agent script          → POST /api/v1/ingest/raw/:source_id
                                                                (namespace: macos; metrics: cpu.usage_pct,
                                                                 memory.*, disk.*)
+MISP                    → connectors/misp/ship_misp.py        → POST /api/v1/threat-intel/indicators
+                                                               + POST /api/v1/ingest/events (high/medium IoCs)
 OTel SDK / agent        → POST /otlp/v1/{traces,metrics,logs}
 Any HTTP API            → connectors worker (approved spec)  → POST /api/v1/ingest/metrics|events
 ```

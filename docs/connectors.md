@@ -16,6 +16,7 @@ All connectors ship to the same ingest API:
 | **Wazuh** | Passive (local files) | Security alerts | `wazuh` | [`connectors/wazuh/INSTALL.md`](../connectors/wazuh/INSTALL.md) |
 | **Fortigate** | Via Wazuh (syslog) | Firewall logs | `wazuh` + `kind=fortigate` | [`connectors/fortigate/INSTALL.md`](../connectors/fortigate/INSTALL.md) |
 | **n8n** | Active (polling REST API) + Error Trigger | Execution failures + stuck runs | `n8n` | [`connectors/n8n/INSTALL.md`](../connectors/n8n/INSTALL.md) |
+| **MISP** | Active (polling REST API) | Threat indicators (IoCs) + high-severity events | `misp` | [`connectors/misp/README.md`](../connectors/misp/README.md) |
 
 ## AI-Generated Connectors
 
@@ -194,6 +195,44 @@ It sends events in near real time when a workflow fails.
 Each workflow must set the Orbit Error Reporter as its **Error Workflow**.
 
 References: [`connectors/n8n/README.md`](../connectors/n8n/README.md) · [`INSTALL.md`](../connectors/n8n/INSTALL.md)
+
+## MISP
+
+Threat intelligence connector that pulls IoC attributes from a MISP instance via REST API.
+
+```
+MISP REST API → ship_misp.py → POST /api/v1/threat-intel/indicators
+                              → POST /api/v1/ingest/events (high/medium IoCs)
+```
+
+| Feature | Details |
+|---|---|
+| Script | `ship_misp.py` |
+| Mode | Active polling (cron, every 5 min) |
+| State | Timestamp cursor in `state.json` |
+| Auth | MISP API key (`Authorization` header) |
+| Data | IoC attributes (ip-src, ip-dst, domain, md5, sha256, url, etc.) |
+| Dedup | MISP attribute UUID as `source_id` — upsert on conflict |
+
+The connector also ships high/medium threat-level IoCs as orbit events (`namespace=misp`, `kind=ioc.new`) for dashboard visibility.
+
+A separate background worker (`threat-intel`) runs every 2 minutes inside the API, scanning recent events for values that match active indicators. Matches are recorded in `threat_matches` and generate `ioc.hit` events.
+
+| Variable | Default | Description |
+|---|---|---|
+| `MISP_URL` | — | MISP instance URL (e.g. `https://misp.example.com`) |
+| `MISP_API_KEY` | — | MISP automation/API key |
+| `MISP_VERIFY_TLS` | `true` | Set `false` for self-signed certificates |
+| `ONLY_IDS` | `true` | Only pull attributes with `to_ids=true` |
+| `INCLUDE_TYPES` | *(all)* | Comma-separated type filter (e.g. `ip-src,ip-dst,domain`) |
+| `INITIAL_LOOKBACK_HOURS` | `24` | First run lookback window |
+| `MAX_ATTRIBUTES` | `10000` | Safety limit per run |
+| `BATCH_SIZE` | `200` | Indicators per API call |
+| `STATE_PATH` | `/var/lib/orbit-core/misp.state.json` | Timestamp cursor |
+
+References: [`connectors/misp/README.md`](../connectors/misp/README.md)
+
+---
 
 ## Building a new connector
 
