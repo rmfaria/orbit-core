@@ -1,6 +1,6 @@
 {
   "name": "@orbit/core-contracts",
-  "version": "1.5.0",
+  "version": "1.7.0",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
