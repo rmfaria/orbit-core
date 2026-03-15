@@ -144,11 +144,32 @@ function TagPill({ tag }: { tag: string }) {
 
 // ─── Views ──────────────────────────────────────────────────────────────────
 
-const VIEWS = ['overview', 'indicators', 'matches', 'timeline'] as const;
+type FeedEvent = {
+  id: number;
+  ts: string;
+  asset_id: string;
+  namespace: string;
+  kind: string;
+  severity: string;
+  title: string;
+  message: string | null;
+  fingerprint: string | null;
+  attributes: Record<string, any>;
+};
+
+type FeedData = {
+  hours: number;
+  indicators: { count: number; items: Indicator[] };
+  ioc_events: { count: number; items: FeedEvent[] };
+  ioc_hits:   { count: number; items: FeedEvent[] };
+};
+
+const VIEWS = ['overview', 'feed', 'indicators', 'matches', 'timeline'] as const;
 type View = typeof VIEWS[number];
 
 const VIEW_LABELS: Record<View, string> = {
   overview: 'Overview',
+  feed: 'MISP Feed',
   indicators: 'Indicators',
   matches: 'Matches',
   timeline: 'Timeline',
@@ -171,6 +192,8 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
   const [matches, setMatches] = React.useState<Match[]>([]);
   const [matchTotal, setMatchTotal] = React.useState(0);
   const [matchSummary, setMatchSummary] = React.useState<MatchSummary | null>(null);
+  const [feed, setFeed] = React.useState<FeedData | null>(null);
+  const [feedHours, setFeedHours] = React.useState(4);
 
   // Filters
   const [filterType, setFilterType] = React.useState('');
@@ -251,6 +274,20 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
     }
   }
 
+  async function fetchFeed(hours = feedHours) {
+    setLoading(true); setErr(null);
+    try {
+      const r = await fetch(`api/v1/threat-intel/feed?hours=${hours}`, { headers: apiGetHeaders() });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? 'Failed to load feed');
+      setFeed(j as FeedData);
+    } catch (e: any) {
+      setErr(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // Initial load
   React.useEffect(() => { fetchAll(); }, []);
 
@@ -258,6 +295,7 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
   React.useEffect(() => {
     if (view === 'indicators') fetchIndicators(0);
     else if (view === 'matches') fetchMatches(0);
+    else if (view === 'feed') fetchFeed(feedHours);
     else if (view === 'overview' || view === 'timeline') fetchAll();
   }, [view, from, to]);
 
@@ -539,6 +577,161 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
                 ))}
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── MISP Feed ──────────────────────────────────────────────────── */}
+      {view === 'feed' && (
+        <div>
+          {/* Controls */}
+          <div style={{ ...TI.panel, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, color: 'rgba(233,238,255,0.45)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Last
+            </span>
+            {[1, 4, 8, 12, 24].map(h => (
+              <button
+                key={h}
+                onClick={() => { setFeedHours(h); fetchFeed(h); }}
+                style={{
+                  background: feedHours === h ? TI.accentBg : 'rgba(255,255,255,0.04)',
+                  border: feedHours === h ? `1px solid ${TI.accent}50` : '1px solid rgba(140,160,255,0.15)',
+                  borderRadius: 20, color: feedHours === h ? TI.accent : 'rgba(233,238,255,0.55)',
+                  padding: '5px 14px', fontSize: 13, fontWeight: feedHours === h ? 700 : 400,
+                  cursor: 'pointer',
+                }}
+              >
+                {h}h
+              </button>
+            ))}
+            <div style={{ flex: 1 }} />
+            <button onClick={() => fetchFeed(feedHours)} disabled={loading} style={{ ...S.btn, fontSize: 12, padding: '5px 14px' }}>
+              {loading ? '...' : 'Refresh'}
+            </button>
+          </div>
+
+          {feed && (
+            <>
+              {/* KPIs */}
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+                {kpiCard('New IoCs', feed.indicators.count, TI.accent)}
+                {kpiCard('IoC Events', feed.ioc_events.count, '#fbbf24')}
+                {kpiCard('IoC Hits', feed.ioc_hits.count, feed.ioc_hits.count > 0 ? '#f87171' : '#4ade80')}
+              </div>
+
+              {/* IoC Hits (most important — show first) */}
+              {feed.ioc_hits.count > 0 && (
+                <div style={{ ...TI.panel, borderColor: 'rgba(248,113,113,0.25)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#f87171', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f87171', display: 'inline-block', animation: 'pulse 2s infinite' }} />
+                    IoC Hits — Correlation Matches
+                  </div>
+                  {feed.ioc_hits.items.map((ev, i) => (
+                    <div key={ev.id} style={{
+                      padding: '12px 16px', marginBottom: 8,
+                      background: 'rgba(248,113,113,0.04)', border: '1px solid rgba(248,113,113,0.12)',
+                      borderRadius: 10, display: 'flex', gap: 12, alignItems: 'flex-start',
+                    }}>
+                      <SevBadge sev={ev.severity} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{ev.title}</div>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: 'rgba(233,238,255,0.45)' }}>
+                          <span>{ev.asset_id}</span>
+                          {ev.attributes?.indicator_type && <TypeBadge type={ev.attributes.indicator_type} />}
+                          {ev.attributes?.matched_value && (
+                            <span style={{ fontFamily: 'monospace', color: TI.accent }}>{ev.attributes.matched_value}</span>
+                          )}
+                          {ev.attributes?.threat_level && <ThreatBadge level={ev.attributes.threat_level} />}
+                        </div>
+                        {ev.message && (
+                          <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.55)', marginTop: 6 }}>{ev.message}</div>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.35)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {fmtTs(ev.ts)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* New IoCs */}
+              {feed.ioc_events.count > 0 && (
+                <div style={TI.panel}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fbbf24', marginBottom: 12 }}>
+                    New IoCs Received
+                  </div>
+                  {feed.ioc_events.items.map((ev, i) => (
+                    <div key={ev.id} style={{
+                      padding: '10px 16px', marginBottom: 6,
+                      background: 'rgba(251,191,36,0.03)', border: '1px solid rgba(251,191,36,0.10)',
+                      borderRadius: 10, display: 'flex', gap: 12, alignItems: 'flex-start',
+                    }}>
+                      <SevBadge sev={ev.severity} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 3 }}>{ev.title}</div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11, color: 'rgba(233,238,255,0.45)' }}>
+                          {ev.attributes?.ioc_type && <TypeBadge type={ev.attributes.ioc_type} />}
+                          {ev.attributes?.tags?.slice(0, 3).map((tag: string, j: number) => <TagPill key={j} tag={tag} />)}
+                          {ev.attributes?.org && <span style={{ color: 'rgba(233,238,255,0.4)' }}>{ev.attributes.org}</span>}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'rgba(233,238,255,0.35)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {fmtTs(ev.ts)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Recent Indicators Table */}
+              {feed.indicators.count > 0 && (
+                <div style={{ ...TI.panel, overflowX: 'auto' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: TI.accent, marginBottom: 12 }}>
+                    Recently Updated Indicators ({feed.indicators.count})
+                  </div>
+                  <table style={{ ...S.table, minWidth: 700 }}>
+                    <thead>
+                      <tr>
+                        {['Type', 'Value', 'Threat', 'Tags', 'Event Info', 'Updated'].map(h => (
+                          <th key={h} style={S.th}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {feed.indicators.items.slice(0, 50).map((ind, i) => (
+                        <tr key={ind.id}>
+                          <td style={S.td}><TypeBadge type={ind.type} /></td>
+                          <td style={{ ...S.td, fontFamily: 'monospace', fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ind.value}
+                          </td>
+                          <td style={S.td}><ThreatBadge level={ind.threat_level} /></td>
+                          <td style={S.td}>
+                            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                              {ind.tags.slice(0, 2).map((tag, j) => <TagPill key={j} tag={tag} />)}
+                              {ind.tags.length > 2 && <span style={{ fontSize: 10, color: 'rgba(233,238,255,0.4)' }}>+{ind.tags.length - 2}</span>}
+                            </div>
+                          </td>
+                          <td style={{ ...S.td, fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {ind.event_info ?? '—'}
+                          </td>
+                          <td style={{ ...S.td, fontSize: 11, color: 'rgba(233,238,255,0.45)', whiteSpace: 'nowrap' }}>{fmtTs(ind.updated_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {feed.indicators.count === 0 && feed.ioc_events.count === 0 && feed.ioc_hits.count === 0 && (
+                <div style={{ textAlign: 'center', padding: 60, color: 'rgba(233,238,255,0.35)' }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>&#x1F6E1;</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No MISP activity in the last {feedHours}h</div>
+                  <div style={{ fontSize: 13 }}>IoCs will appear here as MISP feeds are synced and events are correlated.</div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

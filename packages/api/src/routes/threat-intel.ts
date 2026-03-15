@@ -374,5 +374,53 @@ export function threatIntelRouter(pool: Pool | null): Router {
     });
   }));
 
+  // GET /threat-intel/feed — last N hours of MISP activity (indicators + events + hits)
+  r.get('/threat-intel/feed', a(async (req, res) => {
+    if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
+
+    const hours = Math.min(parseInt(req.query.hours as string) || 4, 72);
+
+    const [indicators, iocEvents, iocHits] = await Promise.all([
+      // Recent indicators ingested from MISP
+      pool.query(`
+        SELECT id, source, source_id, type, value, threat_level, tags, event_info, comment,
+               attributes, first_seen, last_seen, created_at, updated_at
+        FROM threat_indicators
+        WHERE source = 'misp'
+          AND updated_at >= now() - make_interval(hours => $1)
+        ORDER BY updated_at DESC
+        LIMIT 200
+      `, [hours]),
+
+      // Recent ioc.new events (IoCs shipped as events for visibility)
+      pool.query(`
+        SELECT id, ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes
+        FROM orbit_events
+        WHERE namespace = 'misp' AND kind = 'ioc.new'
+          AND ts >= now() - make_interval(hours => $1)
+        ORDER BY ts DESC
+        LIMIT 100
+      `, [hours]),
+
+      // Recent ioc.hit events (correlation matches)
+      pool.query(`
+        SELECT id, ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes
+        FROM orbit_events
+        WHERE namespace = 'misp' AND kind = 'ioc.hit'
+          AND ts >= now() - make_interval(hours => $1)
+        ORDER BY ts DESC
+        LIMIT 100
+      `, [hours]),
+    ]);
+
+    res.json({
+      ok: true,
+      hours,
+      indicators: { count: indicators.rows.length, items: indicators.rows },
+      ioc_events: { count: iocEvents.rows.length, items: iocEvents.rows },
+      ioc_hits:   { count: iocHits.rows.length, items: iocHits.rows },
+    });
+  }));
+
   return r;
 }
