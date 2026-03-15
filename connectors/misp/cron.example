@@ -1,0 +1,5 @@
+# orbit-core MISP threat intelligence shipper
+# Runs every 5 minutes — adjust as needed based on MISP instance size
+# Stagger on odd minutes to avoid overlap with other connectors on prod
+
+*/5 * * * * root MISP_URL=https://misp.example.com MISP_API_KEY=your-automation-key ORBIT_API=http://127.0.0.1:3000 ORBIT_API_KEY=your-orbit-key /usr/bin/python3 /opt/orbit-core/connectors/misp/ship_misp.py >> /var/log/orbit-core/misp-shipper.log 2>&1

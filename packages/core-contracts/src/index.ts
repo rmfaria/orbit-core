@@ -41,6 +41,26 @@ export type Event = {
   attributes?: Record<string, any>;
 };
 
+export type ThreatIndicator = {
+  source: string;
+  source_id: string;
+  type: string;
+  value: string;
+  threat_level: 'high' | 'medium' | 'low' | 'undefined' | 'unknown';
+  tags?: string[];
+  event_info?: string;
+  comment?: string;
+  attributes?: Record<string, any>;
+  first_seen?: string;
+  last_seen?: string;
+  expires_at?: string;
+  enabled?: boolean;
+};
+
+export type IngestIndicatorsRequest = {
+  indicators: ThreatIndicator[];
+};
+
 export type IngestMetricsRequest = {
   metrics: MetricPoint[];
 };
@@ -156,6 +176,7 @@ export interface QueryResponse {
     effective_limit?: number;
     mode?: 'raw' | 'bucketed';
     source_table?: 'metric_points' | 'metric_rollup_5m' | 'metric_rollup_1h';
+    truncated?: boolean;
   };
 }
 

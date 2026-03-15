@@ -32,7 +32,7 @@ pnpm db:migrate   # Run SQL migrations
 ## Conventions
 - Language: code, commits, and comments in **English**
 - Commit style: short imperative (`add X`, `fix Y`, `update Z`)
-- Migrations: sequential numbered SQL files (`0001_init.sql` ... `0023_perf_indexes.sql`). Next = `0024_*.sql`
+- Migrations: sequential numbered SQL files (`0001_init.sql` ... `0024_threat_indicators.sql`). Next = `0025_*.sql`
 - API routes: `/api/v1/<resource>` — RESTful, JSON body
 - Auth: `X-Api-Key` header or `Authorization: Bearer <key>`
 - Environment variables validated with Zod (`packages/api/src/env.ts`)

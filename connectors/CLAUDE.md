@@ -16,6 +16,7 @@ Each connector follows the same pattern:
 - `wazuh/` — Wazuh alerts JSON
 - `suricata/` — Suricata EVE-JSON
 - `fortigate/` — Routes through Wazuh connector
+- `misp/` — MISP threat intelligence (IoC attributes)
 
 ## Pull Connector (TypeScript)
 - `n8n/` — TypeScript engine for pull-mode connectors

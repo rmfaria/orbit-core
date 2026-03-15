@@ -31,6 +31,7 @@ import { connectorsRouter } from './routes/connectors.js';
 import { systemHandler } from './routes/system.js';
 import { otlpRouter } from './routes/otlp.js';
 import { wazuhRouter } from './routes/wazuh.js';
+import { threatIntelRouter } from './routes/threat-intel.js';
 import { startConnectorWorker } from './connectors/worker.js';
 import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
@@ -50,9 +51,10 @@ const env = loadEnv();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 
 const app = express();
-// C1-fix: restrict CORS to known origins (env ORBIT_CORS_ORIGINS or same-origin only)
+// CORS: only allow explicitly listed origins. If ORBIT_CORS_ORIGINS is unset, no
+// Access-Control-Allow-Origin header is sent (same-origin only — secure default).
 const allowedOrigins = (process.env.ORBIT_CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-app.use(cors(allowedOrigins.length ? { origin: allowedOrigins, credentials: true } : { origin: true, credentials: true }));
+app.use(cors(allowedOrigins.length ? { origin: allowedOrigins, credentials: true } : { origin: false }));
 app.use(express.json({ limit: '5mb' }));
 app.use(pinoHttp({ logger }));
 app.use(metricsMiddleware);
@@ -144,6 +146,9 @@ app.use('/', otlpRouter(pool));
 
 // Wazuh dashboard — structured data for the Wazuh UI tab
 app.use('/api/v1', wazuhRouter(pool));
+
+// Threat intelligence — MISP IoC indicators
+app.use('/api/v1', threatIntelRouter(pool));
 
 // System / infra metrics — process, CPU, memory, network, workers, DB pool
 app.get('/api/v1/system', a(systemHandler(pool)));
