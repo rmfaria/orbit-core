@@ -5,7 +5,7 @@
  * The /api/v1/system endpoint reads this registry to report worker liveness.
  */
 
-export type WorkerName = 'rollup' | 'correlate' | 'alerts' | 'connectors';
+export type WorkerName = 'rollup' | 'correlate' | 'alerts' | 'connectors' | 'threat-intel';
 
 interface WorkerEntry {
   last_beat: number;   // Date.now() of last successful beat
@@ -14,10 +14,11 @@ interface WorkerEntry {
 }
 
 const registry: Record<WorkerName, WorkerEntry> = {
-  rollup:     { last_beat: 0, beats: 0, errors: 0 },
-  correlate:  { last_beat: 0, beats: 0, errors: 0 },
-  alerts:     { last_beat: 0, beats: 0, errors: 0 },
-  connectors: { last_beat: 0, beats: 0, errors: 0 },
+  rollup:       { last_beat: 0, beats: 0, errors: 0 },
+  correlate:    { last_beat: 0, beats: 0, errors: 0 },
+  alerts:       { last_beat: 0, beats: 0, errors: 0 },
+  connectors:   { last_beat: 0, beats: 0, errors: 0 },
+  'threat-intel': { last_beat: 0, beats: 0, errors: 0 },
 };
 
 export function heartbeat(name: WorkerName): void {

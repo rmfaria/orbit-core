@@ -249,5 +249,130 @@ export function threatIntelRouter(pool: Pool | null): Router {
     res.json({ ok: true, deleted: 1 });
   }));
 
+  // GET /threat-intel/matches — list IoC matches (events that hit indicators)
+  r.get('/threat-intel/matches', a(async (req, res) => {
+    if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
+
+    const {
+      from, to, asset_id, threat_level, indicator_type,
+      limit = '100', offset = '0',
+    } = req.query as Record<string, string>;
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+
+    if (from) {
+      conditions.push(`tm.detected_at >= $${idx++}::timestamptz`);
+      params.push(from);
+    }
+    if (to) {
+      conditions.push(`tm.detected_at <= $${idx++}::timestamptz`);
+      params.push(to);
+    }
+    if (asset_id) {
+      conditions.push(`e.asset_id = $${idx++}`);
+      params.push(asset_id);
+    }
+    if (threat_level) {
+      conditions.push(`tm.threat_level = $${idx++}`);
+      params.push(threat_level);
+    }
+    if (indicator_type) {
+      conditions.push(`tm.indicator_type = $${idx++}`);
+      params.push(indicator_type);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const lim = Math.min(parseInt(limit) || 100, 1000);
+    const off = parseInt(offset) || 0;
+
+    const { rows } = await pool.query(
+      `SELECT
+         tm.id, tm.event_id, tm.indicator_id, tm.matched_field, tm.matched_value,
+         tm.indicator_type, tm.threat_level, tm.detected_at,
+         e.asset_id, e.namespace, e.kind, e.severity AS event_severity, e.title AS event_title, e.ts AS event_ts,
+         ti.value AS indicator_value, ti.tags, ti.event_info AS indicator_event_info,
+         count(*) OVER() AS total_count
+       FROM threat_matches tm
+       JOIN orbit_events e ON e.id = tm.event_id
+       JOIN threat_indicators ti ON ti.id = tm.indicator_id
+       ${where}
+       ORDER BY tm.detected_at DESC
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      [...params, lim, off],
+    );
+
+    const total = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
+    const items = rows.map(({ total_count, ...rest }) => rest);
+
+    res.json({ ok: true, total, items });
+  }));
+
+  // GET /threat-intel/matches/summary — aggregated match statistics
+  r.get('/threat-intel/matches/summary', a(async (req, res) => {
+    if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
+
+    const { from, to } = req.query as Record<string, string>;
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+
+    if (from) { conditions.push(`tm.detected_at >= $${idx++}::timestamptz`); params.push(from); }
+    if (to)   { conditions.push(`tm.detected_at <= $${idx++}::timestamptz`); params.push(to); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [totals, byType, byAsset, timeline] = await Promise.all([
+      pool.query(`
+        SELECT
+          count(*)::int AS total_matches,
+          count(DISTINCT tm.event_id)::int AS events_matched,
+          count(DISTINCT tm.indicator_id)::int AS indicators_triggered,
+          count(DISTINCT e.asset_id)::int AS assets_affected,
+          count(*) FILTER (WHERE tm.threat_level = 'high')::int AS high_matches,
+          count(*) FILTER (WHERE tm.threat_level = 'medium')::int AS medium_matches
+        FROM threat_matches tm
+        JOIN orbit_events e ON e.id = tm.event_id
+        ${where}
+      `, params),
+
+      pool.query(`
+        SELECT tm.indicator_type, tm.threat_level, count(*)::int AS count
+        FROM threat_matches tm ${where}
+        GROUP BY tm.indicator_type, tm.threat_level
+        ORDER BY count DESC
+      `, params),
+
+      pool.query(`
+        SELECT e.asset_id, count(*)::int AS match_count,
+               count(DISTINCT tm.indicator_id)::int AS unique_indicators,
+               max(tm.detected_at) AS last_match
+        FROM threat_matches tm
+        JOIN orbit_events e ON e.id = tm.event_id
+        ${where}
+        GROUP BY e.asset_id
+        ORDER BY match_count DESC
+        LIMIT 20
+      `, params),
+
+      pool.query(`
+        SELECT date_trunc('hour', tm.detected_at)::text AS bucket,
+               count(*)::int AS match_count,
+               count(*) FILTER (WHERE tm.threat_level = 'high')::int AS high_count
+        FROM threat_matches tm ${where}
+        GROUP BY 1
+        ORDER BY 1
+      `, params),
+    ]);
+
+    res.json({
+      ok: true,
+      summary: totals.rows[0] ?? {},
+      by_type: byType.rows,
+      by_asset: byAsset.rows,
+      timeline: timeline.rows,
+    });
+  }));
+
   return r;
 }

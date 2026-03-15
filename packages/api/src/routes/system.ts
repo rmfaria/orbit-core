@@ -56,10 +56,11 @@ let prevPg: PgSnapshot | null = null;
 // ── Stale thresholds per worker ───────────────────────────────────────────────
 
 const STALE_MS: Record<WorkerName, number> = {
-  rollup:     12 * 60 * 1000,  // 12 m (interval is 5 m)
-  correlate:  12 * 60 * 1000,  // 12 m (interval is 5 m)
-  alerts:      3 * 60 * 1000,  //  3 m (interval is 1 m)
-  connectors:  2 * 60 * 1000,  //  2 m (interval is 30 s)
+  rollup:         12 * 60 * 1000,  // 12 m (interval is 5 m)
+  correlate:      12 * 60 * 1000,  // 12 m (interval is 5 m)
+  alerts:          3 * 60 * 1000,  //  3 m (interval is 1 m)
+  connectors:      2 * 60 * 1000,  //  2 m (interval is 30 s)
+  'threat-intel':  5 * 60 * 1000,  //  5 m (interval is 2 m)
 };
 
 // ── Handler factory ───────────────────────────────────────────────────────────

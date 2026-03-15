@@ -32,6 +32,7 @@ import { systemHandler } from './routes/system.js';
 import { otlpRouter } from './routes/otlp.js';
 import { wazuhRouter } from './routes/wazuh.js';
 import { threatIntelRouter } from './routes/threat-intel.js';
+import { startThreatIntelWorker } from './threat-intel-worker.js';
 import { startConnectorWorker } from './connectors/worker.js';
 import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
@@ -185,11 +186,13 @@ let stopCorrelate:   (() => void) | undefined;
 let stopAlerts:      (() => void) | undefined;
 let stopConnectors:  (() => void) | undefined;
 let stopTelemetry:   (() => void) | undefined;
+let stopThreatIntel: (() => void) | undefined;
 if (pool) {
   stopRollups     = startRollupWorker(pool);
   stopCorrelate   = startCorrelateWorker(pool);
   stopAlerts      = startAlertWorker(pool);
   stopConnectors  = startConnectorWorker(pool);
+  stopThreatIntel = startThreatIntelWorker(pool);
   if (env.ORBIT_TELEMETRY === 'true') {
     stopTelemetry = startTelemetryWorker(pool);
   }
@@ -202,6 +205,7 @@ function shutdown(signal: string) {
   stopCorrelate?.();
   stopAlerts?.();
   stopConnectors?.();
+  stopThreatIntel?.();
   stopTelemetry?.();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
