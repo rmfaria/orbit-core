@@ -349,7 +349,7 @@ def main():
         since = last_ts
         log.info("Resuming from timestamp: %s", since)
     else:
-        since = (datetime.now(timezone.utc) - timedelta(hours=INITIAL_LOOKBACK_HOURS)).strftime("%s")
+        since = str(int((datetime.now(timezone.utc) - timedelta(hours=INITIAL_LOOKBACK_HOURS)).timestamp()))
         log.info("First run — looking back %d hours", INITIAL_LOOKBACK_HOURS)
 
     misp = MispClient(MISP_URL, MISP_API_KEY, MISP_VERIFY_TLS)
