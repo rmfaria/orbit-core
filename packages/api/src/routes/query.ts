@@ -10,6 +10,9 @@ import { z } from 'zod';
 import type { QueryRequest, QueryResponse, OrbitQlQuery } from '@orbit/core-contracts';
 import { pool } from '../db.js';
 
+/** Hard cap on rows returned by any single query to prevent OOM */
+const MAX_ROWS = 100_000;
+
 const TimeseriesQuerySchema = z.object({
   kind: z.literal('timeseries'),
   asset_id: z.string().min(1),
@@ -20,7 +23,7 @@ const TimeseriesQuerySchema = z.object({
   bucket_sec: z.number().int().positive().max(86400).optional(),
   agg: z.enum(['avg', 'min', 'max', 'sum']).optional(),
   dimensions: z.record(z.string()).optional(),
-  limit: z.number().int().positive().max(200000).optional()
+  limit: z.number().int().positive().max(MAX_ROWS).optional()
 });
 
 const TimeseriesMultiQuerySchema = z.object({
@@ -45,7 +48,7 @@ const TimeseriesMultiQuerySchema = z.object({
     )
     .min(1)
     .max(50),
-  limit: z.number().int().positive().max(200000).optional()
+  limit: z.number().int().positive().max(MAX_ROWS).optional()
 });
 
 const EventsQuerySchema = z.object({
@@ -160,7 +163,7 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
 
     // performance-first: bucket by default. For rollup sources, bucket is fixed.
     const effectiveBucket = src.bucket_sec ?? (q.bucket_sec ?? chooseBucket(q.from, q.to));
-    const limit = q.limit ?? 10000;
+    const limit = Math.min(q.limit ?? 10000, MAX_ROWS);
 
     if (effectiveBucket) {
       const bucket = `${effectiveBucket} seconds`;
@@ -200,7 +203,8 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
             effective_bucket_sec: effectiveBucket,
             effective_limit: limit,
             mode: 'bucketed',
-            source_table: src.table
+            source_table: src.table,
+            truncated: r.rows.length >= limit,
           }
         });
       }
@@ -243,7 +247,8 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
             effective_bucket_sec: effectiveBucket,
             effective_limit: limit,
             mode: 'bucketed',
-            source_table: src.table
+            source_table: src.table,
+            truncated: r.rows.length >= limit,
           }
         });
       }
@@ -292,7 +297,8 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
           effective_bucket_sec: src.bucket_sec ?? undefined,
           effective_limit: limit,
           mode: 'bucketed',
-          source_table: src.table
+          source_table: src.table,
+          truncated: r.rows.length >= limit,
         }
       });
     }
@@ -338,7 +344,7 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
     const buckets = effectiveBucket ? Math.max(1, Math.ceil(rangeSec / effectiveBucket)) : Math.min(20000, rangeSec);
 
     const defaultLimit = Math.min(20000, buckets * q.series.length * (q.group_by_dimension ? 20 : 1));
-    const limit = q.limit ?? defaultLimit;
+    const limit = Math.min(q.limit ?? defaultLimit, MAX_ROWS);
 
     // Build a UNION ALL query: each series is a subquery.
     const parts: string[] = [];
@@ -529,7 +535,8 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
         effective_bucket_sec: effectiveBucket ?? undefined,
         effective_limit: limit,
         mode: useBucket ? 'bucketed' : 'raw',
-        source_table: src.table
+        source_table: src.table,
+        truncated: r.rows.length >= limit,
       }
     });
   }

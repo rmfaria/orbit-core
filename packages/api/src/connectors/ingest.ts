@@ -8,7 +8,10 @@
  * Shared between the HTTP raw-ingest endpoint and the pull worker.
  */
 
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
+
+/** Anything that exposes `.query()` — works with both Pool and PoolClient */
+export type Queryable = Pool | PoolClient;
 
 export const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 export const VALID_SEVERITIES = new Set(['info', 'low', 'medium', 'high', 'critical']);
@@ -24,7 +27,7 @@ export interface IngestResult {
 const knownAssets = new Set<string>();
 const ASSET_CACHE_MAX = 10_000;
 
-export async function ensureAssets(pool: Pool, assetIds: string[]): Promise<void> {
+export async function ensureAssets(pool: Queryable, assetIds: string[]): Promise<void> {
   const uniq = Array.from(new Set(assetIds)).filter(Boolean);
   // Only upsert assets not already seen in this process lifetime
   const unknown = uniq.filter(id => !knownAssets.has(id));
@@ -43,98 +46,114 @@ export async function ensureAssets(pool: Pool, assetIds: string[]): Promise<void
 // ── Bulk ingest ───────────────────────────────────────────────────────────────
 
 export async function ingestMapped(
-  pool: Pool,
+  pool: Pool | Queryable,
   connType: 'metric' | 'event',
   items: Record<string, unknown>[],
 ): Promise<IngestResult> {
   const result: IngestResult = { ingested: 0, skipped: 0, errors: [] };
 
-  if (connType === 'metric') {
-    const valid = items.filter(item => {
-      const ok =
-        item.ts        && ISO8601_RE.test(String(item.ts)) &&
-        item.asset_id  && item.namespace && item.metric &&
-        item.value !== undefined && !isNaN(Number(item.value));
-      if (!ok) {
-        result.skipped++;
-        result.errors.push(`invalid metric: ${JSON.stringify(item)}`);
-      }
-      return ok;
-    });
+  // Determine if caller already manages the transaction (PoolClient) or we need our own
+  const isPool = 'connect' in pool && typeof (pool as Pool).connect === 'function';
+  const client = isPool ? await (pool as Pool).connect() : (pool as PoolClient);
+  const ownTx = isPool;
 
-    if (valid.length) {
-      await ensureAssets(pool, valid.map(m => String(m.asset_id)));
-      await pool.query(
-        `INSERT INTO metric_points(ts, asset_id, namespace, metric, value, unit, dimensions)
-         SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::jsonb[])
-           AS t(ts, asset_id, namespace, metric, value, unit, dimensions)`,
-        [
-          valid.map(m => m.ts),
-          valid.map(m => m.asset_id),
-          valid.map(m => m.namespace),
-          valid.map(m => m.metric),
-          valid.map(m => Number(m.value)),
-          valid.map(m => m.unit ?? null),
-          valid.map(m => JSON.stringify(m.dimensions ?? {})),
-        ]
-      );
-      result.ingested = valid.length;
-    }
+  try {
+    if (ownTx) await client.query('BEGIN');
 
-  } else {
-    // type === 'event'
-    const valid = items.filter(item => {
-      const ok =
-        item.ts        && ISO8601_RE.test(String(item.ts)) &&
-        item.asset_id  && item.namespace && item.kind &&
-        item.severity  && VALID_SEVERITIES.has(String(item.severity)) &&
-        item.title;
-      if (!ok) {
-        result.skipped++;
-        result.errors.push(`invalid event: ${JSON.stringify(item)}`);
-      }
-      return ok;
-    });
-
-    if (valid.length) {
-      // Deduplicate by fingerprint (keep last = latest ts) before bulk INSERT.
-      const fpSeen = new Set<string>();
-      const deduped: typeof valid = [];
-      for (let i = valid.length - 1; i >= 0; i--) {
-        const ev = valid[i];
-        const fp = ev.fingerprint ? String(ev.fingerprint) : null;
-        if (fp) {
-          if (!fpSeen.has(fp)) { fpSeen.add(fp); deduped.push(ev); }
-        } else {
-          deduped.push(ev);
+    if (connType === 'metric') {
+      const valid = items.filter(item => {
+        const ok =
+          item.ts        && ISO8601_RE.test(String(item.ts)) &&
+          item.asset_id  && item.namespace && item.metric &&
+          item.value !== undefined && !isNaN(Number(item.value));
+        if (!ok) {
+          result.skipped++;
+          result.errors.push(`invalid metric: ${JSON.stringify(item)}`);
         }
+        return ok;
+      });
+
+      if (valid.length) {
+        await ensureAssets(client, valid.map(m => String(m.asset_id)));
+        await client.query(
+          `INSERT INTO metric_points(ts, asset_id, namespace, metric, value, unit, dimensions)
+           SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::jsonb[])
+             AS t(ts, asset_id, namespace, metric, value, unit, dimensions)`,
+          [
+            valid.map(m => m.ts),
+            valid.map(m => m.asset_id),
+            valid.map(m => m.namespace),
+            valid.map(m => m.metric),
+            valid.map(m => Number(m.value)),
+            valid.map(m => m.unit ?? null),
+            valid.map(m => JSON.stringify(m.dimensions ?? {})),
+          ]
+        );
+        result.ingested = valid.length;
       }
 
-      await ensureAssets(pool, deduped.map(e => String(e.asset_id)));
-      await pool.query(
-        `INSERT INTO orbit_events
-           (ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
-         SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::jsonb[])
-           AS t(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
-         ON CONFLICT (fingerprint, ts) WHERE fingerprint IS NOT NULL
-         DO UPDATE SET
-           severity = EXCLUDED.severity,
-           title = EXCLUDED.title, message = EXCLUDED.message,
-           attributes = EXCLUDED.attributes, ingested_at = now()`,
-        [
-          deduped.map(e => e.ts),
-          deduped.map(e => e.asset_id),
-          deduped.map(e => e.namespace),
-          deduped.map(e => e.kind),
-          deduped.map(e => e.severity),
-          deduped.map(e => e.title),
-          deduped.map(e => e.message ?? null),
-          deduped.map(e => e.fingerprint ?? null),
-          deduped.map(e => JSON.stringify(e.attributes ?? {})),
-        ]
-      );
-      result.ingested = deduped.length;
+    } else {
+      // type === 'event'
+      const valid = items.filter(item => {
+        const ok =
+          item.ts        && ISO8601_RE.test(String(item.ts)) &&
+          item.asset_id  && item.namespace && item.kind &&
+          item.severity  && VALID_SEVERITIES.has(String(item.severity)) &&
+          item.title;
+        if (!ok) {
+          result.skipped++;
+          result.errors.push(`invalid event: ${JSON.stringify(item)}`);
+        }
+        return ok;
+      });
+
+      if (valid.length) {
+        // Deduplicate by fingerprint (keep last = latest ts) before bulk INSERT.
+        const fpSeen = new Set<string>();
+        const deduped: typeof valid = [];
+        for (let i = valid.length - 1; i >= 0; i--) {
+          const ev = valid[i];
+          const fp = ev.fingerprint ? String(ev.fingerprint) : null;
+          if (fp) {
+            if (!fpSeen.has(fp)) { fpSeen.add(fp); deduped.push(ev); }
+          } else {
+            deduped.push(ev);
+          }
+        }
+
+        await ensureAssets(client, deduped.map(e => String(e.asset_id)));
+        await client.query(
+          `INSERT INTO orbit_events
+             (ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
+           SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::jsonb[])
+             AS t(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
+           ON CONFLICT (fingerprint, ts) WHERE fingerprint IS NOT NULL
+           DO UPDATE SET
+             severity = EXCLUDED.severity,
+             title = EXCLUDED.title, message = EXCLUDED.message,
+             attributes = EXCLUDED.attributes, ingested_at = now()`,
+          [
+            deduped.map(e => e.ts),
+            deduped.map(e => e.asset_id),
+            deduped.map(e => e.namespace),
+            deduped.map(e => e.kind),
+            deduped.map(e => e.severity),
+            deduped.map(e => e.title),
+            deduped.map(e => e.message ?? null),
+            deduped.map(e => e.fingerprint ?? null),
+            deduped.map(e => JSON.stringify(e.attributes ?? {})),
+          ]
+        );
+        result.ingested = deduped.length;
+      }
     }
+
+    if (ownTx) await client.query('COMMIT');
+  } catch (err) {
+    if (ownTx) await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    if (ownTx) client.release();
   }
 
   return result;

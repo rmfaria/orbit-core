@@ -53,26 +53,38 @@ export async function ingestMetricsHandler(req: Request, res: Response) {
   const body: IngestMetricsRequest = IngestMetricsSchema.parse(req.body);
   if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
-  await ensureAssets(pool, body.metrics.map(m => m.asset_id));
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  if (body.metrics.length) {
-    await pool.query(
-      `INSERT INTO metric_points(ts, asset_id, namespace, metric, value, unit, dimensions)
-       SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::jsonb[])
-         AS t(ts, asset_id, namespace, metric, value, unit, dimensions)`,
-      [
-        body.metrics.map(m => m.ts),
-        body.metrics.map(m => m.asset_id),
-        body.metrics.map(m => m.namespace),
-        body.metrics.map(m => m.metric),
-        body.metrics.map(m => m.value),
-        body.metrics.map(m => m.unit ?? null),
-        body.metrics.map(m => JSON.stringify(m.dimensions ?? {})),
-      ]
-    );
+    await ensureAssets(client, body.metrics.map(m => m.asset_id));
+
+    if (body.metrics.length) {
+      await client.query(
+        `INSERT INTO metric_points(ts, asset_id, namespace, metric, value, unit, dimensions)
+         SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::jsonb[])
+           AS t(ts, asset_id, namespace, metric, value, unit, dimensions)`,
+        [
+          body.metrics.map(m => m.ts),
+          body.metrics.map(m => m.asset_id),
+          body.metrics.map(m => m.namespace),
+          body.metrics.map(m => m.metric),
+          body.metrics.map(m => m.value),
+          body.metrics.map(m => m.unit ?? null),
+          body.metrics.map(m => JSON.stringify(m.dimensions ?? {})),
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
 
-  // Record connector run when X-Source-Id header is present
+  // Record connector run when X-Source-Id header is present (best-effort, outside tx)
   const sourceId = req.headers['x-source-id'] as string | undefined;
   if (sourceId && pool) {
     const rawSize = req.headers['content-length'] ? parseInt(req.headers['content-length'] as string, 10) : 0;
@@ -103,8 +115,6 @@ export async function ingestEventsHandler(req: Request, res: Response) {
   const body: IngestEventsRequest = IngestEventsSchema.parse(req.body);
   if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
-  await ensureAssets(pool, body.events.map(e => e.asset_id));
-
   // Deduplicate by fingerprint within the batch (keep last = latest ts).
   // ON CONFLICT DO UPDATE fails if the same fingerprint appears twice in one INSERT.
   const fpSeen = new Set<string>();
@@ -118,33 +128,47 @@ export async function ingestEventsHandler(req: Request, res: Response) {
     }
   }
 
-  if (events.length) {
-    await pool.query(
-      `INSERT INTO orbit_events(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
-       SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::jsonb[])
-         AS t(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
-       ON CONFLICT (fingerprint, ts) WHERE fingerprint IS NOT NULL
-       DO UPDATE SET
-         severity    = excluded.severity,
-         title       = excluded.title,
-         message     = excluded.message,
-         attributes  = excluded.attributes,
-         ingested_at = now()`,
-      [
-        events.map(e => e.ts),
-        events.map(e => e.asset_id),
-        events.map(e => e.namespace),
-        events.map(e => e.kind),
-        events.map(e => e.severity),
-        events.map(e => e.title),
-        events.map(e => e.message ?? null),
-        events.map(e => e.fingerprint ?? null),
-        events.map(e => JSON.stringify(e.attributes ?? {})),
-      ]
-    );
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    await ensureAssets(client, events.map(e => e.asset_id));
+
+    if (events.length) {
+      await client.query(
+        `INSERT INTO orbit_events(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
+         SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::jsonb[])
+           AS t(ts, asset_id, namespace, kind, severity, title, message, fingerprint, attributes)
+         ON CONFLICT (fingerprint, ts) WHERE fingerprint IS NOT NULL
+         DO UPDATE SET
+           severity    = excluded.severity,
+           title       = excluded.title,
+           message     = excluded.message,
+           attributes  = excluded.attributes,
+           ingested_at = now()`,
+        [
+          events.map(e => e.ts),
+          events.map(e => e.asset_id),
+          events.map(e => e.namespace),
+          events.map(e => e.kind),
+          events.map(e => e.severity),
+          events.map(e => e.title),
+          events.map(e => e.message ?? null),
+          events.map(e => e.fingerprint ?? null),
+          events.map(e => JSON.stringify(e.attributes ?? {})),
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
 
-  // Record connector run when X-Source-Id header is present
+  // Record connector run when X-Source-Id header is present (best-effort, outside tx)
   const sourceId = req.headers['x-source-id'] as string | undefined;
   if (sourceId && pool) {
     const rawSize = req.headers['content-length'] ? parseInt(req.headers['content-length'] as string, 10) : 0;
