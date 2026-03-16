@@ -445,6 +445,18 @@ export function threatIntelRouter(pool: Pool | null): Router {
     const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
 
     const { rows } = await pool.query(`
+      WITH match_agg AS (
+        SELECT
+          e2.asset_id,
+          count(*)::int AS ioc_matches,
+          count(DISTINCT tm2.indicator_id)::int AS unique_iocs,
+          array_agg(DISTINCT tm2.matched_value ORDER BY tm2.matched_value)
+            FILTER (WHERE tm2.matched_value IS NOT NULL) AS ioc_ips
+        FROM threat_matches tm2
+        JOIN orbit_events e2 ON e2.id = tm2.event_id
+        WHERE tm2.detected_at >= now() - make_interval(hours => $1)
+        GROUP BY e2.asset_id
+      )
       SELECT
         a.asset_id,
         a.name,
@@ -457,9 +469,9 @@ export function threatIntelRouter(pool: Pool | null): Router {
         COALESCE(ev.low_count, 0)::int AS low,
         COALESCE(ev.info_count, 0)::int AS info,
         COALESCE(ev.namespaces, '{}') AS sources,
-        COALESCE(tm.ioc_matches, 0)::int AS ioc_matches,
-        COALESCE(tm.unique_iocs, 0)::int AS unique_iocs,
-        COALESCE(tm.ioc_ips, '{}') AS ioc_ips,
+        COALESCE(ma.ioc_matches, 0)::int AS ioc_matches,
+        COALESCE(ma.unique_iocs, 0)::int AS unique_iocs,
+        COALESCE(ma.ioc_ips, '{}') AS ioc_ips,
         a.last_seen
       FROM assets a
       LEFT JOIN LATERAL (
@@ -475,20 +487,11 @@ export function threatIntelRouter(pool: Pool | null): Router {
         WHERE e.asset_id = a.asset_id
           AND e.ts >= now() - make_interval(hours => $1)
       ) ev ON true
-      LEFT JOIN LATERAL (
-        SELECT
-          count(*)::int AS ioc_matches,
-          count(DISTINCT tm2.indicator_id)::int AS unique_iocs,
-          array_agg(DISTINCT tm2.matched_value ORDER BY tm2.matched_value) FILTER (WHERE tm2.matched_value IS NOT NULL) AS ioc_ips
-        FROM threat_matches tm2
-        JOIN orbit_events e2 ON e2.id = tm2.event_id
-        WHERE e2.asset_id = a.asset_id
-          AND tm2.detected_at >= now() - make_interval(hours => $1)
-      ) tm ON true
+      LEFT JOIN match_agg ma ON ma.asset_id = a.asset_id
       WHERE a.enabled = true
         AND COALESCE(ev.total_events, 0) > 0
       ORDER BY
-        COALESCE(tm.ioc_matches, 0) DESC,
+        COALESCE(ma.ioc_matches, 0) DESC,
         COALESCE(ev.critical_count, 0) DESC,
         COALESCE(ev.high_count, 0) DESC,
         COALESCE(ev.total_events, 0) DESC
