@@ -214,6 +214,9 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
   const [feedHours, setFeedHours] = React.useState(4);
   const [healthMap, setHealthMap] = React.useState<HealthMapAsset[]>([]);
   const [healthHover, setHealthHover] = React.useState<string | null>(null);
+  const [drillAsset, setDrillAsset] = React.useState<string | null>(null);
+  const [drillData, setDrillData] = React.useState<any>(null);
+  const [drillLoading, setDrillLoading] = React.useState(false);
 
   // Filters
   const [filterType, setFilterType] = React.useState('');
@@ -318,6 +321,22 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
       setErr(String(e));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchDrilldown(assetId: string) {
+    setDrillAsset(assetId);
+    setDrillLoading(true);
+    try {
+      const r = await fetch(`api/v1/threat-intel/health-map/${encodeURIComponent(assetId)}?hours=24`, { headers: apiGetHeaders() });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error ?? 'Failed');
+      setDrillData(j);
+    } catch (e: any) {
+      setErr(String(e));
+      setDrillAsset(null);
+    } finally {
+      setDrillLoading(false);
     }
   }
 
@@ -627,6 +646,7 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
                   return (
                     <div
                       key={a.asset_id}
+                      onClick={() => fetchDrilldown(a.asset_id)}
                       onMouseEnter={() => setHealthHover(a.asset_id)}
                       onMouseLeave={() => setHealthHover(null)}
                       style={{
@@ -738,6 +758,218 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
                   </div>
                 );
               })()}
+
+              {/* Drilldown panel */}
+              {drillAsset && (
+                <div style={{
+                  marginTop: 14,
+                  background: 'rgba(12,18,40,0.9)',
+                  border: '1px solid rgba(85,243,255,0.25)',
+                  borderRadius: 14,
+                  padding: '18px 22px',
+                  position: 'relative',
+                }}>
+                  {/* Close button */}
+                  <button
+                    onClick={() => { setDrillAsset(null); setDrillData(null); }}
+                    style={{
+                      position: 'absolute', top: 12, right: 14,
+                      background: 'rgba(233,238,255,0.08)', border: '1px solid rgba(233,238,255,0.15)',
+                      borderRadius: 8, color: 'rgba(233,238,255,0.5)', cursor: 'pointer',
+                      padding: '4px 10px', fontSize: 12, fontWeight: 600,
+                    }}
+                  >
+                    &times;
+                  </button>
+
+                  {drillLoading && (
+                    <div style={{ textAlign: 'center', padding: 30, color: 'rgba(233,238,255,0.4)', fontSize: 13 }}>
+                      Loading asset details...
+                    </div>
+                  )}
+
+                  {drillData && !drillLoading && (() => {
+                    const da = drillData.asset;
+                    const total = Math.max(1, da.total_events);
+                    const sevBars = [
+                      { label: 'Critical', count: da.critical, color: '#f87171' },
+                      { label: 'High', count: da.high, color: '#fb923c' },
+                      { label: 'Medium', count: da.medium, color: '#fbbf24' },
+                      { label: 'Low', count: da.low, color: '#4ade80' },
+                      { label: 'Info', count: da.info, color: '#60a5fa' },
+                    ].filter(s => s.count > 0);
+
+                    return (
+                      <>
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 18, fontWeight: 800, color: '#55f3ff' }}>{da.name}</span>
+                          <span style={{
+                            padding: '2px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700,
+                            background: 'rgba(85,243,255,0.12)', color: '#55f3ff',
+                            border: '1px solid rgba(85,243,255,0.25)', textTransform: 'uppercase',
+                          }}>
+                            {da.type}
+                          </span>
+                          {da.criticality && (
+                            <span style={{
+                              padding: '2px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700,
+                              background: `${da.criticality === 'critical' ? '#f87171' : da.criticality === 'high' ? '#fb923c' : '#fbbf24'}18`,
+                              color: da.criticality === 'critical' ? '#f87171' : da.criticality === 'high' ? '#fb923c' : '#fbbf24',
+                              textTransform: 'uppercase',
+                            }}>
+                              {da.criticality}
+                            </span>
+                          )}
+                          <span style={{ color: 'rgba(233,238,255,0.35)', fontSize: 11 }}>
+                            {da.total_events.toLocaleString()} events | {da.sources.join(', ')}
+                          </span>
+                        </div>
+
+                        {/* Severity bars */}
+                        <div style={{ marginBottom: 16 }}>
+                          <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                            Severity Distribution
+                          </div>
+                          <div style={{ display: 'flex', height: 22, borderRadius: 6, overflow: 'hidden', background: 'rgba(233,238,255,0.04)' }}>
+                            {sevBars.map(s => (
+                              <div
+                                key={s.label}
+                                title={`${s.label}: ${s.count.toLocaleString()}`}
+                                style={{
+                                  width: `${(s.count / total) * 100}%`,
+                                  minWidth: s.count > 0 ? 3 : 0,
+                                  background: `${s.color}55`,
+                                  borderRight: '1px solid rgba(4,7,19,0.8)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: 9, fontWeight: 700, color: s.color,
+                                }}
+                              >
+                                {(s.count / total) * 100 >= 8 ? s.count.toLocaleString() : ''}
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', gap: 14, marginTop: 6, flexWrap: 'wrap' }}>
+                            {sevBars.map(s => (
+                              <span key={s.label} style={{ fontSize: 10, color: s.color, fontWeight: 600 }}>
+                                {s.label}: {s.count.toLocaleString()}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Two-column layout: Timeline + IoC Matches */}
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 16 }}>
+                          {/* Severity timeline (hourly) */}
+                          <div style={{
+                            background: 'rgba(12,18,40,0.6)', border: '1px solid rgba(85,243,255,0.12)',
+                            borderRadius: 10, padding: '12px 14px',
+                          }}>
+                            <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                              Hourly Activity
+                            </div>
+                            {drillData.timeline.length > 0 ? (
+                              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 80 }}>
+                                {(() => {
+                                  const maxT = Math.max(...drillData.timeline.map((b: any) => b.total), 1);
+                                  return drillData.timeline.map((b: any, i: number) => {
+                                    const h = Math.max(2, (b.total / maxT) * 80);
+                                    const critH = (b.critical / maxT) * 80;
+                                    const highH = (b.high / maxT) * 80;
+                                    const barColor = b.critical > 0 ? '#f87171' : b.high > 0 ? '#fb923c' : b.medium > 0 ? '#fbbf24' : '#60a5fa';
+                                    return (
+                                      <div
+                                        key={i}
+                                        title={`${new Date(b.bucket).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}: ${b.total} events`}
+                                        style={{
+                                          flex: 1, height: h, borderRadius: 2,
+                                          background: `linear-gradient(to top, ${barColor}66, ${barColor}22)`,
+                                          minWidth: 3,
+                                        }}
+                                      />
+                                    );
+                                  });
+                                })()}
+                              </div>
+                            ) : (
+                              <div style={{ color: 'rgba(233,238,255,0.3)', fontSize: 11, padding: 10 }}>No data</div>
+                            )}
+                            {drillData.timeline.length > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 9, color: 'rgba(233,238,255,0.25)' }}>
+                                <span>{new Date(drillData.timeline[0].bucket).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                <span>{new Date(drillData.timeline[drillData.timeline.length - 1].bucket).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* IoC matches */}
+                          <div style={{
+                            background: 'rgba(12,18,40,0.6)', border: '1px solid rgba(85,243,255,0.12)',
+                            borderRadius: 10, padding: '12px 14px',
+                          }}>
+                            <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                              IoC Matches ({drillData.matches.length})
+                            </div>
+                            {drillData.matches.length > 0 ? (
+                              <div style={{ maxHeight: 130, overflowY: 'auto' }}>
+                                {drillData.matches.slice(0, 15).map((m: any, i: number) => (
+                                  <div key={m.id ?? i} style={{
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                    padding: '5px 0', borderBottom: '1px solid rgba(233,238,255,0.05)',
+                                    fontSize: 11,
+                                  }}>
+                                    <ThreatBadge level={m.threat_level} />
+                                    <TypeBadge type={m.indicator_type} />
+                                    <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'rgba(248,113,113,0.8)' }}>
+                                      {m.matched_value}
+                                    </span>
+                                    <span style={{ marginLeft: 'auto', fontSize: 9, color: 'rgba(233,238,255,0.3)' }}>
+                                      {fmtTs(m.detected_at)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div style={{ color: '#4ade80', fontSize: 11 }}>No IoC matches for this asset</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Recent events table */}
+                        <div>
+                          <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                            Recent Events ({drillData.events.length})
+                          </div>
+                          <div style={{ overflowX: 'auto', maxHeight: 220, overflowY: 'auto' }}>
+                            <table style={{ ...S.table, minWidth: 600 }}>
+                              <thead>
+                                <tr>
+                                  {['Time', 'Severity', 'Source', 'Kind', 'Title'].map(h => (
+                                    <th key={h} style={{ ...S.th, position: 'sticky', top: 0, background: 'rgba(12,18,40,0.95)' }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {drillData.events.map((ev: any, i: number) => (
+                                  <tr key={ev.id ?? i}>
+                                    <td style={{ ...S.td, fontSize: 11, color: 'rgba(233,238,255,0.45)', whiteSpace: 'nowrap' }}>{fmtTs(ev.ts)}</td>
+                                    <td style={S.td}><SevBadge sev={ev.severity} /></td>
+                                    <td style={{ ...S.td, fontSize: 11 }}>{ev.namespace}</td>
+                                    <td style={{ ...S.td, fontSize: 11, color: 'rgba(233,238,255,0.5)' }}>{ev.kind}</td>
+                                    <td style={{ ...S.td, fontSize: 11, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {ev.title}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
 

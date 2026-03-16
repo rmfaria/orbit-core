@@ -501,5 +501,99 @@ export function threatIntelRouter(pool: Pool | null): Router {
     res.json({ ok: true, hours, assets: rows });
   }));
 
+  // GET /threat-intel/health-map/:assetId — drilldown for a single asset
+  r.get('/threat-intel/health-map/:assetId', a(async (req, res) => {
+    if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
+
+    const { assetId } = req.params;
+    const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
+
+    const [assetRes, eventsRes, matchesRes, timelineRes] = await Promise.all([
+      // Asset metadata + severity counts
+      pool.query(`
+        SELECT
+          a.asset_id, a.name, a.type, a.criticality, a.tags, a.first_seen, a.last_seen,
+          COALESCE(ev.total_events, 0)::int AS total_events,
+          COALESCE(ev.critical_count, 0)::int AS critical,
+          COALESCE(ev.high_count, 0)::int AS high,
+          COALESCE(ev.medium_count, 0)::int AS medium,
+          COALESCE(ev.low_count, 0)::int AS low,
+          COALESCE(ev.info_count, 0)::int AS info,
+          COALESCE(ev.namespaces, '{}') AS sources
+        FROM assets a
+        LEFT JOIN LATERAL (
+          SELECT
+            count(*)              AS total_events,
+            count(*) FILTER (WHERE severity = 'critical') AS critical_count,
+            count(*) FILTER (WHERE severity = 'high')     AS high_count,
+            count(*) FILTER (WHERE severity = 'medium')   AS medium_count,
+            count(*) FILTER (WHERE severity = 'low')      AS low_count,
+            count(*) FILTER (WHERE severity = 'info')     AS info_count,
+            array_agg(DISTINCT namespace) AS namespaces
+          FROM orbit_events e
+          WHERE e.asset_id = a.asset_id
+            AND e.ts >= now() - make_interval(hours => $2)
+        ) ev ON true
+        WHERE a.asset_id = $1
+      `, [assetId, hours]),
+
+      // Recent events (last 30)
+      pool.query(`
+        SELECT id, ts, namespace, kind, severity, title, message,
+               COALESCE(attributes, '{}'::jsonb) AS attributes
+        FROM orbit_events
+        WHERE asset_id = $1
+          AND ts >= now() - make_interval(hours => $2)
+        ORDER BY ts DESC
+        LIMIT 30
+      `, [assetId, hours]),
+
+      // IoC matches for this asset
+      pool.query(`
+        SELECT
+          tm.id, tm.matched_field, tm.matched_value, tm.indicator_type,
+          tm.threat_level, tm.detected_at,
+          e.namespace, e.severity AS event_severity, e.title AS event_title, e.ts AS event_ts,
+          ti.value AS indicator_value, ti.tags, ti.source, ti.event_info AS indicator_event_info
+        FROM threat_matches tm
+        JOIN orbit_events e ON e.id = tm.event_id
+        JOIN threat_indicators ti ON ti.id = tm.indicator_id
+        WHERE e.asset_id = $1
+          AND tm.detected_at >= now() - make_interval(hours => $2)
+        ORDER BY tm.detected_at DESC
+        LIMIT 50
+      `, [assetId, hours]),
+
+      // Severity timeline (hourly buckets)
+      pool.query(`
+        SELECT
+          date_trunc('hour', ts) AS bucket,
+          count(*)::int AS total,
+          count(*) FILTER (WHERE severity = 'critical')::int AS critical,
+          count(*) FILTER (WHERE severity = 'high')::int AS high,
+          count(*) FILTER (WHERE severity = 'medium')::int AS medium,
+          count(*) FILTER (WHERE severity = 'low')::int AS low
+        FROM orbit_events
+        WHERE asset_id = $1
+          AND ts >= now() - make_interval(hours => $2)
+        GROUP BY bucket
+        ORDER BY bucket
+      `, [assetId, hours]),
+    ]);
+
+    if (assetRes.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Asset not found' });
+    }
+
+    res.json({
+      ok: true,
+      hours,
+      asset: assetRes.rows[0],
+      events: eventsRes.rows,
+      matches: matchesRes.rows,
+      timeline: timelineRes.rows,
+    });
+  }));
+
   return r;
 }
