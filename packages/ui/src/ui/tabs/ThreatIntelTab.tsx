@@ -600,13 +600,17 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
                 justifyContent: isMobile ? 'center' : 'flex-start',
               }}>
                 {healthMap.map((a) => {
-                  // Calculate threat score: 0-100
-                  const iocWeight = a.ioc_matches * 15;
-                  const critWeight = a.critical * 10;
-                  const highWeight = a.high * 3;
-                  const medWeight = a.medium * 0.5;
-                  const rawScore = Math.min(100, iocWeight + critWeight + highWeight + medWeight);
-                  const score = Math.round(rawScore);
+                  // Calculate threat score: 0-100 (normalized by event volume)
+                  const total = Math.max(1, a.total_events);
+                  const iocScore = Math.min(40, a.ioc_matches * 8);   // IoC hits dominate (max 40)
+                  const critPct  = (a.critical / total) * 100;
+                  const highPct  = (a.high / total) * 100;
+                  const medPct   = (a.medium / total) * 100;
+                  const sevScore = Math.min(50, critPct * 5 + highPct * 1.5 + medPct * 0.2);
+                  // Volume bonus: very active assets get a small bump
+                  const volScore = Math.min(10, Math.log10(total + 1) * 2);
+                  const rawScore = iocScore + sevScore + volScore;
+                  const score = Math.round(Math.min(100, rawScore));
 
                   // Score → color
                   const color = score >= 70 ? '#f87171'
