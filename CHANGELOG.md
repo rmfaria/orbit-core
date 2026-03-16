@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.7.1] - 2026-03-16
+
+### Added
+
+- **Security Health Map**: futuristic hex-grid visualization showing per-asset security posture on the Threat Intel Overview — threat score 0–100 based on IoC matches, severity ratio and event volume; color-coded hexagons with neon glow; pulsing indicators for active IoC hits; hover tooltip with severity breakdown, event sources and matched IPs
+- **New API endpoint** `GET /threat-intel/health-map`: returns per-asset security health data with event severity counts, IoC match counts and matched values
+- **New API endpoint** `GET /threat-intel/feed`: returns last N hours of MISP activity (new indicators, ioc.new events, ioc.hit events)
+- **Indicator filters**: type dropdown with live counts from stats, tag search (JSONB ILIKE), source filter, enabled/disabled toggle, enter-to-search on all inputs, clear all button
+- **Match filters**: inline TimeRangePicker, matched value search, asset filter, clear all button
+- **API filter params**: `tag` filter on indicators endpoint, `matched_value` and `namespace` filters on matches endpoint
+- **Indicator breakdown bars**: always-visible horizontal bar chart on Overview showing IoC type distribution with counts
+- **No-matches hint**: informational message on Overview when correlation engine has no results yet
+
+### Changed
+
+- **Chart initialization rewritten**: charts now lazy-create when canvas element mounts (previously `useEffect([])` ran before stats loaded, so canvas didn't exist and charts were never created — Overview appeared blank)
+- **EPS tracking**: threat-intel indicator ingest now tracks events-per-second
+- **Query MAX_ROWS cap**: hard limit of 100,000 rows on any single query to prevent OOM
+
+### Fixed
+
+- **Health map query performance**: 19.3s → 293ms (65x improvement) — replaced LATERAL JOIN on threat_matches with CTE pre-aggregation; eliminated 548k nested loops across partitioned tables
+- **IoC lookup performance**: 51ms → 0.23ms (220x improvement) — added functional index on `lower(value)` with `WHERE enabled = true`; correlation worker was doing full seq scan on 67k rows every 2 minutes
+- **Health map scoring**: normalized threat score by event volume instead of raw counts; uses severity percentage + logarithmic volume scale to avoid all-100 scores
+
+---
+
 ## [1.7.0] - 2026-03-15
 
 ### Added
@@ -229,6 +256,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.7.1]: https://github.com/rmfaria/orbit-core/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/rmfaria/orbit-core/compare/v1.6.4...v1.7.0
 [1.6.4]: https://github.com/rmfaria/orbit-core/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/rmfaria/orbit-core/compare/v1.6.2...v1.6.3

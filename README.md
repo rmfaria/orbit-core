@@ -108,7 +108,7 @@ See [INSTALL.md](INSTALL.md) for production hardening, TLS, Docker Swarm and rev
 | 🖥️ | **System monitoring** | Live infrastructure panel: CPU, memory, disk usage, network I/O, PostgreSQL I/O & stats, worker health |
 | 🔔 | **Alerts** | Threshold + absence rules, evaluated every 60s, dispatched via webhook, Telegram or email (SMTP) |
 | 🔗 | **Auto-correlation** | Z-score anomaly detection links metric spikes to concurrent events |
-| 🛡️ | **MISP Threat Intelligence** | IoC ingestion from MISP, automatic correlation with live events, dedicated dashboard with indicators, matches and timeline |
+| 🛡️ | **MISP Threat Intelligence** | IoC ingestion from 9 MISP feeds (abuse.ch, Blocklist.de, CI Army, CIRCL, OpenPhish), real-time correlation with live events, security health map, advanced filters |
 | ✦ | **AI Designer (Smart Dashboards)** | Describe a dashboard in plain text — AI generates a standalone HTML/CSS/JS page with live data from your catalog |
 | 🤖 | **AI dashboard builder** | Claude-powered — describe a dashboard in plain text, it builds the spec from your real catalog |
 | 🗄️ | **Rollups + retention** | Automatic 5m and 1h rollups; query engine picks the best source table |
@@ -206,11 +206,13 @@ Query your data without writing SQL:
 | `POST` | `/api/v1/query` | OrbitQL query |
 | `GET` | `/api/v1/catalog/*` | Assets, metrics, dimensions |
 | `GET` | `/api/v1/correlations` | Anomaly ↔ event links |
-| `*` | `/api/v1/threat-intel/indicators` | Threat indicators CRUD (IoCs from MISP) |
+| `*` | `/api/v1/threat-intel/indicators` | Threat indicators CRUD — filter by type, value, threat_level, source, tag, enabled |
 | `GET` | `/api/v1/threat-intel/indicators/match` | Check a value against active IoCs |
 | `GET` | `/api/v1/threat-intel/stats` | Threat intel summary statistics |
-| `GET` | `/api/v1/threat-intel/matches` | IoC correlation hits (event ↔ indicator) |
+| `GET` | `/api/v1/threat-intel/matches` | IoC correlation hits — filter by type, threat_level, matched_value, asset, namespace |
 | `GET` | `/api/v1/threat-intel/matches/summary` | Match timeline and breakdown |
+| `GET` | `/api/v1/threat-intel/feed` | Last N hours of MISP activity (indicators + events + hits) |
+| `GET` | `/api/v1/threat-intel/health-map` | Per-asset security health for heatmap visualization |
 | `*` | `/api/v1/alerts/rules` | Alert rules CRUD |
 | `*` | `/api/v1/alerts/channels` | Notification channels CRUD |
 | `*` | `/api/v1/alerts/smtp` | SMTP settings (GET/POST) |
