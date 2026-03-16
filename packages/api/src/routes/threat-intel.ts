@@ -131,6 +131,7 @@ export function threatIntelRouter(pool: Pool | null): Router {
       threat_level,
       source,
       enabled,
+      tag,
       limit = '100',
       offset = '0',
     } = req.query as Record<string, string>;
@@ -158,6 +159,10 @@ export function threatIntelRouter(pool: Pool | null): Router {
     if (enabled !== undefined && enabled !== '') {
       conditions.push(`enabled = $${idx++}`);
       params.push(enabled === 'true');
+    }
+    if (tag) {
+      conditions.push(`EXISTS (SELECT 1 FROM jsonb_array_elements_text(tags) t WHERE t ILIKE $${idx++})`);
+      params.push(`%${tag}%`);
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -257,6 +262,7 @@ export function threatIntelRouter(pool: Pool | null): Router {
 
     const {
       from, to, asset_id, threat_level, indicator_type,
+      matched_value, namespace,
       limit = '100', offset = '0',
     } = req.query as Record<string, string>;
 
@@ -283,6 +289,14 @@ export function threatIntelRouter(pool: Pool | null): Router {
     if (indicator_type) {
       conditions.push(`tm.indicator_type = $${idx++}`);
       params.push(indicator_type);
+    }
+    if (matched_value) {
+      conditions.push(`tm.matched_value ILIKE $${idx++}`);
+      params.push(`%${matched_value}%`);
+    }
+    if (namespace) {
+      conditions.push(`e.namespace = $${idx++}`);
+      params.push(namespace);
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

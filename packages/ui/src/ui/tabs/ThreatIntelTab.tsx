@@ -199,6 +199,12 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
   const [filterType, setFilterType] = React.useState('');
   const [filterThreat, setFilterThreat] = React.useState('');
   const [filterValue, setFilterValue] = React.useState('');
+  const [filterSource, setFilterSource] = React.useState('');
+  const [filterTag, setFilterTag] = React.useState('');
+  const [filterEnabled, setFilterEnabled] = React.useState('');
+  const [filterMatchValue, setFilterMatchValue] = React.useState('');
+  const [filterMatchAsset, setFilterMatchAsset] = React.useState('');
+  const [filterResetKey, setFilterResetKey] = React.useState(0);
   const [indicatorPage, setIndicatorPage] = React.useState(0);
   const [matchPage, setMatchPage] = React.useState(0);
   const [expandedMatch, setExpandedMatch] = React.useState<number | null>(null);
@@ -240,6 +246,9 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
       if (filterType) qp.set('type', filterType);
       if (filterThreat) qp.set('threat_level', filterThreat);
       if (filterValue) qp.set('value', filterValue);
+      if (filterSource) qp.set('source', filterSource);
+      if (filterTag) qp.set('tag', filterTag);
+      if (filterEnabled) qp.set('enabled', filterEnabled);
       const r = await fetch(`api/v1/threat-intel/indicators?${qp}`, { headers: apiGetHeaders() });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error ?? 'Failed');
@@ -261,6 +270,8 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
       });
       if (filterThreat) qp.set('threat_level', filterThreat);
       if (filterType) qp.set('indicator_type', filterType);
+      if (filterMatchValue) qp.set('matched_value', filterMatchValue);
+      if (filterMatchAsset) qp.set('asset_id', filterMatchAsset);
       const r = await fetch(`api/v1/threat-intel/matches?${qp}`, { headers: apiGetHeaders() });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error ?? 'Failed');
@@ -291,6 +302,13 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
   // Initial load
   React.useEffect(() => { fetchAll(); }, []);
 
+  // Re-fetch on filter clear
+  React.useEffect(() => {
+    if (filterResetKey === 0) return;
+    if (view === 'indicators') fetchIndicators(0);
+    else if (view === 'matches') fetchMatches(0);
+  }, [filterResetKey]);
+
   // Reload on view change
   React.useEffect(() => {
     if (view === 'indicators') fetchIndicators(0);
@@ -301,46 +319,30 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
 
   // ── Charts ─────────────────────────────────────────────────────────────────
 
-  // Timeline chart
+  // Create + update timeline chart when data or canvas becomes available
   React.useEffect(() => {
     if (!timelineRef.current) return;
-    const ctx = timelineRef.current.getContext('2d');
-    if (!ctx) return;
-    timelineChart.current = new Chart(ctx, {
-      type: 'line',
-      data: { labels: [], datasets: [] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        scales: {
-          x: { ticks: { color: 'rgba(233,238,255,0.4)', maxTicksLimit: 12 }, grid: { color: 'rgba(140,160,255,0.08)' } },
-          y: { ticks: { color: 'rgba(233,238,255,0.4)' }, grid: { color: 'rgba(140,160,255,0.08)' }, beginAtZero: true },
+
+    // Create chart if it doesn't exist yet
+    if (!timelineChart.current) {
+      const ctx = timelineRef.current.getContext('2d');
+      if (!ctx) return;
+      timelineChart.current = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: 'rgba(233,238,255,0.4)', maxTicksLimit: 12 }, grid: { color: 'rgba(140,160,255,0.08)' } },
+            y: { ticks: { color: 'rgba(233,238,255,0.4)' }, grid: { color: 'rgba(140,160,255,0.08)' }, beginAtZero: true },
+          },
+          plugins: { legend: { labels: { color: '#e9eeff', boxWidth: 12 } } },
         },
-        plugins: { legend: { labels: { color: '#e9eeff', boxWidth: 12 } } },
-      },
-    });
-    return () => { timelineChart.current?.destroy(); timelineChart.current = null; };
-  }, []);
+      });
+    }
 
-  // Type doughnut chart
-  React.useEffect(() => {
-    if (!typeRef.current) return;
-    const ctx = typeRef.current.getContext('2d');
-    if (!ctx) return;
-    typeChart.current = new Chart(ctx, {
-      type: 'doughnut',
-      data: { labels: [], datasets: [] },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'right', labels: { color: '#e9eeff', boxWidth: 10, font: { size: 11 } } } },
-        cutout: '60%',
-      },
-    });
-    return () => { typeChart.current?.destroy(); typeChart.current = null; };
-  }, []);
-
-  // Update charts when data changes
-  React.useEffect(() => {
-    if (timelineChart.current && matchSummary?.timeline?.length) {
+    // Update data
+    if (matchSummary?.timeline?.length) {
       const chart = timelineChart.current;
       chart.data.labels = matchSummary.timeline.map(b => {
         const d = new Date(b.bucket);
@@ -365,7 +367,30 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
       chart.update('none');
     }
 
-    if (typeChart.current && stats?.by_type?.length) {
+    return () => { timelineChart.current?.destroy(); timelineChart.current = null; };
+  }, [stats, matchSummary]);
+
+  // Create + update type doughnut chart when data or canvas becomes available
+  React.useEffect(() => {
+    if (!typeRef.current) return;
+
+    // Create chart if it doesn't exist yet
+    if (!typeChart.current) {
+      const ctx = typeRef.current.getContext('2d');
+      if (!ctx) return;
+      typeChart.current = new Chart(ctx, {
+        type: 'doughnut',
+        data: { labels: [], datasets: [] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'right', labels: { color: '#e9eeff', boxWidth: 10, font: { size: 11 } } } },
+          cutout: '60%',
+        },
+      });
+    }
+
+    // Update data
+    if (stats?.by_type?.length) {
       const palette = ['#e879f9', '#f87171', '#fbbf24', '#4ade80', '#60a5fa', '#fb923c', '#a78bfa', '#38bdf8', '#f0abfc', '#a3e635'];
       const chart = typeChart.current;
       const top = stats.by_type.slice(0, 10);
@@ -377,6 +402,8 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
       }];
       chart.update('none');
     }
+
+    return () => { typeChart.current?.destroy(); typeChart.current = null; };
   }, [stats, matchSummary]);
 
   // ── KPI Card helper ────────────────────────────────────────────────────────
@@ -578,6 +605,45 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
               </div>
             </div>
           )}
+
+          {/* IoC type breakdown bars — always shown */}
+          {stats.by_type.length > 0 && (
+            <div style={TI.panel}>
+              <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.5)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Indicator Breakdown
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {stats.by_type.slice(0, 12).map((t, i) => {
+                  const maxCount = parseInt(String(stats.by_type[0].count)) || 1;
+                  const count = parseInt(String(t.count));
+                  const pct = (count / maxCount) * 100;
+                  const palette = ['#e879f9', '#f87171', '#fbbf24', '#4ade80', '#60a5fa', '#fb923c', '#a78bfa', '#38bdf8', '#f0abfc', '#a3e635', '#e2e8f0', '#94a3b8'];
+                  const color = palette[i % palette.length];
+                  return (
+                    <div key={t.type} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 110, fontSize: 11, fontWeight: 600, color, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
+                        {t.type}
+                      </div>
+                      <div style={{ flex: 1, height: 8, borderRadius: 99, background: 'rgba(233,238,255,0.06)', overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', borderRadius: 99, background: color, transition: 'width 0.4s' }} />
+                      </div>
+                      <div style={{ width: 55, textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'rgba(233,238,255,0.7)' }}>
+                        {count.toLocaleString()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* No matches hint */}
+          {matchSummary && matchSummary.summary.total_matches === 0 && (
+            <div style={{ ...TI.panel, textAlign: 'center', padding: '24px 20px', color: 'rgba(233,238,255,0.4)' }}>
+              <div style={{ fontSize: 13, marginBottom: 4 }}>No IoC matches detected in the selected time range.</div>
+              <div style={{ fontSize: 11 }}>Matches appear when ingested events contain values matching known threat indicators.</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -743,24 +809,60 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
           <div style={{ ...TI.panel, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label style={S.label}>
               Type
-              <input value={filterType} onChange={e => setFilterType(e.target.value)} placeholder="ip-src, domain..." style={{ ...S.input, width: 130 }} />
-            </label>
-            <label style={S.label}>
-              Threat Level
-              <select value={filterThreat} onChange={e => setFilterThreat(e.target.value)} style={S.select}>
-                <option value="">All</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
+              <select value={filterType} onChange={e => { setFilterType(e.target.value); }} style={S.select}>
+                <option value="">All types</option>
+                {(stats?.by_type ?? []).map(t => (
+                  <option key={t.type} value={t.type}>{t.type} ({t.count})</option>
+                ))}
               </select>
             </label>
             <label style={S.label}>
-              Value (search)
-              <input value={filterValue} onChange={e => setFilterValue(e.target.value)} placeholder="IP, hash, domain..." style={{ ...S.input, width: 200 }} />
+              Threat Level
+              <select value={filterThreat} onChange={e => { setFilterThreat(e.target.value); }} style={S.select}>
+                <option value="">All levels</option>
+                <option value="high">High{stats ? ` (${stats.high})` : ''}</option>
+                <option value="medium">Medium{stats ? ` (${stats.medium})` : ''}</option>
+                <option value="low">Low{stats ? ` (${stats.low})` : ''}</option>
+              </select>
+            </label>
+            <label style={S.label}>
+              Value
+              <input value={filterValue} onChange={e => setFilterValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && fetchIndicators(0)}
+                placeholder="IP, hash, domain..." style={{ ...S.input, width: 180 }} />
+            </label>
+            <label style={S.label}>
+              Tag
+              <input value={filterTag} onChange={e => setFilterTag(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && fetchIndicators(0)}
+                placeholder="tlp:, mitre, apt..." style={{ ...S.input, width: 140 }} />
+            </label>
+            <label style={S.label}>
+              Source
+              <input value={filterSource} onChange={e => setFilterSource(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && fetchIndicators(0)}
+                placeholder="misp, manual..." style={{ ...S.input, width: 110 }} />
+            </label>
+            <label style={S.label}>
+              Status
+              <select value={filterEnabled} onChange={e => { setFilterEnabled(e.target.value); }} style={S.select}>
+                <option value="">All</option>
+                <option value="true">Enabled</option>
+                <option value="false">Disabled</option>
+              </select>
             </label>
             <button onClick={() => fetchIndicators(0)} disabled={loading} style={S.btn}>
               {loading ? '...' : 'Search'}
             </button>
+            {(filterType || filterThreat || filterValue || filterTag || filterSource || filterEnabled) && (
+              <button onClick={() => {
+                setFilterType(''); setFilterThreat(''); setFilterValue('');
+                setFilterTag(''); setFilterSource(''); setFilterEnabled('');
+                setFilterResetKey(k => k + 1);
+              }} style={{ ...S.btn, background: 'rgba(233,238,255,0.06)', color: 'rgba(233,238,255,0.5)', fontSize: 11 }}>
+                Clear
+              </button>
+            )}
           </div>
 
           {/* Table */}
@@ -853,22 +955,48 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
         <div>
           {/* Filters */}
           <div style={{ ...TI.panel, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <TimeRangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
             <label style={S.label}>
-              Indicator Type
-              <input value={filterType} onChange={e => setFilterType(e.target.value)} placeholder="ip-src, domain..." style={{ ...S.input, width: 130 }} />
+              IoC Type
+              <select value={filterType} onChange={e => { setFilterType(e.target.value); }} style={S.select}>
+                <option value="">All types</option>
+                {(stats?.by_type ?? []).map(t => (
+                  <option key={t.type} value={t.type}>{t.type}</option>
+                ))}
+              </select>
             </label>
             <label style={S.label}>
               Threat Level
-              <select value={filterThreat} onChange={e => setFilterThreat(e.target.value)} style={S.select}>
-                <option value="">All</option>
+              <select value={filterThreat} onChange={e => { setFilterThreat(e.target.value); }} style={S.select}>
+                <option value="">All levels</option>
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
               </select>
             </label>
+            <label style={S.label}>
+              Matched Value
+              <input value={filterMatchValue} onChange={e => setFilterMatchValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && fetchMatches(0)}
+                placeholder="IP, hash, domain..." style={{ ...S.input, width: 170 }} />
+            </label>
+            <label style={S.label}>
+              Asset
+              <input value={filterMatchAsset} onChange={e => setFilterMatchAsset(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && fetchMatches(0)}
+                placeholder="asset ID..." style={{ ...S.input, width: 130 }} />
+            </label>
             <button onClick={() => fetchMatches(0)} disabled={loading} style={S.btn}>
               {loading ? '...' : 'Search'}
             </button>
+            {(filterType || filterThreat || filterMatchValue || filterMatchAsset) && (
+              <button onClick={() => {
+                setFilterType(''); setFilterThreat(''); setFilterMatchValue(''); setFilterMatchAsset('');
+                setFilterResetKey(k => k + 1);
+              }} style={{ ...S.btn, background: 'rgba(233,238,255,0.06)', color: 'rgba(233,238,255,0.5)', fontSize: 11 }}>
+                Clear
+              </button>
+            )}
           </div>
 
           {/* Table */}
