@@ -164,6 +164,24 @@ type FeedData = {
   ioc_hits:   { count: number; items: FeedEvent[] };
 };
 
+type HealthMapAsset = {
+  asset_id: string;
+  name: string;
+  type: string;
+  criticality: string | null;
+  total_events: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+  sources: string[];
+  ioc_matches: number;
+  unique_iocs: number;
+  ioc_ips: string[];
+  last_seen: string;
+};
+
 const VIEWS = ['overview', 'feed', 'indicators', 'matches', 'timeline'] as const;
 type View = typeof VIEWS[number];
 
@@ -194,6 +212,8 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
   const [matchSummary, setMatchSummary] = React.useState<MatchSummary | null>(null);
   const [feed, setFeed] = React.useState<FeedData | null>(null);
   const [feedHours, setFeedHours] = React.useState(4);
+  const [healthMap, setHealthMap] = React.useState<HealthMapAsset[]>([]);
+  const [healthHover, setHealthHover] = React.useState<string | null>(null);
 
   // Filters
   const [filterType, setFilterType] = React.useState('');
@@ -223,15 +243,17 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
   async function fetchAll() {
     setLoading(true); setErr(null);
     try {
-      const [rStats, rMatches] = await Promise.all([
+      const [rStats, rMatches, rHealth] = await Promise.all([
         fetch('api/v1/threat-intel/stats', { headers: apiGetHeaders() }),
         fetch(`api/v1/threat-intel/matches/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { headers: apiGetHeaders() }),
+        fetch('api/v1/threat-intel/health-map?hours=24', { headers: apiGetHeaders() }),
       ]);
-      const [jStats, jMatches] = await Promise.all([rStats.json(), rMatches.json()]);
+      const [jStats, jMatches, jHealth] = await Promise.all([rStats.json(), rMatches.json(), rHealth.json()]);
       if (!jStats.ok) throw new Error(jStats.error ?? 'Failed to load stats');
       if (!jMatches.ok) throw new Error(jMatches.error ?? 'Failed to load matches');
       setStats(jStats.stats);
       setMatchSummary(jMatches as MatchSummary);
+      if (jHealth.ok) setHealthMap(jHealth.assets ?? []);
     } catch (e: any) {
       setErr(String(e));
     } finally {
@@ -529,6 +551,189 @@ export function ThreatIntelTab({ assets }: { assets?: AssetOpt[] }) {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* ── Security Health Map ─────────────────────────────────────── */}
+          {healthMap.length > 0 && (
+            <div style={{
+              ...TI.panel,
+              padding: '20px 22px',
+              background: 'linear-gradient(135deg, rgba(12,18,40,0.7), rgba(20,10,50,0.55))',
+              border: '1px solid rgba(232,121,249,0.12)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              {/* Background grid effect */}
+              <div style={{
+                position: 'absolute', inset: 0, opacity: 0.03,
+                backgroundImage: 'linear-gradient(rgba(232,121,249,1) 1px, transparent 1px), linear-gradient(90deg, rgba(232,121,249,1) 1px, transparent 1px)',
+                backgroundSize: '40px 40px',
+                pointerEvents: 'none',
+              }} />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, position: 'relative' }}>
+                <div style={{ fontSize: 12, color: 'rgba(233,238,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700 }}>
+                  Security Health Map
+                </div>
+                <div style={{ fontSize: 10, color: 'rgba(232,121,249,0.5)', letterSpacing: '0.06em' }}>LAST 24H</div>
+                <div style={{ flex: 1 }} />
+                <div style={{ display: 'flex', gap: 12, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  {[
+                    { label: 'Clear', color: '#4ade80' },
+                    { label: 'Low', color: '#60a5fa' },
+                    { label: 'Elevated', color: '#fbbf24' },
+                    { label: 'High', color: '#fb923c' },
+                    { label: 'Critical', color: '#f87171' },
+                  ].map(l => (
+                    <span key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'rgba(233,238,255,0.4)' }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: l.color, opacity: 0.8 }} />
+                      {l.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Hex grid of assets */}
+              <div style={{
+                display: 'flex', flexWrap: 'wrap', gap: 6, position: 'relative',
+                justifyContent: isMobile ? 'center' : 'flex-start',
+              }}>
+                {healthMap.map((a) => {
+                  // Calculate threat score: 0-100
+                  const iocWeight = a.ioc_matches * 15;
+                  const critWeight = a.critical * 10;
+                  const highWeight = a.high * 3;
+                  const medWeight = a.medium * 0.5;
+                  const rawScore = Math.min(100, iocWeight + critWeight + highWeight + medWeight);
+                  const score = Math.round(rawScore);
+
+                  // Score → color
+                  const color = score >= 70 ? '#f87171'
+                    : score >= 45 ? '#fb923c'
+                    : score >= 20 ? '#fbbf24'
+                    : score >= 5  ? '#60a5fa'
+                    : '#4ade80';
+
+                  const glowIntensity = Math.min(0.6, score / 100);
+                  const isHovered = healthHover === a.asset_id;
+                  const hasIoc = a.ioc_matches > 0;
+                  const shortName = a.name.replace(/^host:/, '').slice(0, 12);
+
+                  return (
+                    <div
+                      key={a.asset_id}
+                      onMouseEnter={() => setHealthHover(a.asset_id)}
+                      onMouseLeave={() => setHealthHover(null)}
+                      style={{
+                        width: isMobile ? 56 : 68,
+                        height: isMobile ? 62 : 76,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        transform: isHovered ? 'scale(1.15)' : 'scale(1)',
+                        zIndex: isHovered ? 10 : 1,
+                      }}
+                    >
+                      {/* Hexagon shape via SVG */}
+                      <svg
+                        viewBox="0 0 100 115"
+                        style={{ width: '100%', height: '100%', filter: `drop-shadow(0 0 ${isHovered ? 12 : 6}px ${color}${Math.round(glowIntensity * 255).toString(16).padStart(2, '0')})` }}
+                      >
+                        <defs>
+                          <linearGradient id={`hg-${a.asset_id.replace(/[^a-zA-Z0-9]/g, '')}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={color} stopOpacity={isHovered ? 0.45 : 0.25} />
+                            <stop offset="100%" stopColor={color} stopOpacity={isHovered ? 0.15 : 0.06} />
+                          </linearGradient>
+                        </defs>
+                        <polygon
+                          points="50,2 95,28 95,87 50,113 5,87 5,28"
+                          fill={`url(#hg-${a.asset_id.replace(/[^a-zA-Z0-9]/g, '')})`}
+                          stroke={color}
+                          strokeWidth={hasIoc ? 2.5 : 1.2}
+                          strokeOpacity={isHovered ? 0.9 : 0.5}
+                        />
+                        {/* Score text */}
+                        <text
+                          x="50" y="52" textAnchor="middle" dominantBaseline="middle"
+                          fill={color} fontSize="22" fontWeight="800" fontFamily="monospace"
+                          opacity={isHovered ? 1 : 0.9}
+                        >
+                          {score}
+                        </text>
+                        {/* Asset name */}
+                        <text
+                          x="50" y="75" textAnchor="middle" dominantBaseline="middle"
+                          fill="rgba(233,238,255,0.6)" fontSize="9" fontWeight="600"
+                          fontFamily="sans-serif" letterSpacing="0.5"
+                        >
+                          {shortName}
+                        </text>
+                        {/* IoC indicator dot */}
+                        {hasIoc && (
+                          <circle cx="50" cy="95" r="4" fill="#f87171" opacity="0.9">
+                            <animate attributeName="opacity" values="0.9;0.3;0.9" dur="2s" repeatCount="indefinite" />
+                          </circle>
+                        )}
+                      </svg>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Hover detail tooltip */}
+              {healthHover && (() => {
+                const a = healthMap.find(h => h.asset_id === healthHover);
+                if (!a) return null;
+                return (
+                  <div style={{
+                    marginTop: 12,
+                    background: 'rgba(12,18,40,0.85)',
+                    border: '1px solid rgba(232,121,249,0.25)',
+                    borderRadius: 12,
+                    padding: '14px 18px',
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr',
+                    gap: 14,
+                    fontSize: 12,
+                    position: 'relative',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.08em' }}>Asset</div>
+                      <div style={{ color: TI.accent, fontWeight: 700, fontSize: 14 }}>{a.name}</div>
+                      <div style={{ color: 'rgba(233,238,255,0.4)', fontSize: 11, marginTop: 2 }}>
+                        {a.sources.join(', ')} | {a.total_events.toLocaleString()} events
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.08em' }}>Severity Breakdown</div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        {a.critical > 0 && <span style={{ color: '#f87171', fontWeight: 700 }}>Critical: {a.critical}</span>}
+                        {a.high > 0 && <span style={{ color: '#fb923c', fontWeight: 700 }}>High: {a.high.toLocaleString()}</span>}
+                        {a.medium > 0 && <span style={{ color: '#fbbf24' }}>Med: {a.medium.toLocaleString()}</span>}
+                        {a.low > 0 && <span style={{ color: '#4ade80' }}>Low: {a.low.toLocaleString()}</span>}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: 'rgba(233,238,255,0.35)', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.08em' }}>Threat Intel</div>
+                      {a.ioc_matches > 0 ? (
+                        <div>
+                          <span style={{ color: '#f87171', fontWeight: 700 }}>{a.ioc_matches} IoC hits</span>
+                          <span style={{ color: 'rgba(233,238,255,0.4)' }}> ({a.unique_iocs} unique)</span>
+                          {a.ioc_ips.length > 0 && (
+                            <div style={{ marginTop: 4, fontFamily: 'monospace', fontSize: 10, color: 'rgba(248,113,113,0.7)' }}>
+                              {a.ioc_ips.slice(0, 4).join(', ')}
+                              {a.ioc_ips.length > 4 && ` +${a.ioc_ips.length - 4}`}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#4ade80' }}>No IoC matches</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
