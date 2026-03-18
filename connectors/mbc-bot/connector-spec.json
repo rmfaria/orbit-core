@@ -1,0 +1,20 @@
+{
+  "id": "mbc-bot",
+  "source_id": "mbc-bot",
+  "mode": "push",
+  "type": "event",
+  "status": "approved",
+  "description": "MBC Bot pre-sales events — lead updates, handoffs, score changes from the WhatsApp bot webhook relay",
+  "spec": {
+    "type": "event",
+    "mappings": {
+      "ts":          { "path": "$.ts",          "transform": "iso8601" },
+      "asset_id":    { "path": "$.asset_id" },
+      "namespace":   { "value": "mbc" },
+      "kind":        { "path": "$.kind" },
+      "severity":    { "path": "$.severity",    "transform": "severity_map", "default": "low" },
+      "title":       { "path": "$.title" },
+      "description": { "path": "$.description" }
+    }
+  }
+}

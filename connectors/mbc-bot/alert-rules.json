@@ -1,0 +1,17 @@
+[
+  {
+    "name": "MBC Bot — Lead Quente (Handoff)",
+    "description": "Dispara quando o bot MBC detecta um lead quente ou solicita handoff para atendimento humano",
+    "namespace": "mbc",
+    "kind": "lead_update",
+    "condition": {
+      "kind": "threshold",
+      "field": "severity",
+      "op": "eq",
+      "value": "high"
+    },
+    "severity": "critical",
+    "channels": [],
+    "enabled": true
+  }
+]
