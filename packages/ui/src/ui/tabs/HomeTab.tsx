@@ -38,7 +38,7 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
   const [suriRows, setSuriRows] = React.useState<Row[]>([]);
   const [feed, setFeed] = React.useState<EventRow[]>([]);
   // selected namespaces for the consolidated feed
-  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata']);
+  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata', 'openclaw']);
 
   // Layout: 'side' = charts left + feed right; 'cols1/2/3' = stacked with N charts per row
   const [chartLayout, setChartLayout] = React.useState<'side' | 'cols1' | 'cols2' | 'cols3'>('side');
@@ -568,7 +568,7 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                 {/* source toggle pills — built from namespaces in feed + always show known ones */}
-                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata'])].sort().map(ns => {
+                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata', 'openclaw'])].sort().map(ns => {
                   const active = feedNs.includes(ns);
                   const color  = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
                   const bg     = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';

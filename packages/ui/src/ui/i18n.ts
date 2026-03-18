@@ -429,6 +429,8 @@ const en = {
   sources_active:      'ACTIVE',
   sources_n8n_desc:    'Failed and stuck workflow runs (Error Trigger + polling)',
   sources_connector:   '⚙ Connector',
+  sources_openclaw_desc: 'Commercial pipeline — leads, proposals, contracts and revenue tracking',
+  sources_openclaw_open: 'Open OpenClaw',
 
   // ── Connectors sub-tabs ────────────────────────────────────────────────────
   conn_subtab_sources:   '📡 Sources',
@@ -916,6 +918,8 @@ const ptBR: Translations = {
   sources_active:      'ATIVO',
   sources_n8n_desc:    'Execuções com falha e travadas (Error Trigger + polling)',
   sources_connector:   '⚙ Conector',
+  sources_openclaw_desc: 'Pipeline comercial — leads, propostas, contratos e acompanhamento de receita',
+  sources_openclaw_open: 'Abrir OpenClaw',
   // connectors sub-tabs
   conn_subtab_sources:   '📡 Fontes',
   conn_subtab_templates: '📋 Templates',
@@ -1393,6 +1397,8 @@ const es: Translations = {
   sources_active:      'ACTIVO',
   sources_n8n_desc:    'Ejecuciones fallidas y atascadas (Error Trigger + polling)',
   sources_connector:   '⚙ Conector',
+  sources_openclaw_desc: 'Pipeline comercial — leads, propuestas, contratos y seguimiento de ingresos',
+  sources_openclaw_open: 'Abrir OpenClaw',
   // connectors sub-tabs
   conn_subtab_sources:   '📡 Fuentes',
   conn_subtab_templates: '📋 Plantillas',

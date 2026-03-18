@@ -853,6 +853,7 @@ export function App() {
         {tab === 'src-n8n'       && <EventsTab      key="src-n8n"       assets={assets} defaultNs="n8n"   />}
         {tab === 'src-otel'      && <EventsTab      key="src-otel"      assets={assets} defaultNs="otel"  />}
         {tab === 'src-suricata'  && <EventsTab      key="src-suricata"  assets={assets} defaultNs="suricata" />}
+        {tab === 'src-openclaw'  && <EventsTab      key="src-openclaw"  assets={assets} defaultNs="openclaw" />}
         {tab === 'events'        && <EventsTab      key="events"        assets={assets} />}
         {tab === 'metrics'       && <MetricsTab     assets={assets} />}
         {tab === 'correlations'  && <CorrelationsTab assets={assets} />}

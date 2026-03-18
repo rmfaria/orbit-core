@@ -62,6 +62,16 @@ const CONNECTOR_TEMPLATES: {
     spec: { type: 'metric', items_path: 'result', mappings: { ts: { path: '$.clock', transform: 'unix_to_iso' }, asset_id: { path: '$.host' }, namespace: { value: 'zabbix' }, metric: { path: '$.key_' }, value: { path: '$.value', transform: 'number' }, unit: { value: '' } } },
   },
   {
+    id: 'openclaw-events', name: 'OpenClaw Events', source_id: 'openclaw', mode: 'push', type: 'event',
+    description: 'Commercial pipeline events — leads, proposals, contracts and revenue updates',
+    spec: { type: 'event', items_path: 'events', mappings: { ts: { path: '$.timestamp', transform: 'iso8601' }, asset_id: { path: '$.account_id' }, namespace: { value: 'openclaw' }, kind: { path: '$.event_type' }, severity: { path: '$.priority', transform: 'severity_map' }, title: { path: '$.title' }, message: { path: '$.description' }, fingerprint: { path: '$.id' } } },
+  },
+  {
+    id: 'openclaw-metrics', name: 'OpenClaw Metrics', source_id: 'openclaw', mode: 'push', type: 'metric',
+    description: 'Sales KPIs — MRR, deal value, conversion rates, pipeline velocity',
+    spec: { type: 'metric', items_path: 'metrics', mappings: { ts: { path: '$.timestamp', transform: 'iso8601' }, asset_id: { path: '$.account_id' }, namespace: { value: 'openclaw' }, metric: { path: '$.metric' }, value: { path: '$.value', transform: 'number' }, unit: { path: '$.unit' } } },
+  },
+  {
     id: 'generic-metric', name: 'Generic Metric', source_id: 'custom', mode: 'push', type: 'metric',
     description: 'Generic template for any JSON metric source',
     spec: { type: 'metric', items_path: 'data.items', mappings: { ts: { path: '$.timestamp', transform: 'iso8601' }, asset_id: { path: '$.host', default: 'unknown' }, namespace: { value: 'my-source' }, metric: { path: '$.metric_name' }, value: { path: '$.value', transform: 'number' }, unit: { path: '$.unit' } } },

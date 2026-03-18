@@ -15,7 +15,7 @@ export type MultiRow   = { ts: string; series: string; value: number };
 export type EventRow   = { ts: string; asset_id: string; namespace: string; kind: string; severity: string; title: string; message: string };
 export type AssetOpt   = { asset_id: string; name: string };
 export type MetricOpt  = { namespace: string; metric: string; last_ts?: string };
-export type Tab        = 'home' | 'system' | 'dashboards' | 'ai-designer' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'src-otel' | 'src-suricata' | 'events' | 'metrics' | 'correlations' | 'threat-intel' | 'alerts' | 'connectors' | 'admin';
+export type Tab        = 'home' | 'system' | 'dashboards' | 'ai-designer' | 'src-nagios' | 'src-wazuh' | 'src-fortigate' | 'src-n8n' | 'src-otel' | 'src-suricata' | 'src-openclaw' | 'events' | 'metrics' | 'correlations' | 'threat-intel' | 'alerts' | 'connectors' | 'admin';
 
 export type CorrelationRow = {
   event_key:    string;
@@ -56,6 +56,7 @@ export const NS_COLOR: Record<string, string> = {
   n8n:       '#4ade80',
   otel:      '#f59e0b',
   suricata:  '#f87171',
+  openclaw:  '#ff5dd6',
 };
 export const NS_BG: Record<string, string> = {
   nagios:    '#0c1a3a',
@@ -64,6 +65,7 @@ export const NS_BG: Record<string, string> = {
   n8n:       '#052e16',
   otel:      '#1c1408',
   suricata:  '#3b1010',
+  openclaw:  '#2d0a24',
 };
 
 export const NAGIOS_STATE_COLOR: Record<string, string> = {

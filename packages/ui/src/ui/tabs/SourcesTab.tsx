@@ -98,6 +98,56 @@ export function SourcesTab({ setTab }: { setTab: (t: Tab) => void }) {
               <button style={S.btn} onClick={() => setTab('events')}>{t('sources_view_events')}</button>
             </div>
           </div>
+          <div style={{
+            ...S.card,
+            background: 'linear-gradient(135deg, rgba(45,10,36,0.85), rgba(20,8,40,0.75))',
+            border: '1px solid rgba(255,93,214,0.30)',
+            position: 'relative',
+            overflow: 'hidden',
+          }}>
+            {/* decorative glow */}
+            <div style={{ position: 'absolute', top: -30, right: -30, width: 100, height: 100, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,93,214,0.18), transparent 70%)', pointerEvents: 'none' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 18 }}>🦀</span>
+                <div style={{ fontWeight: 900, color: '#ff5dd6' }}>OpenClaw</div>
+              </div>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'rgba(255,93,214,.12)', color: '#ff5dd6', fontWeight: 700, letterSpacing: '.05em' }}>{t('sources_active')}</span>
+            </div>
+            <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>{t('sources_openclaw_desc')}</div>
+            {/* mini sales KPIs */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 12 }}>
+              <div style={{ textAlign: 'center', padding: '6px 0', background: 'rgba(255,93,214,0.06)', borderRadius: 8, border: '1px solid rgba(255,93,214,0.12)' }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#ff5dd6' }}>Leads</div>
+                <div style={{ fontSize: 9, color: 'rgba(233,238,255,0.45)', letterSpacing: '0.5px', marginTop: 2 }}>pipeline</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '6px 0', background: 'rgba(155,124,255,0.06)', borderRadius: 8, border: '1px solid rgba(155,124,255,0.12)' }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#9b7cff' }}>Deals</div>
+                <div style={{ fontSize: 9, color: 'rgba(233,238,255,0.45)', letterSpacing: '0.5px', marginTop: 2 }}>tracking</div>
+              </div>
+              <div style={{ textAlign: 'center', padding: '6px 0', background: 'rgba(74,222,128,0.06)', borderRadius: 8, border: '1px solid rgba(74,222,128,0.12)' }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#4ade80' }}>Revenue</div>
+                <div style={{ fontSize: 9, color: 'rgba(233,238,255,0.45)', letterSpacing: '0.5px', marginTop: 2 }}>MRR</div>
+              </div>
+            </div>
+            <div style={{ marginTop: 10, display: 'flex', gap: 14 }}>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/openclaw/README.md" target="_blank" rel="noreferrer"
+                style={{ fontSize: 12, color: 'rgba(255,93,214,.65)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                📄 Manual
+              </a>
+              <a href="https://github.com/rmfaria/orbit-core/blob/main/connectors/openclaw/ship_events.py" target="_blank" rel="noreferrer"
+                style={{ fontSize: 12, color: 'rgba(255,93,214,.65)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                ⚙ Conector
+              </a>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <button style={{
+                ...S.btn,
+                background: 'linear-gradient(135deg, rgba(255,93,214,0.25), rgba(155,124,255,0.22))',
+                border: '1px solid rgba(255,93,214,0.40)',
+              }} onClick={() => setTab('src-openclaw')}>{t('sources_openclaw_open')}</button>
+            </div>
+          </div>
           <div style={S.card}>
             <div style={{ fontWeight: 900 }}>Explore</div>
             <div style={{ color: 'rgba(233,238,255,0.78)', fontSize: 13, marginTop: 6 }}>Core metrics/events explorer</div>
