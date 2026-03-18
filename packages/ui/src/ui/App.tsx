@@ -176,9 +176,9 @@ function TopBar({ tab, setTab, onLocaleChange }: { tab: Tab; setTab: (t: Tab) =>
     textAlign: 'left' as const,
   };
 
-  const sourceLabels = ['Nagios', 'Wazuh', 'Fortigate', 'n8n', 'OTel', 'Suricata'];
-  const sourceColors = [NS_COLOR.nagios, NS_COLOR.wazuh, NS_COLOR.fortigate, NS_COLOR.n8n, NS_COLOR.otel, NS_COLOR.suricata];
-  const sourceTabs: Tab[] = ['src-nagios', 'src-wazuh', 'src-fortigate', 'src-n8n', 'src-otel', 'src-suricata'];
+  const sourceLabels = ['Nagios', 'Wazuh', 'Fortigate', 'n8n', 'OTel', 'Suricata', 'OpenClaw'];
+  const sourceColors = [NS_COLOR.nagios, NS_COLOR.wazuh, NS_COLOR.fortigate, NS_COLOR.n8n, NS_COLOR.otel, NS_COLOR.suricata, NS_COLOR.openclaw];
+  const sourceTabs: Tab[] = ['src-nagios', 'src-wazuh', 'src-fortigate', 'src-n8n', 'src-otel', 'src-suricata', 'src-openclaw'];
 
   return (
     <>
