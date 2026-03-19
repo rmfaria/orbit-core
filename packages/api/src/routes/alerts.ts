@@ -76,7 +76,7 @@ export function alertsRouter(pool?: Pool | null): Router {
   r.get('/alerts/channels', async (_req, res) => {
     if (!pool) return res.json({ ok: true, channels: [] });
     const { rows } = await pool.query(
-      `SELECT id, name, kind, created_at FROM alert_channels ORDER BY created_at DESC`
+      `SELECT id, name, kind, config, created_at FROM alert_channels ORDER BY created_at DESC`
     );
     return res.json({ ok: true, channels: rows });
   });

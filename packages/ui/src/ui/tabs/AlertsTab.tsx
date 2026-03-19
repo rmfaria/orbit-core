@@ -3,7 +3,7 @@ import { t } from '../i18n';
 import { S, AssetOpt, MetricOpt, apiHeaders, apiGetHeaders } from '../shared';
 import { SevBadge } from '../components';
 
-type AlertChannel = { id: string; name: string; kind: string; created_at: string };
+type AlertChannel = { id: string; name: string; kind: string; config?: any; created_at: string };
 type AlertRule = {
   id: number; name: string; enabled: boolean;
   asset_id: string | null; namespace: string | null; metric: string | null;
@@ -21,6 +21,18 @@ const CH_COLORS: Record<string, [string, string]> = {
   webhook:  ['#1c1917', '#fdba74'],
 };
 
+const TEST_PAYLOAD = {
+  event:     'firing' as const,
+  rule_name: 'Test Alert \u2014 orbit-core',
+  asset_id:  'host:example',
+  namespace: 'nagios',
+  metric:    'cpu',
+  condition: { kind: 'threshold', op: '>', value: 80, window_min: 5, agg: 'avg' },
+  value:     95.5,
+  severity:  'high',
+  fired_at:  new Date().toISOString(),
+};
+
 export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   const [rules, setRules]       = React.useState<AlertRule[]>([]);
   const [channels, setChannels] = React.useState<AlertChannel[]>([]);
@@ -29,7 +41,6 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   const [err, setErr]           = React.useState<string | null>(null);
   const [toast, setToast]       = React.useState<{ msg: string; ok: boolean } | null>(null);
 
-  // Sections collapsed state
   const [showChannels, setShowChannels] = React.useState(true);
   const [showHistory, setShowHistory]   = React.useState(true);
 
@@ -56,6 +67,9 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   const [smtpLoaded, setSmtpLoaded] = React.useState(false);
   const [smtpSaving, setSmtpSaving] = React.useState(false);
 
+  // Test modal
+  const [testModal, setTestModal] = React.useState<{ ch: AlertChannel; status: 'idle' | 'sending' | 'ok' | 'error'; error?: string } | null>(null);
+
   // Catalog for rule form
   const [catAssets, setCatAssets]   = React.useState<string[]>([]);
   const [catMetrics, setCatMetrics] = React.useState<MetricOpt[]>([]);
@@ -67,7 +81,12 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
     try { const j = await fetch('api/v1/alerts/rules', { headers: apiGetHeaders() }).then(r => r.json()); if (j.ok) setRules(j.rules); else throw new Error(j.error); }
     catch (e: any) { setErr(String(e)); } finally { setLoading(false); }
   }
-  async function loadChannels() { try { const j = await fetch('api/v1/alerts/channels', { headers: apiGetHeaders() }).then(r => r.json()); if (j.ok) setChannels(j.channels); } catch {} }
+  async function loadChannels() {
+    try {
+      const j = await fetch('api/v1/alerts/channels', { headers: apiGetHeaders() }).then(r => r.json());
+      if (j.ok) setChannels(j.channels);
+    } catch {}
+  }
   async function loadHistory() { try { const j = await fetch('api/v1/alerts/history', { headers: apiGetHeaders() }).then(r => r.json()); if (j.ok) setHistory(j.notifications); } catch {} }
   async function loadSmtp() {
     try {
@@ -121,7 +140,16 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
 
   // Channel actions
   async function deleteChannel(id: string) { if (!confirm(t('alerts_confirm_delete_channel'))) return; await fetch(`api/v1/alerts/channels/${id}`, { method: 'DELETE', headers: apiGetHeaders() }); loadChannels(); }
-  async function testChannel(id: string) { const j = await fetch(`api/v1/alerts/channels/${id}/test`, { method: 'POST', headers: apiHeaders() }).then(r => r.json()); showToastMsg(j.ok ? t('alerts_notif_ok') : 'Error: ' + j.error, j.ok); }
+
+  async function testChannel(ch: AlertChannel) {
+    setTestModal({ ch, status: 'sending' });
+    try {
+      const j = await fetch(`api/v1/alerts/channels/${ch.id}/test`, { method: 'POST', headers: apiHeaders() }).then(r => r.json());
+      setTestModal({ ch, status: j.ok ? 'ok' : 'error', error: j.ok ? undefined : j.error });
+    } catch (e: any) {
+      setTestModal({ ch, status: 'error', error: String(e) });
+    }
+  }
 
   async function saveChannel() {
     let config: any;
@@ -159,10 +187,10 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   }
 
   const sectionHead = (label: string, count: number, open: boolean, toggle: () => void, action?: React.ReactNode) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: open ? 12 : 0, marginTop: 20, cursor: 'pointer' }} onClick={toggle}>
-      <span style={{ fontSize: 10, color: '#475569', userSelect: 'none' }}>{open ? '\u25BC' : '\u25B6'}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: open ? 12 : 0, marginTop: 24, cursor: 'pointer', userSelect: 'none' }} onClick={toggle}>
+      <span style={{ fontSize: 10, color: '#475569', transition: 'transform .15s', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}>{'\u25BC'}</span>
       <span style={{ fontWeight: 700, fontSize: 14, color: '#e2e8f0' }}>{label}</span>
-      <span style={{ fontSize: 11, color: '#64748b' }}>({count})</span>
+      <span style={{ background: 'rgba(85,243,255,0.08)', color: '#55f3ff', padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700 }}>{count}</span>
       <div style={{ flex: 1 }} />
       {action && <div onClick={e => e.stopPropagation()}>{action}</div>}
     </div>
@@ -172,18 +200,103 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
     background: 'rgba(13,21,40,0.7)', border: '1px solid rgba(140,160,255,0.14)', borderRadius: 12, padding: '12px 16px', ...s,
   });
 
+  const pulseKeyframes = `@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,0.5); } 70% { box-shadow: 0 0 0 6px rgba(248,113,113,0); } 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0); } }`;
+
+  // Firing count for header
+  const firingCount = rules.filter(r => r.state === 'firing' && r.enabled).length;
+
   return (
     <div>
+      <style>{pulseKeyframes}</style>
+
       {/* Toast */}
       {toast && (
-        <div style={{ position: 'fixed', top: 18, right: 24, zIndex: 9999, padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, background: toast.ok ? '#052e16' : '#450a0a', color: toast.ok ? '#4ade80' : '#f87171', border: `1px solid ${toast.ok ? '#4ade80' : '#f87171'}`, boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+        <div style={{ position: 'fixed', top: 18, right: 24, zIndex: 9999, padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, background: toast.ok ? '#052e16' : '#450a0a', color: toast.ok ? '#4ade80' : '#f87171', border: `1px solid ${toast.ok ? '#4ade80' : '#f87171'}`, boxShadow: '0 4px 20px rgba(0,0,0,0.4)', animation: 'fadeIn .2s' }}>
           {toast.msg}
+        </div>
+      )}
+
+      {/* ══════ TEST MODAL ══════ */}
+      {testModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => testModal.status !== 'sending' && setTestModal(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ ...card({}), width: '100%', maxWidth: 540, margin: '0 12px', border: `1px solid ${testModal.status === 'ok' ? 'rgba(74,222,128,0.4)' : testModal.status === 'error' ? 'rgba(248,113,113,0.4)' : 'rgba(85,243,255,0.3)'}`, boxSizing: 'border-box' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <span style={{ fontSize: 18 }}>{CH_ICONS[testModal.ch.kind] ?? '\u{1F517}'}</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#e2e8f0' }}>{t('alerts_test_title')}</div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>{testModal.ch.name} ({testModal.ch.kind})</div>
+              </div>
+              <div style={{ flex: 1 }} />
+              {testModal.status === 'sending' && <span style={{ color: '#55f3ff', fontSize: 12, fontWeight: 600 }}>{t('alerts_test_sending')}</span>}
+              {testModal.status === 'ok' && <span style={{ color: '#4ade80', fontSize: 12, fontWeight: 700 }}>{t('alerts_test_result_ok')}</span>}
+              {testModal.status === 'error' && <span style={{ color: '#f87171', fontSize: 12, fontWeight: 700 }}>{t('alerts_test_result_fail')}</span>}
+            </div>
+
+            {/* Status bar */}
+            <div style={{ height: 3, borderRadius: 2, marginBottom: 16, background: testModal.status === 'sending' ? 'linear-gradient(90deg, #55f3ff, #9b7cff, #55f3ff)' : testModal.status === 'ok' ? '#4ade80' : testModal.status === 'error' ? '#f87171' : 'rgba(140,160,255,0.14)', backgroundSize: testModal.status === 'sending' ? '200% 100%' : undefined, animation: testModal.status === 'sending' ? 'shimmer 1.5s ease-in-out infinite' : undefined }} />
+            <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
+
+            {/* Error detail */}
+            {testModal.status === 'error' && testModal.error && (
+              <div style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 12, color: '#fca5a5', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                {testModal.error}
+              </div>
+            )}
+
+            {/* Payload preview (always shown, highlighted for webhook) */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {t('alerts_test_payload')}
+                {testModal.ch.kind === 'webhook' && <span style={{ color: '#fdba74', marginLeft: 6, fontWeight: 400, textTransform: 'none' }}>POST {testModal.ch.config?.url ? new URL(testModal.ch.config.url).pathname : '/webhook'}</span>}
+              </div>
+              <pre style={{
+                background: 'rgba(4,7,19,0.6)', border: '1px solid rgba(140,160,255,0.12)', borderRadius: 8,
+                padding: 12, fontSize: 11, color: '#a5f3fc', fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                overflow: 'auto', maxHeight: 240, margin: 0, lineHeight: 1.5,
+                whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+              }}>
+                {JSON.stringify(TEST_PAYLOAD, null, 2)}
+              </pre>
+            </div>
+
+            {/* Channel details */}
+            {testModal.ch.kind === 'webhook' && testModal.ch.config?.url && (
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                <span style={{ color: '#475569' }}>{t('alerts_ch_detail_url')}:</span> <code style={{ color: '#fdba74' }}>{testModal.ch.config.url}</code>
+              </div>
+            )}
+            {testModal.ch.kind === 'telegram' && (
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                <span style={{ color: '#475569' }}>{t('alerts_ch_detail_chat')}:</span> <code style={{ color: '#60a5fa' }}>{testModal.ch.config?.chat_id ?? '—'}</code>
+              </div>
+            )}
+            {testModal.ch.kind === 'email' && (
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                <span style={{ color: '#475569' }}>{t('alerts_ch_detail_recipients')}:</span> <code style={{ color: '#a78bfa' }}>{(testModal.ch.config?.recipients ?? []).join(', ') || '—'}</code>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(testModal.status === 'idle' || testModal.status === 'ok' || testModal.status === 'error') && (
+                <button onClick={() => testChannel(testModal.ch)} style={{ ...S.btn, padding: '8px 20px', fontSize: 13 }}>{t('alerts_test_send')}</button>
+              )}
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setTestModal(null)} disabled={testModal.status === 'sending'} style={{ ...S.btnSm, padding: '8px 14px', fontSize: 12 }}>{t('alerts_test_close')}</button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
         <span style={{ fontWeight: 800, fontSize: 18, color: '#e2e8f0' }}>{t('nav_alerts')}</span>
+        {firingCount > 0 && (
+          <span style={{ background: '#450a0a', color: '#f87171', padding: '3px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, animation: 'pulse-ring 2s infinite' }}>
+            {firingCount} FIRING
+          </span>
+        )}
         <div style={{ flex: 1 }} />
         <button onClick={() => { setShowSmtp(true); if (!smtpLoaded) loadSmtp(); }}
           style={{ ...S.btnSm, display: 'flex', alignItems: 'center', gap: 6, padding: '5px 14px', fontSize: 12, color: '#a78bfa', borderColor: 'rgba(167,139,250,0.3)' }}>
@@ -193,7 +306,7 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
 
       {/* ══════ SMTP MODAL ══════ */}
       {showSmtp && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }} onClick={() => setShowSmtp(false)}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => setShowSmtp(false)}>
           <div onClick={e => e.stopPropagation()} style={{ ...card({}), width: '100%', maxWidth: 440, margin: '0 12px', border: '1px solid rgba(167,139,250,0.3)', boxSizing: 'border-box' }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#a78bfa', marginBottom: 14 }}>{t('alerts_smtp_settings')}</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
@@ -266,19 +379,31 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
         )}
 
         {/* Channel cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 10, marginBottom: 4 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 10, marginBottom: 4 }}>
           {channels.map(ch => {
             const [bg, fg] = CH_COLORS[ch.kind] ?? ['#1c1917', '#fdba74'];
             return (
-              <div key={ch.id} style={{ ...card({}), display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div key={ch.id} style={{ ...card({}), display: 'flex', flexDirection: 'column', gap: 8, transition: 'border-color .15s', position: 'relative' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = fg + '40')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(140,160,255,0.14)')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>{CH_ICONS[ch.kind] ?? '\u{1F517}'}</span>
-                  <span style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</span>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: bg, fontSize: 16 }}>
+                    {CH_ICONS[ch.kind] ?? '\u{1F517}'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.name}</div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{ch.id}</div>
+                  </div>
                   <span style={{ background: bg, color: fg, padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700 }}>{ch.kind.toUpperCase()}</span>
                 </div>
-                <div style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{ch.id}</div>
+                {/* Channel meta */}
+                {ch.config?.url && <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ch.config.url}</div>}
+                {ch.config?.recipients && <div style={{ fontSize: 11, color: '#475569' }}>{(ch.config.recipients as string[]).join(', ')}</div>}
+                {ch.config?.chat_id && <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>chat: {ch.config.chat_id}</div>}
                 <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
-                  <button onClick={() => testChannel(ch.id)} style={{ ...S.btnSm, fontSize: 11, color: '#55f3ff', flex: 1 }}>{t('test')}</button>
+                  <button onClick={() => { setTestModal({ ch, status: 'idle' }); }} style={{ ...S.btnSm, fontSize: 11, color: '#55f3ff', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                    {'\u25B6'} {t('test')}
+                  </button>
                   <button onClick={() => deleteChannel(ch.id)} style={{ ...S.btnSm, fontSize: 11, color: '#f87171' }}>{t('remove')}</button>
                 </div>
               </div>
@@ -390,16 +515,15 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
           const isExp = expandedRuleId === rule.id;
           const borderL = !rule.enabled ? '#334155' : isFiring ? '#f87171' : silenced ? '#fbbf24' : '#4ade80';
           return (
-            <div key={rule.id} style={{ ...card({}), borderLeft: `3px solid ${borderL}`, cursor: 'pointer' }} onClick={() => setExpandedRuleId(isExp ? null : rule.id)}>
+            <div key={rule.id} style={{ ...card({}), borderLeft: `3px solid ${borderL}`, cursor: 'pointer', transition: 'border-color .15s' }} onClick={() => setExpandedRuleId(isExp ? null : rule.id)}>
               {/* Row 1: state + name + target */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                {/* State badge */}
                 {!rule.enabled
                   ? <span style={{ background: '#1e293b', color: '#64748b', padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700 }}>{t('alerts_state_disabled')}</span>
                   : silenced
                     ? <span style={{ background: '#1c1c1c', color: '#fbbf24', padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700 }}>{t('alerts_state_silenced')}</span>
                     : isFiring
-                      ? <span style={{ background: '#450a0a', color: '#f87171', padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700 }}>FIRING</span>
+                      ? <span style={{ background: '#450a0a', color: '#f87171', padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, animation: 'pulse-ring 2s infinite' }}>FIRING</span>
                       : <span style={{ background: '#052e16', color: '#4ade80', padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700 }}>OK</span>
                 }
                 <span style={{ fontWeight: 700, fontSize: 14, color: '#e2e8f0' }}>{rule.name}</span>
@@ -412,14 +536,12 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                 <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#7dd3fc' }}>{condText(rule)}</span>
                 {rule.last_value !== null && <span style={{ fontSize: 12, color: '#475569' }}>last: <b style={{ color: '#a5f3fc' }}>{rule.last_value.toFixed(2)}</b></span>}
                 <div style={{ flex: 1 }} />
-                {/* Channel chips */}
                 {rule.channels.map(cid => {
                   const ch = channels.find(c => c.id === cid);
                   const kind = ch?.kind ?? 'webhook';
                   const [, fg] = CH_COLORS[kind] ?? ['', '#fdba74'];
                   return <span key={cid} style={{ fontSize: 10, color: fg, padding: '2px 8px', borderRadius: 6, background: fg + '15', fontWeight: 600 }}>{CH_ICONS[kind]} {cid}</span>;
                 })}
-                {/* Actions */}
                 <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
                   <button onClick={() => toggleRule(rule)} style={{ ...S.btnSm, color: rule.enabled ? '#4ade80' : '#64748b' }} title={rule.enabled ? t('alerts_btn_toggle_off') : t('alerts_btn_toggle_on')}>{rule.enabled ? '\u25CF' : '\u25CB'}</button>
                   <button onClick={() => silenceRule(rule)} style={S.btnSm} title={t('alerts_btn_silence')}>{'\u{1F515}'}</button>

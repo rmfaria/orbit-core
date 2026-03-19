@@ -1,0 +1,96 @@
+{
+  "name": "Orbit Alert → Email",
+  "nodes": [
+    {
+      "id": "aaaa1111-0000-0000-0000-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "parameters": {
+        "path": "orbit-alert",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "orbit-alert"
+    },
+    {
+      "id": "aaaa1111-0000-0000-0000-000000000002",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [480, 460],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ {\"ok\": true} }"
+      }
+    },
+    {
+      "id": "aaaa1111-0000-0000-0000-000000000003",
+      "name": "Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const p = $input.item.json.body;\n\nconst isFiring = p.event === 'firing';\nconst icon     = isFiring ? '\\u{1F6A8}' : '\\u2705';\nconst label    = p.event.toUpperCase();\nconst border   = isFiring ? '#f87171' : '#4ade80';\n\nconst sevColor = {\n  critical: '#f87171',\n  high:     '#fb923c',\n  medium:   '#fbbf24',\n  low:      '#34d399',\n  info:     '#55f3ff',\n};\nconst color = sevColor[p.severity] || '#55f3ff';\n\nconst condText = p.condition?.kind === 'threshold'\n  ? `${p.condition.agg ?? 'avg'} ${p.condition.op} ${p.condition.value} (last ${p.condition.window_min}min)`\n  : `no data (${p.condition?.window_min ?? '?'}min)`;\n\nconst rows = [\n  p.asset_id  ? `<tr><td style=\"color:#8892b0;padding:6px 16px 6px 0\">Asset</td><td>${p.asset_id}</td></tr>` : '',\n  p.namespace ? `<tr><td style=\"color:#8892b0;padding:6px 16px 6px 0\">Namespace</td><td>${p.namespace}</td></tr>` : '',\n  p.metric    ? `<tr><td style=\"color:#8892b0;padding:6px 16px 6px 0\">Metric</td><td style=\"font-family:monospace\">${p.metric}</td></tr>` : '',\n  `<tr><td style=\"color:#8892b0;padding:6px 16px 6px 0\">Condition</td><td style=\"font-family:monospace\">${condText}</td></tr>`,\n  p.value !== null && p.value !== undefined\n    ? `<tr><td style=\"color:#8892b0;padding:6px 16px 6px 0\">Value</td><td><b>${Number(p.value).toFixed(2)}</b></td></tr>` : '',\n  `<tr><td style=\"color:#8892b0;padding:6px 16px 6px 0\">Severity</td><td><span style=\"background:${color};color:#040713;padding:2px 8px;border-radius:4px;font-weight:700;font-size:12px\">${p.severity?.toUpperCase()}</span></td></tr>`,\n  `<tr><td style=\"color:#8892b0;padding:6px 16px 6px 0\">Time</td><td style=\"font-family:monospace;font-size:12px\">${p.fired_at}</td></tr>`,\n].filter(Boolean).join('');\n\nconst html = `\n<div style=\"background:#040713;padding:24px;font-family:'Inter',-apple-system,sans-serif;color:#e2e8f0\">\n  <div style=\"max-width:540px;margin:0 auto;border:1px solid ${border};border-radius:12px;overflow:hidden\">\n    <div style=\"background:${border}15;padding:16px 20px;border-bottom:1px solid ${border}40\">\n      <span style=\"font-size:20px\">${icon}</span>\n      <span style=\"font-size:16px;font-weight:700;margin-left:8px\">${label} \\u2014 ${p.rule_name}</span>\n    </div>\n    <div style=\"padding:16px 20px\">\n      <table style=\"border-collapse:collapse;font-size:14px;width:100%\">${rows}</table>\n    </div>\n    <div style=\"padding:12px 20px;border-top:1px solid #1a2540;font-size:11px;color:#475569\">\n      Orbit Core Alert System \\u2014 via n8n\n    </div>\n  </div>\n</div>`;\n\nreturn {\n  subject: `${icon} ${label} \\u2014 ${p.rule_name}`,\n  html,\n};"
+      }
+    },
+    {
+      "id": "aaaa1111-0000-0000-0000-000000000004",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [720, 300],
+      "parameters": {
+        "fromEmail": "",
+        "toEmail": "",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "credentials": {
+        "smtp": {
+          "id": "",
+          "name": ""
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
