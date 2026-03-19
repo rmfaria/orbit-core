@@ -213,14 +213,20 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
     background: 'rgba(13,21,40,0.7)', border: '1px solid rgba(140,160,255,0.14)', borderRadius: 12, padding: '12px 16px', ...s,
   });
 
-  const pulseKeyframes = `@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,0.5); } 70% { box-shadow: 0 0 0 6px rgba(248,113,113,0); } 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0); } }`;
+  const cssKeyframes = `
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,0.5); } 70% { box-shadow: 0 0 0 6px rgba(248,113,113,0); } 100% { box-shadow: 0 0 0 0 rgba(248,113,113,0); } }
+@keyframes test-glow { 0%,100% { box-shadow: 0 0 4px rgba(85,243,255,0.3); } 50% { box-shadow: 0 0 12px rgba(85,243,255,0.6); } }
+.orbit-test-btn { transition: all .2s; }
+.orbit-test-btn:hover { background: rgba(85,243,255,0.12) !important; border-color: rgba(85,243,255,0.5) !important; animation: test-glow 1.5s ease-in-out infinite; transform: translateY(-1px); }
+.orbit-test-btn:active { transform: scale(0.96); }
+`;
 
   // Firing count for header
   const firingCount = rules.filter(r => r.state === 'firing' && r.enabled).length;
 
   return (
     <div>
-      <style>{pulseKeyframes}</style>
+      <style>{cssKeyframes}</style>
 
       {/* Toast */}
       {toast && (
@@ -418,7 +424,7 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                 {ch.config?.recipients && <div style={{ fontSize: 11, color: '#475569' }}>{(ch.config.recipients as string[]).join(', ')}</div>}
                 {ch.config?.chat_id && <div style={{ fontSize: 11, color: '#475569', fontFamily: 'monospace' }}>chat: {ch.config.chat_id}</div>}
                 <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
-                  <button onClick={() => { setTestModal({ ch, status: 'idle' }); }} style={{ ...S.btnSm, fontSize: 11, color: '#55f3ff', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                  <button className="orbit-test-btn" onClick={() => { setTestModal({ ch, status: 'idle' }); }} style={{ ...S.btnSm, fontSize: 11, color: '#55f3ff', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                     {'\u25B6'} {t('test')}
                   </button>
                   <button onClick={() => deleteChannel(ch.id)} style={{ ...S.btnSm, fontSize: 11, color: '#f87171' }}>{t('remove')}</button>
