@@ -19,9 +19,11 @@ import pino from 'pino';
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 'wazuh' });
 
-// C2-fix: In-memory cache for wazuh/summary (stale-tolerant dashboard data)
-let summaryCache: { data: unknown; ts: number } | null = null;
-const CACHE_TTL = 60_000; // 60s
+// In-memory cache for wazuh/summary — keyed by rounded time-range span
+const summaryCache = new Map<string, { data: unknown; ts: number }>();
+const CACHE_TTL = 5 * 60_000; // 5 minutes
+let summaryInflight: Promise<unknown> | null = null;
+let summaryInflightKey: string | null = null;
 
 export function wazuhRouter(pool: Pool | null): Router {
   const r = Router();
@@ -32,13 +34,27 @@ export function wazuhRouter(pool: Pool | null): Router {
     const from = (req.query.from as string) || new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     const to   = (req.query.to   as string) || new Date().toISOString();
 
-    // Serve cached response if fresh (60s TTL)
-    const cacheKey = `${from}|${to}`;
-    if (summaryCache && Date.now() - summaryCache.ts < CACHE_TTL) {
-      return res.json(summaryCache.data);
+    // Normalize cache key by rounding span to nearest hour
+    const spanH = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 3_600_000);
+    const cacheKey = `${spanH}h`;
+
+    // Serve cached response if fresh
+    const cached = summaryCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      return res.json(cached.data);
     }
 
-    try {
+    // Coalesce concurrent requests
+    if (summaryInflight && summaryInflightKey === cacheKey) {
+      try {
+        const data = await summaryInflight;
+        return res.json(data);
+      } catch (e: any) {
+        return res.status(500).json({ ok: false, error: e.message ?? 'query failed' });
+      }
+    }
+
+    const runQuery = async () => {
       // Run all queries in parallel for performance
       const [
         agentsRes,
@@ -313,11 +329,22 @@ export function wazuhRouter(pool: Pool | null): Router {
         eps: { buckets: epsBuckets, categories: epsCategories },
         vulnerabilities: { top: vulnTop, by_agent: vulnByAgent },
       };
-      summaryCache = { data: body, ts: Date.now() };
-      res.json(body);
+      summaryCache.set(cacheKey, { data: body, ts: Date.now() });
+      return body;
+    };
+
+    summaryInflight = runQuery();
+    summaryInflightKey = cacheKey;
+
+    try {
+      const data = await summaryInflight;
+      res.json(data);
     } catch (err) {
       logger.error({ err }, 'wazuh/summary error');
       res.status(500).json({ ok: false, error: 'Internal error' });
+    } finally {
+      summaryInflight = null;
+      summaryInflightKey = null;
     }
   });
 
