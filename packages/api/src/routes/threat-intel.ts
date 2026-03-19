@@ -444,61 +444,72 @@ export function threatIntelRouter(pool: Pool | null): Router {
 
     const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
 
-    const { rows } = await pool.query(`
-      WITH match_agg AS (
+    // Two-phase: first pick top-40 assets (IoC hits + most recently seen),
+    // then enrich only those with severity breakdown via index seeks on
+    // (asset_id, ts). This avoids scanning millions of event rows.
+    const client = await pool.connect();
+    try {
+      await client.query('SET LOCAL statement_timeout = 25000');
+      const { rows } = await client.query(`
+        WITH match_agg AS (
+          SELECT
+            e2.asset_id,
+            count(*)::int AS ioc_matches,
+            count(DISTINCT tm2.indicator_id)::int AS unique_iocs,
+            array_agg(DISTINCT tm2.matched_value ORDER BY tm2.matched_value)
+              FILTER (WHERE tm2.matched_value IS NOT NULL) AS ioc_ips
+          FROM threat_matches tm2
+          JOIN orbit_events e2 ON e2.id = tm2.event_id
+          WHERE tm2.detected_at >= now() - make_interval(hours => $1)
+          GROUP BY e2.asset_id
+        ),
+        top_assets AS (
+          SELECT
+            a.asset_id, a.name, a.type, a.criticality, a.last_seen,
+            COALESCE(ma.ioc_matches, 0) AS ioc_matches,
+            COALESCE(ma.unique_iocs, 0) AS unique_iocs,
+            COALESCE(ma.ioc_ips, '{}') AS ioc_ips
+          FROM assets a
+          LEFT JOIN match_agg ma ON ma.asset_id = a.asset_id
+          WHERE a.enabled = true
+            AND a.last_seen >= now() - make_interval(hours => $1)
+          ORDER BY COALESCE(ma.ioc_matches, 0) DESC, a.last_seen DESC
+          LIMIT 40
+        )
         SELECT
-          e2.asset_id,
-          count(*)::int AS ioc_matches,
-          count(DISTINCT tm2.indicator_id)::int AS unique_iocs,
-          array_agg(DISTINCT tm2.matched_value ORDER BY tm2.matched_value)
-            FILTER (WHERE tm2.matched_value IS NOT NULL) AS ioc_ips
-        FROM threat_matches tm2
-        JOIN orbit_events e2 ON e2.id = tm2.event_id
-        WHERE tm2.detected_at >= now() - make_interval(hours => $1)
-        GROUP BY e2.asset_id
-      )
-      SELECT
-        a.asset_id,
-        a.name,
-        a.type,
-        a.criticality,
-        COALESCE(ev.total_events, 0)::int AS total_events,
-        COALESCE(ev.critical_count, 0)::int AS critical,
-        COALESCE(ev.high_count, 0)::int AS high,
-        COALESCE(ev.medium_count, 0)::int AS medium,
-        COALESCE(ev.low_count, 0)::int AS low,
-        COALESCE(ev.info_count, 0)::int AS info,
-        COALESCE(ev.namespaces, '{}') AS sources,
-        COALESCE(ma.ioc_matches, 0)::int AS ioc_matches,
-        COALESCE(ma.unique_iocs, 0)::int AS unique_iocs,
-        COALESCE(ma.ioc_ips, '{}') AS ioc_ips,
-        a.last_seen
-      FROM assets a
-      LEFT JOIN LATERAL (
-        SELECT
-          count(*)              AS total_events,
-          count(*) FILTER (WHERE severity = 'critical') AS critical_count,
-          count(*) FILTER (WHERE severity = 'high')     AS high_count,
-          count(*) FILTER (WHERE severity = 'medium')   AS medium_count,
-          count(*) FILTER (WHERE severity = 'low')      AS low_count,
-          count(*) FILTER (WHERE severity = 'info')     AS info_count,
-          array_agg(DISTINCT namespace) AS namespaces
-        FROM orbit_events e
-        WHERE e.asset_id = a.asset_id
-          AND e.ts >= now() - make_interval(hours => $1)
-      ) ev ON true
-      LEFT JOIN match_agg ma ON ma.asset_id = a.asset_id
-      WHERE a.enabled = true
-        AND COALESCE(ev.total_events, 0) > 0
-      ORDER BY
-        COALESCE(ma.ioc_matches, 0) DESC,
-        COALESCE(ev.critical_count, 0) DESC,
-        COALESCE(ev.high_count, 0) DESC,
-        COALESCE(ev.total_events, 0) DESC
-      LIMIT 40
-    `, [hours]);
-
-    res.json({ ok: true, hours, assets: rows });
+          ta.asset_id, ta.name, ta.type, ta.criticality, ta.last_seen,
+          ta.ioc_matches::int, ta.unique_iocs::int, ta.ioc_ips,
+          COALESCE(ev.total_events, 0)::int AS total_events,
+          COALESCE(ev.critical_count, 0)::int AS critical,
+          COALESCE(ev.high_count, 0)::int     AS high,
+          COALESCE(ev.medium_count, 0)::int   AS medium,
+          COALESCE(ev.low_count, 0)::int      AS low,
+          COALESCE(ev.info_count, 0)::int     AS info,
+          COALESCE(ev.namespaces, '{}')       AS sources
+        FROM top_assets ta
+        LEFT JOIN LATERAL (
+          SELECT
+            count(*)::int AS total_events,
+            count(*) FILTER (WHERE severity = 'critical')::int AS critical_count,
+            count(*) FILTER (WHERE severity = 'high')::int     AS high_count,
+            count(*) FILTER (WHERE severity = 'medium')::int   AS medium_count,
+            count(*) FILTER (WHERE severity = 'low')::int      AS low_count,
+            count(*) FILTER (WHERE severity = 'info')::int     AS info_count,
+            array_agg(DISTINCT namespace) AS namespaces
+          FROM orbit_events e
+          WHERE e.asset_id = ta.asset_id
+            AND e.ts >= now() - make_interval(hours => $1)
+        ) ev ON true
+        ORDER BY
+          ta.ioc_matches DESC,
+          COALESCE(ev.critical_count, 0) DESC,
+          COALESCE(ev.high_count, 0) DESC,
+          COALESCE(ev.total_events, 0) DESC
+      `, [hours]);
+      res.json({ ok: true, hours, assets: rows });
+    } finally {
+      client.release();
+    }
   }));
 
   // GET /threat-intel/health-map/:assetId — drilldown for a single asset
