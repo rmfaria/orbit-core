@@ -741,7 +741,158 @@ export function aiRouter(pool: Pool | null): Router {
     });
   });
 
+  // ── AI Alert Generator ───────────────────────────────────────────────────
+  r.post('/ai/alerts', async (req, res) => {
+    const aiKey   = req.headers['x-ai-key']   as string | undefined;
+    const aiModel = req.headers['x-ai-model'] as string | undefined;
+
+    if (!aiKey)   return res.status(400).json({ ok: false, error: 'Missing X-Ai-Key header' });
+    if (!aiModel) return res.status(400).json({ ok: false, error: 'Missing X-Ai-Model header' });
+
+    const { prompt } = (req.body ?? {}) as { prompt?: string };
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length < 5) {
+      return res.status(400).json({ ok: false, error: 'Provide a prompt of at least 5 characters' });
+    }
+
+    let catalog: RagCatalog = { generated_at: new Date().toISOString(), assets: [], metrics: [], events: [], connectors: [] };
+    if (pool) {
+      try { catalog = await getRagCatalog(pool); } catch { /* empty catalog fallback */ }
+    }
+
+    // Load existing channels so AI can reference them
+    let channelList: Array<{ id: string; name: string; kind: string }> = [];
+    if (pool) {
+      try {
+        const { rows } = await pool.query(`SELECT id, name, kind FROM alert_channels ORDER BY created_at`);
+        channelList = rows;
+      } catch { /* ignore */ }
+    }
+
+    const systemPrompt = buildAlertSystemPrompt(catalog, channelList);
+
+    let anthropicRes: Response;
+    try {
+      anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key':         aiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type':      'application/json',
+        },
+        body: JSON.stringify({
+          model:      aiModel,
+          max_tokens: 4096,
+          system:     systemPrompt,
+          messages:   [{ role: 'user', content: prompt }],
+        }),
+      });
+    } catch (err: unknown) {
+      return res.status(502).json({ ok: false, error: 'Failed to reach Anthropic API', detail: String(err) });
+    }
+
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text().catch(() => '');
+      return res.status(502).json({
+        ok: false,
+        error: `Anthropic API error: ${anthropicRes.status}`,
+        detail: errText.slice(0, 500),
+      });
+    }
+
+    const anthropicJson = await anthropicRes.json() as { content?: Array<{ text: string }> };
+    const rawText = anthropicJson?.content?.[0]?.text ?? '';
+
+    const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const jsonText = jsonMatch ? jsonMatch[1].trim() : rawText.trim();
+
+    let result: unknown;
+    try {
+      result = JSON.parse(jsonText);
+    } catch {
+      return res.status(502).json({ ok: false, error: 'AI returned invalid JSON', raw: rawText.slice(0, 500) });
+    }
+
+    return res.json({ ok: true, result });
+  });
+
   return r;
+}
+
+// ─── System Prompt: Alert Generator ──────────────────────────────────────────
+
+function buildAlertSystemPrompt(catalog: RagCatalog, channels: Array<{ id: string; name: string; kind: string }>): string {
+  const metricCatalog = formatMetricCatalog(catalog);
+  const eventCatalog  = formatEventCatalog(catalog);
+  const allowed       = buildAllowedList(catalog);
+
+  const channelList = channels.length
+    ? channels.map(c => `  - id="${c.id}" name="${c.name}" kind=${c.kind}`).join('\n')
+    : '  (no channels configured yet — omit channels array or leave empty)';
+
+  return `You are orbit-core Alert Builder AI. You generate alert rule configurations from natural language descriptions.
+
+Output ONLY a valid JSON object (no markdown, no explanation):
+{
+  "rules": [
+    {
+      "name":      "Human-readable alert name",
+      "asset_id":  "host:xxx" | null,
+      "namespace": "nagios" | null,
+      "metric":    "cpu" | null,
+      "condition": {
+        "kind": "threshold",
+        "op": ">" | ">=" | "<" | "<=",
+        "value": 80,
+        "window_min": 5,
+        "agg": "avg" | "max"
+      },
+      "severity": "info" | "low" | "medium" | "high" | "critical",
+      "channels": ["channel-id-1"]
+    }
+  ],
+  "summary": "Brief description of what was generated and why"
+}
+
+CONDITION TYPES:
+1. threshold — fires when agg(metric) op value over window_min minutes
+   { "kind": "threshold", "op": ">", "value": 80, "window_min": 5, "agg": "avg" }
+2. absence — fires when no data received in window_min minutes
+   { "kind": "absence", "window_min": 10 }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## METRIC CATALOG (available for threshold/absence alerts)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${metricCatalog}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## EVENT CATALOG (context about what data flows through the system)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${eventCatalog}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## EXISTING NOTIFICATION CHANNELS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${channelList}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## STRICT DATA RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${allowed}
+
+CRITICAL CONSTRAINTS:
+1. Return ONLY valid JSON — no markdown fences, no text outside JSON
+2. NEVER invent asset_ids, namespaces, or metric names — use ONLY values from the catalogs above
+3. Use appropriate thresholds based on the metric value ranges in the catalog
+4. For CPU/memory metrics with percentage values, typical thresholds: warning >75, critical >90
+5. For load metrics, base thresholds on the observed ranges in the catalog
+6. Always set severity appropriately: absence → high, high threshold → critical, moderate → medium
+7. If user asks about events/security (Wazuh, threat intel, etc.), create absence alerts on relevant namespaces/metrics
+8. window_min should be 5 for fast metrics, 10-15 for slower ones
+9. If channels exist, assign the most appropriate ones to each rule
+10. Generate multiple rules when the request implies it (e.g. "monitor host X" → CPU + memory + load + disk alerts)
+11. If the user mentions a technology not in the catalog, explain in summary that no data is available for it yet
+12. agg defaults to "avg" — use "max" for spike detection
+`;
 }
 
 // ─── Plugin system prompt (unchanged) ────────────────────────────────────────

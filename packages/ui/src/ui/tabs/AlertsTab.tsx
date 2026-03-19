@@ -70,6 +70,13 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   // Test modal
   const [testModal, setTestModal] = React.useState<{ ch: AlertChannel; status: 'idle' | 'sending' | 'ok' | 'error'; error?: string } | null>(null);
 
+  // AI generator
+  const [aiPrompt, setAiPrompt]       = React.useState('');
+  const [aiGenerating, setAiGenerating] = React.useState(false);
+  const [aiError, setAiError]         = React.useState<string | null>(null);
+  const [aiPreview, setAiPreview]     = React.useState<{ rules: any[]; summary: string } | null>(null);
+  const [aiApplied, setAiApplied]     = React.useState<Set<number>>(new Set());
+
   // Catalog for rule form
   const [catAssets, setCatAssets]   = React.useState<string[]>([]);
   const [catMetrics, setCatMetrics] = React.useState<MetricOpt[]>([]);
@@ -191,6 +198,57 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
     if (!to) return;
     const j = await fetch('api/v1/alerts/smtp/test', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ to }) }).then(r => r.json());
     showToastMsg(j.ok ? j.message : 'Error: ' + j.error, j.ok);
+  }
+
+  // AI generator
+  async function aiGenerate() {
+    const aiKey = (localStorage.getItem('ai_api_key') ?? '').trim();
+    const aiModel = (localStorage.getItem('ai_model') ?? 'claude-sonnet-4-6').trim();
+    if (!aiKey) { setAiError(t('alerts_ai_no_key')); return; }
+    if (!aiPrompt.trim()) return;
+    setAiGenerating(true); setAiError(null); setAiPreview(null); setAiApplied(new Set());
+    try {
+      const j = await fetch('api/v1/ai/alerts', {
+        method: 'POST',
+        headers: { ...apiHeaders(), 'x-ai-key': aiKey, 'x-ai-model': aiModel },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      }).then(r => r.json());
+      if (!j.ok) { setAiError(j.error + (j.detail ? ': ' + j.detail : '')); return; }
+      const res = j.result as { rules?: any[]; summary?: string };
+      if (!res?.rules?.length) { setAiError('AI returned no rules'); return; }
+      setAiPreview({ rules: res.rules, summary: res.summary ?? '' });
+    } catch (e: any) {
+      setAiError(String(e?.message ?? e));
+    } finally {
+      setAiGenerating(false);
+    }
+  }
+
+  async function aiApplyRule(rule: any, idx: number) {
+    try {
+      const body = {
+        name: rule.name, enabled: true,
+        asset_id: rule.asset_id || undefined,
+        namespace: rule.namespace || undefined,
+        metric: rule.metric || undefined,
+        condition: rule.condition, severity: rule.severity ?? 'medium',
+        channels: rule.channels ?? [],
+      };
+      const j = await fetch('api/v1/alerts/rules', { method: 'POST', headers: apiHeaders(), body: JSON.stringify(body) }).then(r => r.json());
+      if (!j.ok) { showToastMsg('Error: ' + JSON.stringify(j.error), false); return; }
+      setAiApplied(prev => new Set([...prev, idx]));
+    } catch (e: any) {
+      showToastMsg('Error: ' + String(e?.message ?? e), false);
+    }
+  }
+
+  async function aiApplyAll() {
+    if (!aiPreview) return;
+    for (let i = 0; i < aiPreview.rules.length; i++) {
+      if (!aiApplied.has(i)) await aiApplyRule(aiPreview.rules[i], i);
+    }
+    showToastMsg(t('alerts_ai_applied'), true);
+    loadRules();
   }
 
   function condText(rule: AlertRule) {
@@ -347,6 +405,115 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
           </div>
         </div>
       )}
+
+      {/* ══════ AI ALERT GENERATOR ══════ */}
+      <div style={{ ...card({}), marginTop: 16, border: '1px solid rgba(155,124,255,0.25)', background: 'linear-gradient(135deg, rgba(13,21,40,0.8), rgba(30,15,60,0.4))' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #9b7cff, #55f3ff)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: '#040713' }}>AI</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#e2e8f0' }}>{t('alerts_ai_title')}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>{t('alerts_ai_subtitle')}</div>
+          </div>
+        </div>
+
+        {/* Quick suggestions */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {[
+            'Monitor CPU > 90% on all hosts',
+            'Alert critical Wazuh events',
+            'Detect absence of Nagios metrics (10min)',
+            'High memory usage alerts',
+            'Full monitoring for all assets',
+          ].map(s => (
+            <button key={s} onClick={() => setAiPrompt(s)}
+              style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 500, cursor: 'pointer', transition: 'all .15s',
+                background: aiPrompt === s ? 'rgba(155,124,255,0.15)' : 'rgba(4,7,19,0.4)',
+                border: `1px solid ${aiPrompt === s ? 'rgba(155,124,255,0.4)' : 'rgba(140,160,255,0.14)'}`,
+                color: aiPrompt === s ? '#c4b5fd' : '#64748b',
+              }}>
+              {s}
+            </button>
+          ))}
+        </div>
+
+        {/* Prompt input */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <textarea
+            value={aiPrompt} onChange={e => setAiPrompt(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiGenerate(); } }}
+            placeholder={t('alerts_ai_placeholder')}
+            style={{ ...S.input, flex: 1, height: 48, resize: 'vertical', borderColor: 'rgba(155,124,255,0.25)' }}
+          />
+          <button onClick={aiGenerate} disabled={aiGenerating || !aiPrompt.trim()}
+            style={{ ...S.btn, padding: '12px 20px', fontSize: 13, whiteSpace: 'nowrap', opacity: aiGenerating || !aiPrompt.trim() ? 0.5 : 1,
+              background: 'linear-gradient(135deg, rgba(155,124,255,0.3), rgba(85,243,255,0.2))',
+              borderColor: 'rgba(155,124,255,0.4)',
+            }}>
+            {aiGenerating ? t('alerts_ai_generating') : t('alerts_ai_generate')}
+          </button>
+        </div>
+
+        {/* Generating animation */}
+        {aiGenerating && (
+          <div style={{ height: 3, borderRadius: 2, marginTop: 12, background: 'linear-gradient(90deg, #9b7cff, #55f3ff, #9b7cff)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s ease-in-out infinite' }} />
+        )}
+
+        {/* Error */}
+        {aiError && <div style={{ color: '#fca5a5', fontSize: 12, marginTop: 10, padding: '8px 12px', background: 'rgba(248,113,113,0.08)', borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)' }}>{aiError}</div>}
+
+        {/* Preview results */}
+        {aiPreview && (
+          <div style={{ marginTop: 14 }}>
+            {/* Summary */}
+            {aiPreview.summary && (
+              <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10, padding: '8px 12px', background: 'rgba(155,124,255,0.06)', borderRadius: 8, border: '1px solid rgba(155,124,255,0.15)' }}>
+                <span style={{ color: '#c4b5fd', fontWeight: 700, fontSize: 11 }}>{t('alerts_ai_summary')}:</span> {aiPreview.summary}
+              </div>
+            )}
+
+            {/* Rules preview */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0' }}>{t('alerts_ai_preview')}</span>
+              <span style={{ background: 'rgba(155,124,255,0.12)', color: '#c4b5fd', padding: '2px 8px', borderRadius: 8, fontSize: 11, fontWeight: 700 }}>{aiPreview.rules.length}</span>
+              <div style={{ flex: 1 }} />
+              <button onClick={aiApplyAll} style={{ ...S.btn, padding: '6px 16px', fontSize: 12, background: 'linear-gradient(135deg, rgba(74,222,128,0.2), rgba(85,243,255,0.15))', borderColor: 'rgba(74,222,128,0.4)', color: '#4ade80' }}>
+                {t('alerts_ai_apply')}
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {aiPreview.rules.map((rule, i) => {
+                const applied = aiApplied.has(i);
+                const condStr = rule.condition?.kind === 'threshold'
+                  ? `${rule.condition.agg ?? 'avg'} ${rule.condition.op} ${rule.condition.value} (${rule.condition.window_min}min)`
+                  : `no data ${rule.condition?.window_min ?? '?'}min`;
+                return (
+                  <div key={i} style={{ ...card({}), borderLeft: `3px solid ${applied ? '#4ade80' : SEV_COLORS[rule.severity] ?? '#55f3ff'}`, opacity: applied ? 0.6 : 1, transition: 'opacity .2s' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0' }}>{rule.name}</span>
+                      <span style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{[rule.asset_id, rule.namespace, rule.metric].filter(Boolean).join(' / ') || 'all'}</span>
+                      <div style={{ flex: 1 }} />
+                      <SevBadge sev={rule.severity ?? 'medium'} />
+                      {applied
+                        ? <span style={{ color: '#4ade80', fontSize: 11, fontWeight: 700 }}>Applied</span>
+                        : <button onClick={() => aiApplyRule(rule, i)} style={{ ...S.btnSm, fontSize: 11, color: '#c4b5fd', borderColor: 'rgba(155,124,255,0.3)' }}>{t('alerts_ai_apply_one')}</button>
+                      }
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#7dd3fc' }}>{condStr}</span>
+                      {(rule.channels ?? []).map((cid: string) => {
+                        const ch = channels.find(c => c.id === cid);
+                        const kind = ch?.kind ?? 'webhook';
+                        const [, fg] = CH_COLORS[kind] ?? ['', '#fdba74'];
+                        return <span key={cid} style={{ fontSize: 10, color: fg, padding: '2px 8px', borderRadius: 6, background: fg + '15', fontWeight: 600 }}>{CH_ICONS[kind]} {cid}</span>;
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ══════ CHANNELS ══════ */}
       {sectionHead(t('alerts_subtab_channels').replace(/[^\w\s]/g, '').trim(), channels.length, showChannels, () => setShowChannels(x => !x),
