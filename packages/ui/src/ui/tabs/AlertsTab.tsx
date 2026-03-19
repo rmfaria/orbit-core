@@ -75,6 +75,7 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   const [catMetrics, setCatMetrics] = React.useState<MetricOpt[]>([]);
 
   function showToastMsg(msg: string, ok: boolean) { setToast({ msg, ok }); setTimeout(() => setToast(null), 4000); }
+  function slugify(s: string) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40); }
 
   async function loadRules() {
     setLoading(true); setErr(null);
@@ -152,16 +153,28 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
   }
 
   async function saveChannel() {
-    let config: any;
-    if (cf.kind === 'webhook') config = { url: cf.url, ...(cf.headers.trim() ? { headers: JSON.parse(cf.headers) } : {}) };
-    else if (cf.kind === 'telegram') config = { bot_token: cf.bot_token, chat_id: cf.chat_id };
-    else config = { recipients: cf.recipients.split(',').map(s => s.trim()).filter(Boolean) };
-    const j = await fetch('api/v1/alerts/channels', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ id: cf.id, name: cf.name, kind: cf.kind, config }) }).then(r => r.json());
-    if (!j.ok) { showToastMsg('Error: ' + JSON.stringify(j.error), false); return; }
-    showToastMsg(t('alerts_channel_saved'), true);
-    setShowChForm(false);
-    setCf({ id: '', name: '', kind: 'email', url: '', headers: '', bot_token: '', chat_id: '', recipients: '' });
-    loadChannels();
+    try {
+      let config: any;
+      if (cf.kind === 'webhook') {
+        let hdrs: Record<string, string> | undefined;
+        if (cf.headers.trim()) {
+          try { hdrs = JSON.parse(cf.headers); } catch { showToastMsg('Error: invalid JSON in headers', false); return; }
+        }
+        config = { url: cf.url, ...(hdrs ? { headers: hdrs } : {}) };
+      } else if (cf.kind === 'telegram') {
+        config = { bot_token: cf.bot_token, chat_id: cf.chat_id };
+      } else {
+        config = { recipients: cf.recipients.split(',').map(s => s.trim()).filter(Boolean) };
+      }
+      const j = await fetch('api/v1/alerts/channels', { method: 'POST', headers: apiHeaders(), body: JSON.stringify({ id: cf.id, name: cf.name, kind: cf.kind, config }) }).then(r => r.json());
+      if (!j.ok) { showToastMsg('Error: ' + JSON.stringify(j.error), false); return; }
+      showToastMsg(t('alerts_channel_saved'), true);
+      setShowChForm(false);
+      setCf({ id: '', name: '', kind: 'email', url: '', headers: '', bot_token: '', chat_id: '', recipients: '' });
+      loadChannels();
+    } catch (e: any) {
+      showToastMsg('Error: ' + String(e?.message ?? e), false);
+    }
   }
 
   // SMTP
@@ -357,11 +370,15 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
               })}
             </div>
             <div className="orbit-grid-3" style={{ marginBottom: 10 }}>
-              <label style={S.label}>ID (slug)<input style={S.input} value={cf.id} onChange={e => setCf(p => ({ ...p, id: e.target.value }))} placeholder="email-noc" /></label>
-              <label style={S.label}>{t('name')}<input style={S.input} value={cf.name} onChange={e => setCf(p => ({ ...p, name: e.target.value }))} placeholder={cf.kind === 'email' ? 'Email NOC' : cf.kind === 'telegram' ? 'Telegram NOC' : 'Slack Webhook'} /></label>
+              <label style={S.label}>{t('name')}<input style={S.input} value={cf.name} onChange={e => { const name = e.target.value; setCf(p => ({ ...p, name, id: slugify(name) })); }} placeholder={cf.kind === 'email' ? 'Email NOC' : cf.kind === 'telegram' ? 'Telegram NOC' : 'Slack Webhook'} /></label>
               {cf.kind === 'email' && <label style={S.label}>{t('alerts_recipients')}<input style={S.input} value={cf.recipients} onChange={e => setCf(p => ({ ...p, recipients: e.target.value }))} placeholder="a@co.com, b@co.com" /></label>}
               {cf.kind === 'telegram' && <label style={S.label}>Bot Token<input style={S.input} value={cf.bot_token} onChange={e => setCf(p => ({ ...p, bot_token: e.target.value }))} placeholder="1234567890:AAH..." /></label>}
               {cf.kind === 'webhook' && <label style={S.label}>URL<input style={S.input} value={cf.url} onChange={e => setCf(p => ({ ...p, url: e.target.value }))} placeholder="https://hooks.slack.com/..." /></label>}
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={S.label}>ID (slug) <span style={{ color: '#475569', fontWeight: 400 }}>— auto</span>
+                <input style={{ ...S.input, color: '#64748b' }} value={cf.id} onChange={e => setCf(p => ({ ...p, id: e.target.value }))} placeholder="webhook-n8n" />
+              </label>
             </div>
             {cf.kind === 'telegram' && (
               <div style={{ marginBottom: 10 }}>
