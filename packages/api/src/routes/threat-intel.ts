@@ -438,18 +438,15 @@ export function threatIntelRouter(pool: Pool | null): Router {
     });
   }));
 
-  // GET /threat-intel/health-map — asset security health for heatmap visualization
-  r.get('/threat-intel/health-map', a(async (req, res) => {
-    if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
+  // ── Health-map cache (TTL 5 min) ───────────────────────────────────────────
+  const healthMapCache = new Map<number, { ts: number; payload: object }>();
+  const HEALTH_MAP_TTL = 5 * 60 * 1000; // 5 minutes
+  let healthMapInflight: Promise<any> | null = null;
 
-    const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
-
-    // Two-phase: first pick top-40 assets (IoC hits + most recently seen),
-    // then enrich only those with severity breakdown via index seeks on
-    // (asset_id, ts). This avoids scanning millions of event rows.
-    const client = await pool.connect();
+  async function queryHealthMap(hours: number) {
+    const client = await pool!.connect();
     try {
-      await client.query('SET LOCAL statement_timeout = 25000');
+      await client.query('SET LOCAL statement_timeout = 45000');
       const { rows } = await client.query(`
         WITH match_agg AS (
           SELECT
@@ -506,9 +503,39 @@ export function threatIntelRouter(pool: Pool | null): Router {
           COALESCE(ev.high_count, 0) DESC,
           COALESCE(ev.total_events, 0) DESC
       `, [hours]);
-      res.json({ ok: true, hours, assets: rows });
+      return { ok: true, hours, assets: rows };
     } finally {
       client.release();
+    }
+  }
+
+  // GET /threat-intel/health-map — asset security health for heatmap visualization
+  r.get('/threat-intel/health-map', a(async (req, res) => {
+    if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
+
+    const hours = Math.min(parseInt(req.query.hours as string) || 24, 168);
+
+    // Serve from cache if fresh
+    const cached = healthMapCache.get(hours);
+    if (cached && Date.now() - cached.ts < HEALTH_MAP_TTL) {
+      return res.json(cached.payload);
+    }
+
+    // Coalesce concurrent requests — only one DB query at a time
+    if (!healthMapInflight) {
+      healthMapInflight = queryHealthMap(hours)
+        .then(payload => {
+          healthMapCache.set(hours, { ts: Date.now(), payload });
+          return payload;
+        })
+        .finally(() => { healthMapInflight = null; });
+    }
+
+    try {
+      const payload = await healthMapInflight;
+      res.json(payload);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e.message ?? 'health-map query failed' });
     }
   }));
 
