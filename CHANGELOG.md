@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.0] - 2026-03-20
+
+### Added
+
+- **AI Alert Generator**: natural language alert builder powered by Anthropic — describe what to monitor ("Monitor CPU > 90% on all hosts", "Alert critical Wazuh events") and the AI generates complete alert rules using the RAG catalog context (assets, metrics, events, existing channels)
+- **New API endpoint** `POST /api/v1/ai/alerts`: takes a prompt, builds context from 200 assets + 458 metrics + 10 event namespaces, and returns ready-to-apply alert rules
+- **Alert test modal**: full test notification panel with animated progress bar, JSON payload preview (especially useful for webhook channels showing the exact POST body), error detail panel, and re-send capability
+- **Channel metadata display**: channel cards now show inline URL (webhook), recipients (email), or chat ID (Telegram) with hover highlight effects
+- **Firing counter badge**: pulsing animation in alerts header showing count of active firing rules
+- **n8n webhook workflow**: pre-built `orbit-alert-email.json` — receives orbit-core alert webhooks and sends formatted HTML email via n8n SMTP
+- **Health Map drilldown**: click any asset on the threat intel hex-grid to see severity timeline and IoC matches
+- **Health Map caching**: 5-min in-memory cache + request coalescing for health-map queries (65x performance improvement maintained)
+- **OpenClaw sales source**: new Source with sales dashboard, KPIs, charts and pipeline funnel
+- **MBC WhatsApp bot connector**: push connector for WhatsApp pre-sales bot events
+
+### Changed
+
+- **Alert channel form UX**: auto-generates slug ID from channel name, moved ID field to secondary position, added try/catch with user-friendly error messages
+- **Alert section counters**: styled as cyan badge pills instead of plain text
+- **AI prompt engineering**: multi-strategy JSON extraction (code block → raw → brace regex), response normalization (array, .rules, .alert_rules, single object), concrete output examples in system prompt
+- **Backdrop blur**: all alert modals (SMTP, test) now use backdrop blur for depth
+- **Health map query**: pre-selects top-40 assets to avoid timeout on large datasets
+
+### Fixed
+
+- **Channel save error**: webhook channels with email-like IDs (containing `@` or `.`) now show clear validation error instead of crashing
+- **Test button**: animated glow effect on hover with scale feedback on click
+
+---
+
 ## [1.7.1] - 2026-03-16
 
 ### Added
