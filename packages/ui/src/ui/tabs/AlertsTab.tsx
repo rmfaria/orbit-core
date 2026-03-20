@@ -213,9 +213,12 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
         headers: { ...apiHeaders(), 'x-ai-key': aiKey, 'x-ai-model': aiModel },
         body: JSON.stringify({ prompt: aiPrompt }),
       }).then(r => r.json());
-      if (!j.ok) { setAiError(j.error + (j.detail ? ': ' + j.detail : '')); return; }
+      if (!j.ok) { setAiError(j.error + (j.detail ? ': ' + j.detail : '') + (j.raw ? '\n\nRaw: ' + j.raw : '')); return; }
       const res = j.result as { rules?: any[]; summary?: string };
-      if (!res?.rules?.length) { setAiError('AI returned no rules'); return; }
+      if (!res?.rules?.length) {
+        setAiError(res?.summary || 'AI could not generate rules for this request. Try being more specific about assets/metrics.');
+        return;
+      }
       setAiPreview({ rules: res.rules, summary: res.summary ?? '' });
     } catch (e: any) {
       setAiError(String(e?.message ?? e));

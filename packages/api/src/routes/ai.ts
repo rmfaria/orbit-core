@@ -802,17 +802,60 @@ export function aiRouter(pool: Pool | null): Router {
     const anthropicJson = await anthropicRes.json() as { content?: Array<{ text: string }> };
     const rawText = anthropicJson?.content?.[0]?.text ?? '';
 
-    const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    const jsonText = jsonMatch ? jsonMatch[1].trim() : rawText.trim();
-
-    let result: unknown;
-    try {
-      result = JSON.parse(jsonText);
-    } catch {
-      return res.status(502).json({ ok: false, error: 'AI returned invalid JSON', raw: rawText.slice(0, 500) });
+    if (!rawText) {
+      return res.status(502).json({ ok: false, error: 'AI returned empty response' });
     }
 
-    return res.json({ ok: true, result });
+    // Try multiple extraction strategies
+    let parsed: any = null;
+
+    // 1. Try extracting JSON from markdown code block
+    const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      try { parsed = JSON.parse(jsonMatch[1].trim()); } catch { /* try next */ }
+    }
+
+    // 2. Try parsing the whole response as JSON
+    if (!parsed) {
+      try { parsed = JSON.parse(rawText.trim()); } catch { /* try next */ }
+    }
+
+    // 3. Try finding a JSON object that starts with { and ends with }
+    if (!parsed) {
+      const braceMatch = rawText.match(/\{[\s\S]*\}/);
+      if (braceMatch) {
+        try { parsed = JSON.parse(braceMatch[0]); } catch { /* give up */ }
+      }
+    }
+
+    if (!parsed) {
+      return res.status(502).json({ ok: false, error: 'AI returned invalid JSON', raw: rawText.slice(0, 800) });
+    }
+
+    // Normalize: extract rules array from various possible structures
+    let rules: any[] = [];
+    let summary = '';
+
+    if (Array.isArray(parsed)) {
+      rules = parsed;
+    } else if (parsed.rules && Array.isArray(parsed.rules)) {
+      rules = parsed.rules;
+      summary = parsed.summary ?? '';
+    } else if (parsed.alert_rules && Array.isArray(parsed.alert_rules)) {
+      rules = parsed.alert_rules;
+      summary = parsed.summary ?? '';
+    } else {
+      // Maybe the AI returned a single rule object
+      if (parsed.name && parsed.condition) {
+        rules = [parsed];
+      }
+    }
+
+    if (rules.length === 0) {
+      return res.json({ ok: true, result: { rules: [], summary: parsed.summary ?? 'No matching rules could be generated for the available data.' }, raw: rawText.slice(0, 800) });
+    }
+
+    return res.json({ ok: true, result: { rules, summary } });
   });
 
   return r;
@@ -829,69 +872,64 @@ function buildAlertSystemPrompt(catalog: RagCatalog, channels: Array<{ id: strin
     ? channels.map(c => `  - id="${c.id}" name="${c.name}" kind=${c.kind}`).join('\n')
     : '  (no channels configured yet — omit channels array or leave empty)';
 
-  return `You are orbit-core Alert Builder AI. You generate alert rule configurations from natural language descriptions.
+  return `You are orbit-core Alert Builder AI. Your job is to generate alert rules based on natural language.
+You MUST ALWAYS generate at least one rule. Be proactive — if the user is vague, generate sensible defaults from the catalog.
 
-Output ONLY a valid JSON object (no markdown, no explanation):
+RESPOND WITH ONLY RAW JSON (no markdown code fences, no backticks, no explanation text):
+{"rules":[...],"summary":"..."}
+
+Each rule in the "rules" array:
 {
-  "rules": [
-    {
-      "name":      "Human-readable alert name",
-      "asset_id":  "host:xxx" | null,
-      "namespace": "nagios" | null,
-      "metric":    "cpu" | null,
-      "condition": {
-        "kind": "threshold",
-        "op": ">" | ">=" | "<" | "<=",
-        "value": 80,
-        "window_min": 5,
-        "agg": "avg" | "max"
-      },
-      "severity": "info" | "low" | "medium" | "high" | "critical",
-      "channels": ["channel-id-1"]
-    }
-  ],
-  "summary": "Brief description of what was generated and why"
+  "name": "Human-readable name (e.g. High CPU — portn8n)",
+  "asset_id": "host:xxx" or null (null = all assets),
+  "namespace": "nagios" or null,
+  "metric": "cpu" or null,
+  "condition": { "kind": "threshold", "op": ">", "value": 80, "window_min": 5, "agg": "avg" },
+  "severity": "critical",
+  "channels": []
 }
 
 CONDITION TYPES:
-1. threshold — fires when agg(metric) op value over window_min minutes
-   { "kind": "threshold", "op": ">", "value": 80, "window_min": 5, "agg": "avg" }
-2. absence — fires when no data received in window_min minutes
-   { "kind": "absence", "window_min": 10 }
+- threshold: { "kind": "threshold", "op": ">"|">="|"<"|"<=", "value": NUMBER, "window_min": INT, "agg": "avg"|"max" }
+- absence:   { "kind": "absence", "window_min": INT }
+
+EXAMPLES OF VALID OUTPUT:
+{"rules":[{"name":"High CPU — portn8n","asset_id":"host:portn8n","namespace":"nagios","metric":"cpu","condition":{"kind":"threshold","op":">","value":90,"window_min":5,"agg":"avg"},"severity":"critical","channels":[]},{"name":"No metrics — portn8n","asset_id":"host:portn8n","namespace":"nagios","metric":null,"condition":{"kind":"absence","window_min":10},"severity":"high","channels":[]}],"summary":"Created CPU threshold and data absence alerts for portn8n"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## METRIC CATALOG (available for threshold/absence alerts)
+METRIC CATALOG — USE THESE EXACT VALUES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${metricCatalog}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## EVENT CATALOG (context about what data flows through the system)
+EVENT CATALOG — NAMESPACES AND KINDS AVAILABLE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${eventCatalog}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## EXISTING NOTIFICATION CHANNELS
+NOTIFICATION CHANNELS — ASSIGN TO RULES IF RELEVANT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${channelList}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-## STRICT DATA RULES
+ALLOWED DATA (ONLY use these identifiers)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${allowed}
 
-CRITICAL CONSTRAINTS:
-1. Return ONLY valid JSON — no markdown fences, no text outside JSON
-2. NEVER invent asset_ids, namespaces, or metric names — use ONLY values from the catalogs above
-3. Use appropriate thresholds based on the metric value ranges in the catalog
-4. For CPU/memory metrics with percentage values, typical thresholds: warning >75, critical >90
-5. For load metrics, base thresholds on the observed ranges in the catalog
-6. Always set severity appropriately: absence → high, high threshold → critical, moderate → medium
-7. If user asks about events/security (Wazuh, threat intel, etc.), create absence alerts on relevant namespaces/metrics
-8. window_min should be 5 for fast metrics, 10-15 for slower ones
-9. If channels exist, assign the most appropriate ones to each rule
-10. Generate multiple rules when the request implies it (e.g. "monitor host X" → CPU + memory + load + disk alerts)
-11. If the user mentions a technology not in the catalog, explain in summary that no data is available for it yet
-12. agg defaults to "avg" — use "max" for spike detection
+RULES:
+1. Output RAW JSON only — NO markdown, NO backticks, NO explanation before/after
+2. ALWAYS generate at least 1 rule. If unsure, create sensible defaults from the catalog
+3. Use ONLY asset_ids, namespaces, metrics from the catalogs above
+4. Set thresholds based on metric value ranges (e.g. if range is 0-100 and unit=%, use 90 for critical)
+5. For "monitor all" / "full monitoring" → generate rules for each distinct metric type across assets
+6. For Wazuh/security requests → create absence alerts on wazuh namespace metrics + threshold on alert count metrics
+7. For MISP/threat intel → create absence alerts on misp namespace
+8. severity: absence → high, high threshold → critical, moderate → medium, low → info
+9. window_min: 5 for fast metrics, 10 for slower ones, 15 for absence
+10. Generate MULTIPLE rules when appropriate (one per metric/asset combination)
+11. If channels exist, assign ALL of them to each rule (user can remove later)
+12. agg: use "avg" normally, "max" for spike detection
+13. Use null for asset_id/namespace/metric when the rule should match all
 `;
 }
 
