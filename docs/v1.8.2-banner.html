@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit Core v1.8.2 — Smart Alert Delivery</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #040713;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .banner {
+    width: 1200px;
+    height: 628px;
+    background: linear-gradient(135deg, #040713 0%, #0d1020 30%, #1a0a10 55%, #0a0f1e 100%);
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 56px 80px;
+  }
+
+  /* Red/orange glow — top right (alert theme) */
+  .banner::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -60px;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(248, 113, 113, 0.10) 0%, rgba(251, 146, 60, 0.05) 40%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Cyan glow — bottom left */
+  .banner::after {
+    content: '';
+    position: absolute;
+    bottom: -120px;
+    left: -40px;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(85, 243, 255, 0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Grid pattern */
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(85, 243, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(85, 243, 255, 0.025) 1px, transparent 1px);
+    background-size: 44px 44px;
+    pointer-events: none;
+  }
+
+  .content { position: relative; z-index: 1; }
+
+  .version-badge {
+    display: inline-block;
+    background: rgba(248, 113, 113, 0.12);
+    border: 1px solid rgba(248, 113, 113, 0.35);
+    color: #f87171;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 22px;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: 48px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 14px;
+    letter-spacing: -0.02em;
+  }
+  h1 .white { color: #ffffff; }
+  h1 .accent {
+    background: linear-gradient(135deg, #f87171 0%, #fb923c 50%, #fbbf24 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    font-size: 19px;
+    color: #8892b0;
+    margin-bottom: 34px;
+    line-height: 1.5;
+    max-width: 620px;
+  }
+
+  .features {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+
+  .feature {
+    flex: 1;
+    background: rgba(13, 16, 32, 0.7);
+    border: 1px solid rgba(248, 113, 113, 0.12);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+
+  .feature-icon {
+    font-size: 22px;
+    margin-bottom: 7px;
+  }
+
+  .feature-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #fb923c;
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  .feature-desc {
+    font-size: 11px;
+    color: #7a8198;
+    line-height: 1.45;
+  }
+
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f87171, #fb923c);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 18px;
+    color: #040713;
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+
+  .url {
+    font-size: 16px;
+    color: #55f3ff;
+    font-weight: 600;
+  }
+
+  .tags {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tag {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .tag.alert {
+    background: rgba(248, 113, 113, 0.12);
+    border: 1px solid rgba(248, 113, 113, 0.25);
+    color: #f87171;
+  }
+  .tag.sec {
+    background: rgba(74, 222, 128, 0.08);
+    border: 1px solid rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+  }
+  .tag.oss {
+    background: rgba(85, 243, 255, 0.08);
+    border: 1px solid rgba(85, 243, 255, 0.2);
+    color: #55f3ff;
+  }
+
+  /* Alert email decoration */
+  .email-preview {
+    position: absolute;
+    right: 55px;
+    top: 50px;
+    z-index: 1;
+    width: 280px;
+    opacity: 0.85;
+  }
+
+  .email-card {
+    background: #ffffff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.5), 0 0 60px rgba(248,113,113,0.1);
+    font-family: 'Inter', sans-serif;
+  }
+
+  .email-bar {
+    height: 4px;
+    background: #dc2626;
+  }
+
+  .email-header {
+    padding: 14px 18px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .email-label {
+    font-size: 8px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: .08em;
+  }
+
+  .email-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 4px;
+    line-height: 1.3;
+  }
+
+  .email-badge {
+    background: #fef2f2;
+    border: 1.5px solid #dc2626;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 8px;
+    font-weight: 800;
+    color: #dc2626;
+    white-space: nowrap;
+  }
+
+  .email-sev {
+    display: inline-block;
+    margin: 0 18px 10px;
+    background: #fff7ed;
+    border: 1px solid #ffedd5;
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 8px;
+    font-weight: 700;
+    color: #9a3412;
+  }
+
+  .email-value-block {
+    margin: 0 18px 10px;
+    background: #0f172a;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+
+  .email-value-label {
+    font-size: 7px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: .1em;
+    margin-bottom: 4px;
+  }
+
+  .email-value {
+    font-size: 22px;
+    font-weight: 800;
+    color: #f97316;
+    letter-spacing: -1px;
+  }
+
+  .email-detail {
+    margin: 0 18px 10px;
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+  }
+
+  .email-detail-row {
+    padding: 7px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .email-detail-row:last-child { border-bottom: none; }
+
+  .email-detail-icon { font-size: 10px; }
+
+  .email-detail-label {
+    font-size: 7px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+
+  .email-detail-val {
+    font-size: 9px;
+    color: #1e293b;
+    font-weight: 500;
+  }
+
+  .email-footer {
+    padding: 8px 18px;
+    border-top: 1px solid #f1f5f9;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .email-footer span {
+    font-size: 7px;
+    color: #cbd5e1;
+  }
+
+  /* Connection line from card to features */
+  .conn-line {
+    position: absolute;
+    right: 290px;
+    top: 200px;
+    width: 60px;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(248,113,113,0.4), rgba(248,113,113,0));
+    z-index: 1;
+  }
+
+  .conn-dot {
+    position: absolute;
+    right: 288px;
+    top: 196px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #f87171;
+    box-shadow: 0 0 12px rgba(248,113,113,0.5);
+    z-index: 1;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.7; box-shadow: 0 0 8px rgba(248,113,113,0.4); }
+    50% { opacity: 1; box-shadow: 0 0 18px rgba(248,113,113,0.7); }
+  }
+
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="grid-bg"></div>
+
+  <!-- Email preview decoration -->
+  <div class="email-preview">
+    <div class="email-card">
+      <div class="email-bar"></div>
+      <div class="email-header">
+        <div>
+          <div class="email-label">ORBIT CORE ALERT</div>
+          <div class="email-title">Wazuh Agents<br>Disconnected</div>
+        </div>
+        <div class="email-badge">&#x26A0;&#xFE0F; FIRING</div>
+      </div>
+      <div class="email-sev">&#x1F7E0; HIGH</div>
+      <div class="email-value-block">
+        <div class="email-value-label">CURRENT VALUE</div>
+        <div class="email-value">29.50</div>
+      </div>
+      <div class="email-detail">
+        <div class="email-detail-row">
+          <span class="email-detail-icon">&#x1F4BB;</span>
+          <div>
+            <div class="email-detail-label">Asset</div>
+            <div class="email-detail-val">host:gm-sec</div>
+          </div>
+        </div>
+        <div class="email-detail-row">
+          <span class="email-detail-icon">&#x1F4C1;</span>
+          <div>
+            <div class="email-detail-label">Namespace</div>
+            <div class="email-detail-val">wazuh</div>
+          </div>
+        </div>
+        <div class="email-detail-row">
+          <span class="email-detail-icon">&#x2699;&#xFE0F;</span>
+          <div>
+            <div class="email-detail-label">Condition</div>
+            <div class="email-detail-val">avg > 5 (10min)</div>
+          </div>
+        </div>
+      </div>
+      <div class="email-footer">
+        <span>&#x1F310; Orbit Core</span>
+        <span>22/03/2026, 09:49</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="conn-dot"></div>
+  <div class="conn-line"></div>
+
+  <div class="content">
+    <div class="version-badge">v1.8.2 Release</div>
+    <h1>
+      <span class="white">Smart</span> <span class="accent">Alert Delivery</span><br>
+      <span class="white">+ Editable Channels</span>
+    </h1>
+    <p class="subtitle">
+      Webhook alerts now reach n8n reliably. Edit channels and rules inline. Modern HTML email notifications via Gmail OAuth2.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">&#x1F517;</div>
+        <div class="feature-title">SSRF Allowlist</div>
+        <div class="feature-desc">New ORBIT_WEBHOOK_ALLOWLIST env var bypasses SSRF guard for trusted internal hosts like self-hosted n8n.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x270E;</div>
+        <div class="feature-title">Editable Rules</div>
+        <div class="feature-desc">Change assigned channels on any alert rule inline. Edit webhook URLs, recipients, and config without recreating.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4E7;</div>
+        <div class="feature-title">n8n Email Alerts</div>
+        <div class="feature-desc">Pre-built n8n workflow sends rich HTML email via Gmail OAuth2 with severity colors and value highlight.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F527;</div>
+        <div class="feature-title">Delivery Fix</div>
+        <div class="feature-desc">Fixed channel mismatch and inactive webhook URL that silently blocked all alert notifications.</div>
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="logo-area">
+        <div class="logo-dot">O</div>
+        <span class="logo-text">Orbit Core</span>
+      </div>
+      <div class="tags">
+        <span class="tag alert">Alert Engine</span>
+        <span class="tag sec">Self-Hosted</span>
+        <span class="tag oss">Apache-2.0</span>
+      </div>
+      <div class="url">orbit-core.org</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
