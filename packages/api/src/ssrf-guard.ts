@@ -10,6 +10,15 @@
 import { URL } from 'url';
 import dns from 'dns/promises';
 
+// Trusted internal hosts that bypass SSRF checks (e.g. n8n on Docker network).
+// Comma-separated hostnames: ORBIT_WEBHOOK_ALLOWLIST=n8n.nesecurity.com.br,localhost
+const ALLOWED_HOSTS: Set<string> = new Set(
+  (process.env.ORBIT_WEBHOOK_ALLOWLIST ?? '')
+    .split(',')
+    .map(h => h.trim().toLowerCase())
+    .filter(Boolean),
+);
+
 const PRIVATE_RANGES = [
   /^127\./,                          // loopback
   /^10\./,                           // RFC 1918
@@ -44,6 +53,9 @@ export async function isPrivateUrl(urlStr: string): Promise<boolean> {
 
     // Block non-HTTP schemes
     if (!['http:', 'https:'].includes(parsed.protocol)) return true;
+
+    // Allow explicitly trusted internal hosts
+    if (ALLOWED_HOSTS.has(parsed.hostname.toLowerCase())) return false;
 
     // Block known metadata hostnames
     if (BLOCKED_HOSTS.includes(parsed.hostname.toLowerCase())) return true;

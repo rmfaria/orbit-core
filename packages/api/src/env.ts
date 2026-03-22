@@ -10,6 +10,8 @@ const EnvSchema = z.object({
   ORBIT_LICENSE_KEY: z.string().optional(),
   // Opt-in anonymous telemetry heartbeat to orbit-core.org.
   ORBIT_TELEMETRY: z.enum(['true', 'false']).default('false'),
+  // Comma-separated hostnames allowed to bypass SSRF guard (e.g. internal n8n).
+  ORBIT_WEBHOOK_ALLOWLIST: z.string().default(''),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -21,5 +23,6 @@ export function loadEnv(): Env {
     ORBIT_API_KEY: process.env.ORBIT_API_KEY,
     ORBIT_LICENSE_KEY: process.env.ORBIT_LICENSE_KEY,
     ORBIT_TELEMETRY: process.env.ORBIT_TELEMETRY,
+    ORBIT_WEBHOOK_ALLOWLIST: process.env.ORBIT_WEBHOOK_ALLOWLIST,
   });
 }

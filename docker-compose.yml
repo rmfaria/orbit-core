@@ -46,6 +46,7 @@ services:
     environment:
       DATABASE_URL:  postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/orbit
       ORBIT_API_KEY: ${ORBIT_API_KEY:-}
+      ORBIT_WEBHOOK_ALLOWLIST: ${ORBIT_WEBHOOK_ALLOWLIST:-}
       PORT:          3000
       NODE_ENV:      production
       LOG_LEVEL:     ${LOG_LEVEL:-info}

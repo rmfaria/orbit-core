@@ -53,6 +53,8 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
     severity: 'medium', selectedChannels: [] as string[],
   });
   const [expandedRuleId, setExpandedRuleId] = React.useState<number | null>(null);
+  const [editingRuleChannels, setEditingRuleChannels] = React.useState<number | null>(null);
+  const [editChannelsPick, setEditChannelsPick] = React.useState<string[]>([]);
 
   // Channel form
   const [showChForm, setShowChForm] = React.useState(false);
@@ -129,6 +131,13 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
     showToastMsg(t('alerts_silenced_1h'), true); loadRules();
   }
   async function deleteRule(id: number) { if (!confirm(t('alerts_confirm_delete'))) return; await fetch(`api/v1/alerts/rules/${id}`, { method: 'DELETE', headers: apiGetHeaders() }); loadRules(); }
+  async function saveRuleChannels(id: number, chs: string[]) {
+    const j = await fetch(`api/v1/alerts/rules/${id}`, { method: 'PATCH', headers: apiHeaders(), body: JSON.stringify({ channels: chs }) }).then(r => r.json());
+    if (!j.ok) { showToastMsg('Error: ' + JSON.stringify(j.error), false); return; }
+    showToastMsg('Channels updated', true);
+    setEditingRuleChannels(null);
+    loadRules();
+  }
 
   async function saveRule() {
     const condition = rf.condKind === 'threshold'
@@ -148,6 +157,15 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
 
   // Channel actions
   async function deleteChannel(id: string) { if (!confirm(t('alerts_confirm_delete_channel'))) return; await fetch(`api/v1/alerts/channels/${id}`, { method: 'DELETE', headers: apiGetHeaders() }); loadChannels(); }
+  function editChannel(ch: AlertChannel) {
+    setCf({
+      id: ch.id, name: ch.name, kind: ch.kind as any,
+      url: ch.config?.url ?? '', headers: ch.config?.headers ? JSON.stringify(ch.config.headers) : '',
+      bot_token: ch.config?.bot_token ?? '', chat_id: ch.config?.chat_id ?? '',
+      recipients: (ch.config?.recipients ?? []).join(', '),
+    });
+    setShowChForm(true);
+  }
 
   async function testChannel(ch: AlertChannel) {
     setTestModal({ ch, status: 'sending' });
@@ -597,6 +615,7 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
                   <button className="orbit-test-btn" onClick={() => { setTestModal({ ch, status: 'idle' }); }} style={{ ...S.btnSm, fontSize: 11, color: '#55f3ff', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                     {'\u25B6'} {t('test')}
                   </button>
+                  <button onClick={() => editChannel(ch)} style={{ ...S.btnSm, fontSize: 11, color: '#fbbf24' }} title="Edit">{'\u270E'}</button>
                   <button onClick={() => deleteChannel(ch.id)} style={{ ...S.btnSm, fontSize: 11, color: '#f87171' }}>{t('remove')}</button>
                 </div>
               </div>
@@ -743,12 +762,41 @@ export function AlertsTab({ assets }: { assets: AssetOpt[] }) {
               </div>
               {/* Expanded details */}
               {isExp && (
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(140,160,255,0.1)', display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 11 }}>
-                  {([['condition', condText(rule)], ['created', new Date(rule.created_at).toLocaleString()]] as const).map(([k, v]) => (
-                    <span key={k}><span style={{ color: '#475569' }}>{k}</span> <code style={{ color: '#cbd5e1' }}>{v}</code></span>
-                  ))}
-                  {silenced && <span><span style={{ color: '#475569' }}>silenced until</span> <code style={{ color: '#fbbf24' }}>{new Date(rule.silence_until!).toLocaleString()}</code></span>}
-                  {rule.fired_at && <span><span style={{ color: '#475569' }}>fired at</span> <code style={{ color: '#f87171' }}>{new Date(rule.fired_at).toLocaleString()}</code></span>}
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(140,160,255,0.1)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 11, marginBottom: 10 }}>
+                    {([['condition', condText(rule)], ['created', new Date(rule.created_at).toLocaleString()]] as const).map(([k, v]) => (
+                      <span key={k}><span style={{ color: '#475569' }}>{k}</span> <code style={{ color: '#cbd5e1' }}>{v}</code></span>
+                    ))}
+                    {silenced && <span><span style={{ color: '#475569' }}>silenced until</span> <code style={{ color: '#fbbf24' }}>{new Date(rule.silence_until!).toLocaleString()}</code></span>}
+                    {rule.fired_at && <span><span style={{ color: '#475569' }}>fired at</span> <code style={{ color: '#f87171' }}>{new Date(rule.fired_at).toLocaleString()}</code></span>}
+                  </div>
+                  {/* Channel editor */}
+                  <div onClick={e => e.stopPropagation()}>
+                    {editingRuleChannels === rule.id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>Channels:</span>
+                        {channels.map(ch => {
+                          const sel = editChannelsPick.includes(ch.id);
+                          const [, fg] = CH_COLORS[ch.kind] ?? ['', '#fdba74'];
+                          return (
+                            <button key={ch.id} onClick={() => setEditChannelsPick(p => sel ? p.filter(x => x !== ch.id) : [...p, ch.id])}
+                              style={{ padding: '3px 10px', borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                                background: sel ? fg + '18' : 'transparent', border: `1px solid ${sel ? fg + '50' : 'rgba(140,160,255,0.14)'}`, color: sel ? fg : '#64748b',
+                              }}>
+                              {CH_ICONS[ch.kind]} {ch.name}
+                            </button>
+                          );
+                        })}
+                        <button onClick={() => saveRuleChannels(rule.id, editChannelsPick)} style={{ ...S.btnSm, fontSize: 11, color: '#4ade80', borderColor: 'rgba(74,222,128,0.3)', padding: '3px 12px' }}>Save</button>
+                        <button onClick={() => setEditingRuleChannels(null)} style={{ ...S.btnSm, fontSize: 11, padding: '3px 10px' }}>{t('cancel')}</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setEditingRuleChannels(rule.id); setEditChannelsPick([...rule.channels]); }}
+                        style={{ ...S.btnSm, fontSize: 11, color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)', padding: '3px 12px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {'\u270E'} Edit channels
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
