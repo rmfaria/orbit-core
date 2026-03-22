@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.2] - 2026-03-22
+
+### Added
+
+- **SSRF webhook allowlist**: new `ORBIT_WEBHOOK_ALLOWLIST` env var to bypass SSRF guard for trusted internal hosts (e.g. self-hosted n8n on Docker network)
+- **Editable rule channels**: inline channel picker on expanded alert rule cards — change assigned channels without recreating the rule
+- **Editable channel config**: edit button on channel cards to update webhook URL, recipients, or bot token via pre-filled form
+- **n8n alert email workflow**: new workflow on local n8n (`/webhook/orbit-alert`) using Gmail OAuth2 — modern HTML email template with severity colors, value highlight, and detail cards
+
+### Fixed
+
+- **Alert webhook delivery**: alerts were failing because rules pointed to non-existent channel ID (`teste-orbit` instead of `n8n`) and webhook URL pointed to inactive n8n cloud instance
+- **SSRF false positive**: webhook notifications to internal n8n were blocked by SSRF guard resolving Docker-network hostnames to private IPs
+
+---
+
 ## [1.8.0] - 2026-03-20
 
 ### Added
