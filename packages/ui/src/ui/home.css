@@ -306,3 +306,37 @@
 @media (max-width: 480px) {
   .orbit-chart-canvas-wrap { height: 140px; }
 }
+
+/* ── Events table responsive ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .orbit-events-table { min-width: 0 !important; }
+  .orbit-events-table colgroup { display: none; }
+  .orbit-events-table,
+  .orbit-events-table thead,
+  .orbit-events-table tbody,
+  .orbit-events-table tr,
+  .orbit-events-table th,
+  .orbit-events-table td { display: block; width: 100%; }
+  .orbit-events-table thead { position: static !important; }
+  .orbit-events-table thead tr { display: none; }
+  .orbit-events-table tbody tr {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(140,160,255,0.08);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: center;
+  }
+  .orbit-events-table tbody td {
+    padding: 2px 0 !important;
+    border: none !important;
+    width: auto !important;
+    overflow: visible !important;
+    white-space: normal !important;
+  }
+  /* expanded detail row full width */
+  .orbit-events-table tbody tr td[colspan] {
+    width: 100% !important;
+    flex-basis: 100%;
+  }
+}

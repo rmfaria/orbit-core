@@ -17,6 +17,7 @@ export function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs
   const [loading, setLoading]     = React.useState(false);
   const [err, setErr]             = React.useState<string | null>(null);
   const [expandedIdx, setExpandedIdx] = React.useState<number | null>(null);
+  const [search, setSearch]       = React.useState('');
 
   async function run() {
     setLoading(true); setErr(null); setExpandedIdx(null);
@@ -45,6 +46,19 @@ export function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs
     if (d.toDateString() === now.toDateString()) return `${hm}:${sec}`;
     return `${d.getMonth()+1}/${d.getDate()} ${hm}`;
   }
+
+  // Client-side search filter
+  const filtered = React.useMemo(() => {
+    if (!search.trim()) return events;
+    const q = search.toLowerCase();
+    return events.filter(ev =>
+      (ev.title && ev.title.toLowerCase().includes(q)) ||
+      (ev.message && ev.message.toLowerCase().includes(q)) ||
+      (ev.asset_id && ev.asset_id.toLowerCase().includes(q)) ||
+      (ev.namespace && ev.namespace.toLowerCase().includes(q)) ||
+      (ev.kind && ev.kind.toLowerCase().includes(q))
+    );
+  }, [events, search]);
 
   // Auto-run on mount
   React.useEffect(() => { run(); }, []);
@@ -83,19 +97,39 @@ export function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs
             <span style={{ fontSize: 12, color: '#94a3b8' }}>{t('actions')}</span>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingTop: 2 }}>
               <button style={S.btn} onClick={run} disabled={loading}>{loading ? '…' : t('search')}</button>
-              <span style={{ color: '#64748b', fontSize: 12 }}>{events.length} events</span>
+              <span style={{ color: '#64748b', fontSize: 12 }}>{filtered.length}/{events.length} events</span>
             </div>
           </div>
         </div>
         <div style={{ marginTop: 8 }}>
           <TimeRangePicker from={from} to={to} setFrom={setFrom} setTo={setTo} />
         </div>
+        {/* Log search filter */}
+        <div style={{ marginTop: 10, position: 'relative' }}>
+          <input
+            style={{
+              ...S.input,
+              width: '100%',
+              boxSizing: 'border-box' as const,
+              fontSize: 13,
+              padding: '8px 12px 8px 32px',
+              background: 'rgba(4,7,19,0.6)',
+              border: '1px solid rgba(140,160,255,0.15)',
+              borderRadius: 6,
+              color: '#e2e8f0',
+            }}
+            placeholder="Filter logs — search by title, message, asset, namespace, kind…"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setExpandedIdx(null); }}
+          />
+          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#475569', fontSize: 14, pointerEvents: 'none' }}>⌕</span>
+        </div>
         {err && <div style={S.err}>{err}</div>}
       </div>
 
       {/* Table — sticky header, expandable rows, fills remaining viewport height */}
-      <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 370px)', minHeight: 240 }}>
-        <table style={{ ...S.table, tableLayout: 'fixed', minWidth: 580 }}>
+      <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 420px)', minHeight: 240 }}>
+        <table className="orbit-events-table" style={{ ...S.table, tableLayout: 'fixed', minWidth: 580 }}>
           <colgroup>
             <col style={{ width: 88 }} />  {/* timestamp */}
             <col style={{ width: 76 }} />  {/* severity  */}
@@ -111,14 +145,14 @@ export function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs
             </tr>
           </thead>
           <tbody>
-            {events.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ ...S.td, color: '#64748b', textAlign: 'center', padding: 24 }}>
-                  {loading ? t('loading') : t('events_no_data')}
+                  {loading ? t('loading') : search ? 'No matching events' : t('events_no_data')}
                 </td>
               </tr>
             )}
-            {events.map((ev, i) => {
+            {filtered.map((ev, i) => {
               const isExp = expandedIdx === i;
               const hasMsg = !!(ev.message);
               return (
