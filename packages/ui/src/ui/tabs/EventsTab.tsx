@@ -128,7 +128,7 @@ export function EventsTab({ assets, defaultNs }: { assets: AssetOpt[]; defaultNs
       </div>
 
       {/* Table — sticky header, expandable rows, fills remaining viewport height */}
-      <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 420px)', minHeight: 240 }}>
+      <div style={{ ...S.card, padding: 0, overflow: 'auto', maxHeight: 'calc(100vh - 260px)', minHeight: 400 }}>
         <table className="orbit-events-table" style={{ ...S.table, tableLayout: 'fixed', minWidth: 580 }}>
           <colgroup>
             <col style={{ width: 88 }} />  {/* timestamp */}
