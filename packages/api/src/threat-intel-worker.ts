@@ -142,7 +142,10 @@ async function runThreatIntelCorrelation(pool: Pool): Promise<number> {
   }
 
   // 4. Batch lookup: which of these values are known IoCs?
+  //    Use a VALUES join instead of = ANY(large_array) to help the planner
+  //    pick an index scan over a sequential scan on the 150k-row table.
   const valueArray = Array.from(allValues);
+  const valuePlaceholders = valueArray.map((_, i) => `($${i + 1})`).join(',');
   const { rows: matchedIndicators } = await pool.query<{
     id: number;
     type: string;
@@ -152,12 +155,12 @@ async function runThreatIntelCorrelation(pool: Pool): Promise<number> {
     event_info: string | null;
     source_id: string;
   }>(`
-    SELECT id, type, lower(value) AS value, threat_level, tags, event_info, source_id
-    FROM threat_indicators
-    WHERE lower(value) = ANY($1::text[])
-      AND enabled = true
-      AND (expires_at IS NULL OR expires_at > now())
-  `, [valueArray]);
+    SELECT ti.id, ti.type, lower(ti.value) AS value, ti.threat_level, ti.tags, ti.event_info, ti.source_id
+    FROM threat_indicators ti
+    JOIN (VALUES ${valuePlaceholders}) AS v(val) ON lower(ti.value) = v.val
+    WHERE ti.enabled = true
+      AND (ti.expires_at IS NULL OR ti.expires_at > now())
+  `, valueArray);
 
   if (matchedIndicators.length === 0) {
     logger.debug('No IoC matches found (%d values checked against %s indicators)',
