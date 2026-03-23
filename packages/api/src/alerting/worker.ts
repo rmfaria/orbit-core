@@ -8,6 +8,8 @@ const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' }).child({ module: 
 
 const INTERVAL_MS  = 60_000;
 const INIT_DELAY   = 30_000;
+// Re-notify every N minutes while a rule stays in firing state
+const RENOTIFY_MIN = 30;
 
 async function dispatch(
   pool: Pool,
@@ -78,6 +80,23 @@ async function run(pool: Pool): Promise<void> {
         firing  && wasOk  ? 'firing'   :
         !firing && !wasOk ? 'resolved' : null;
 
+      // Check if we should re-notify: rule still firing and last notification
+      // was sent more than RENOTIFY_MIN ago (or last notification failed)
+      let shouldRenotify = false;
+      if (firing && !wasOk && !event && rule.channels?.length) {
+        const { rows: lastNotif } = await pool.query(
+          `SELECT ok, sent_at FROM alert_notifications
+           WHERE rule_id = $1 ORDER BY sent_at DESC LIMIT 1`,
+          [rule.id]
+        );
+        if (lastNotif.length) {
+          const lastSent = new Date(lastNotif[0].sent_at);
+          const minutesAgo = (Date.now() - lastSent.getTime()) / 60_000;
+          // Re-notify if last attempt failed or enough time has passed
+          shouldRenotify = !lastNotif[0].ok || minutesAgo >= RENOTIFY_MIN;
+        }
+      }
+
       // Always update last_value for live display in UI
       if (event) {
         await pool.query(
@@ -94,7 +113,18 @@ async function run(pool: Pool): Promise<void> {
           );
           await dispatch(pool, rule, channels, event, value);
         }
-      } else if (value !== null && value !== rule.last_value) {
+      } else if (shouldRenotify) {
+        // Re-send firing notification (retry failed or periodic reminder)
+        const { rows: channels } = await pool.query(
+          `SELECT * FROM alert_channels WHERE id = ANY($1::text[])`,
+          [rule.channels]
+        );
+        logger.info({ rule: rule.name, reason: 'renotify' }, 'alert re-notification');
+        await dispatch(pool, rule, channels, 'firing', value);
+      }
+
+      // Update last_value even when no state change
+      if (!event && value !== null && value !== rule.last_value) {
         await pool.query(
           `UPDATE alert_rules SET last_value = $1 WHERE id = $2`,
           [value, rule.id]
