@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit Core v1.8.3 — Performance & Reliability</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #040713;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .banner {
+    width: 1200px;
+    height: 628px;
+    background: linear-gradient(135deg, #040713 0%, #0d1020 30%, #0a1a18 55%, #0a0f1e 100%);
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 56px 80px;
+  }
+
+  /* Green glow — top right (performance theme) */
+  .banner::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -60px;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(74, 222, 128, 0.10) 0%, rgba(85, 243, 255, 0.05) 40%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Cyan glow — bottom left */
+  .banner::after {
+    content: '';
+    position: absolute;
+    bottom: -120px;
+    left: -40px;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(85, 243, 255, 0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Grid pattern */
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(85, 243, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(85, 243, 255, 0.025) 1px, transparent 1px);
+    background-size: 44px 44px;
+    pointer-events: none;
+  }
+
+  .content { position: relative; z-index: 1; }
+
+  .version-badge {
+    display: inline-block;
+    background: rgba(74, 222, 128, 0.12);
+    border: 1px solid rgba(74, 222, 128, 0.35);
+    color: #4ade80;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 22px;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: 46px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 14px;
+    letter-spacing: -0.02em;
+  }
+  h1 .white { color: #ffffff; }
+  h1 .accent {
+    background: linear-gradient(135deg, #4ade80 0%, #55f3ff 50%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    font-size: 19px;
+    color: #8892b0;
+    margin-bottom: 34px;
+    line-height: 1.5;
+    max-width: 620px;
+  }
+
+  .features {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+
+  .feature {
+    flex: 1;
+    background: rgba(13, 16, 32, 0.7);
+    border: 1px solid rgba(74, 222, 128, 0.12);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+
+  .feature-icon {
+    font-size: 22px;
+    margin-bottom: 7px;
+  }
+
+  .feature-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #4ade80;
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  .feature-desc {
+    font-size: 11px;
+    color: #7a8198;
+    line-height: 1.45;
+  }
+
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4ade80, #55f3ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 18px;
+    color: #040713;
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+
+  .url {
+    font-size: 16px;
+    color: #55f3ff;
+    font-weight: 600;
+  }
+
+  .tags {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tag {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .tag.perf {
+    background: rgba(74, 222, 128, 0.12);
+    border: 1px solid rgba(74, 222, 128, 0.25);
+    color: #4ade80;
+  }
+  .tag.sec {
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+  }
+  .tag.oss {
+    background: rgba(85, 243, 255, 0.08);
+    border: 1px solid rgba(85, 243, 255, 0.2);
+    color: #55f3ff;
+  }
+
+  /* Dashboard gauge decoration */
+  .gauge-area {
+    position: absolute;
+    right: 55px;
+    top: 55px;
+    z-index: 1;
+    width: 280px;
+    opacity: 0.9;
+  }
+
+  .gauge-card {
+    background: rgba(13, 16, 32, 0.95);
+    border: 1px solid rgba(74, 222, 128, 0.15);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.5), 0 0 60px rgba(74,222,128,0.08);
+  }
+
+  .gauge-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .gauge-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .gauge-badge {
+    background: rgba(74, 222, 128, 0.15);
+    border: 1px solid rgba(74, 222, 128, 0.3);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 9px;
+    font-weight: 800;
+    color: #4ade80;
+  }
+
+  .gauge-big {
+    text-align: center;
+    margin-bottom: 16px;
+  }
+
+  .gauge-value {
+    font-size: 48px;
+    font-weight: 900;
+    color: #4ade80;
+    letter-spacing: -2px;
+    line-height: 1;
+  }
+
+  .gauge-unit {
+    font-size: 14px;
+    color: #64748b;
+    font-weight: 600;
+    margin-left: 4px;
+  }
+
+  .gauge-sublabel {
+    font-size: 10px;
+    color: #475569;
+    margin-top: 4px;
+  }
+
+  .gauge-rows { display: flex; flex-direction: column; gap: 8px; }
+
+  .gauge-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(4, 7, 19, 0.6);
+    border-radius: 8px;
+    border: 1px solid rgba(85, 243, 255, 0.06);
+  }
+
+  .gauge-row-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .gauge-row-icon { font-size: 12px; }
+
+  .gauge-row-text {
+    font-size: 10px;
+    color: #94a3b8;
+    font-weight: 600;
+  }
+
+  .gauge-row-val {
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .gauge-row-val.green { color: #4ade80; }
+  .gauge-row-val.cyan { color: #55f3ff; }
+  .gauge-row-val.amber { color: #fbbf24; }
+
+  .conn-dot {
+    position: absolute;
+    right: 290px;
+    top: 160px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 12px rgba(74,222,128,0.5);
+    z-index: 1;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  .conn-line {
+    position: absolute;
+    right: 298px;
+    top: 164px;
+    width: 50px;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(74,222,128,0.4), rgba(74,222,128,0));
+    z-index: 1;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.7; box-shadow: 0 0 8px rgba(74,222,128,0.4); }
+    50% { opacity: 1; box-shadow: 0 0 18px rgba(74,222,128,0.7); }
+  }
+
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="grid-bg"></div>
+
+  <!-- Gauge decoration -->
+  <div class="gauge-area">
+    <div class="gauge-card">
+      <div class="gauge-header">
+        <span class="gauge-label">PostgreSQL CPU</span>
+        <span class="gauge-badge">OPTIMIZED</span>
+      </div>
+      <div class="gauge-big">
+        <span class="gauge-value">0.06</span><span class="gauge-unit">%</span>
+        <div class="gauge-sublabel">down from 95.4%</div>
+      </div>
+      <div class="gauge-rows">
+        <div class="gauge-row">
+          <div class="gauge-row-left">
+            <span class="gauge-row-icon">&#x1F6E1;</span>
+            <span class="gauge-row-text">Alert Rules</span>
+          </div>
+          <span class="gauge-row-val cyan">12 active</span>
+        </div>
+        <div class="gauge-row">
+          <div class="gauge-row-left">
+            <span class="gauge-row-icon">&#x1F504;</span>
+            <span class="gauge-row-text">Retry on Failure</span>
+          </div>
+          <span class="gauge-row-val green">auto</span>
+        </div>
+        <div class="gauge-row">
+          <div class="gauge-row-left">
+            <span class="gauge-row-icon">&#x1F50D;</span>
+            <span class="gauge-row-text">Event Log Search</span>
+          </div>
+          <span class="gauge-row-val amber">real-time</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="conn-dot"></div>
+  <div class="conn-line"></div>
+
+  <div class="content">
+    <div class="version-badge">v1.8.3 Release</div>
+    <h1>
+      <span class="white">Performance</span> <span class="accent">& Reliability</span><br>
+      <span class="white">Across the Stack</span>
+    </h1>
+    <p class="subtitle">
+      PostgreSQL CPU dropped from 95% to 0.06%. Alerts now retry on failure and remind every 30 min. Events grid is responsive with real-time log search.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">&#x26A1;</div>
+        <div class="feature-title">PG CPU Fix</div>
+        <div class="feature-desc">Autovacuum tuning on partitions + VALUES JOIN in threat-intel worker eliminates 215M-row sequential scans.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F504;</div>
+        <div class="feature-title">Alert Retry</div>
+        <div class="feature-desc">Failed notifications retry on next tick. Firing rules re-notify every 30 min so alerts never go silent again.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F50D;</div>
+        <div class="feature-title">Event Search</div>
+        <div class="feature-desc">Client-side filter across title, message, asset, namespace, and kind. Responsive grid for mobile and tablets.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F6E1;</div>
+        <div class="feature-title">12 Alert Rules</div>
+        <div class="feature-desc">New rules for CPU, disk, memory, packet loss, Nagios absence, and API health. Full coverage out of the box.</div>
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="logo-area">
+        <div class="logo-dot">O</div>
+        <span class="logo-text">Orbit Core</span>
+      </div>
+      <div class="tags">
+        <span class="tag perf">Performance</span>
+        <span class="tag sec">Self-Hosted</span>
+        <span class="tag oss">Apache-2.0</span>
+      </div>
+      <div class="url">orbit-core.org</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
