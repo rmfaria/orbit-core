@@ -33,6 +33,8 @@ ALTER TABLE metric_rollup_5m SET (
 );
 
 -- Optimized index for threat_indicators batch lookup (worker uses lower(value) + enabled filter)
+-- Note: expires_at check removed from predicate because now() is not IMMUTABLE.
+-- The worker already filters by enabled + expires_at in the query WHERE clause.
 CREATE INDEX IF NOT EXISTS idx_threat_indicators_enabled_lower_value
   ON threat_indicators (lower(value))
-  WHERE enabled = true AND (expires_at IS NULL OR expires_at > now());
+  WHERE enabled = true;
