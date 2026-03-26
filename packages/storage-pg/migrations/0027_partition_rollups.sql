@@ -58,17 +58,17 @@ END $$;
 
 CREATE TABLE metric_rollup_5m_default PARTITION OF metric_rollup_5m DEFAULT;
 
--- Copy existing data
+-- Copy existing data then drop old table (frees index names)
 INSERT INTO metric_rollup_5m
   SELECT * FROM metric_rollup_5m_old;
+
+DROP TABLE metric_rollup_5m_old;
 
 -- Recreate indexes on the partitioned table
 CREATE INDEX idx_rollup5_asset_ts ON metric_rollup_5m (asset_id, bucket_ts DESC);
 CREATE INDEX idx_rollup5_ns_metric_ts ON metric_rollup_5m (namespace, metric, bucket_ts DESC);
 CREATE INDEX idx_rollup5_dims_gin ON metric_rollup_5m USING gin (dimensions);
 CREATE INDEX idx_rollup5_asset_ns_metric_ts ON metric_rollup_5m (asset_id, namespace, metric, bucket_ts DESC);
-
-DROP TABLE metric_rollup_5m_old;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- metric_rollup_1h
@@ -118,17 +118,17 @@ END $$;
 
 CREATE TABLE metric_rollup_1h_default PARTITION OF metric_rollup_1h DEFAULT;
 
--- Copy existing data
+-- Copy existing data then drop old table (frees index names)
 INSERT INTO metric_rollup_1h
   SELECT * FROM metric_rollup_1h_old;
+
+DROP TABLE metric_rollup_1h_old;
 
 -- Recreate indexes on the partitioned table
 CREATE INDEX idx_rollup1h_asset_ts ON metric_rollup_1h (asset_id, bucket_ts DESC);
 CREATE INDEX idx_rollup1h_ns_metric_ts ON metric_rollup_1h (namespace, metric, bucket_ts DESC);
 CREATE INDEX idx_rollup1h_dims_gin ON metric_rollup_1h USING gin (dimensions);
 CREATE INDEX idx_rollup1h_asset_ns_metric_ts ON metric_rollup_1h (asset_id, namespace, metric, bucket_ts DESC);
-
-DROP TABLE metric_rollup_1h_old;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Autovacuum tuning for new partitions (same settings as orbit_events)
