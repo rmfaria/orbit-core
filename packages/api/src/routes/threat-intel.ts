@@ -457,6 +457,7 @@ export function threatIntelRouter(pool: Pool | null): Router {
               FILTER (WHERE tm2.matched_value IS NOT NULL) AS ioc_ips
           FROM threat_matches tm2
           JOIN orbit_events e2 ON e2.id = tm2.event_id
+            AND e2.ts >= now() - make_interval(hours => $1)
           WHERE tm2.detected_at >= now() - make_interval(hours => $1)
           GROUP BY e2.asset_id
         ),
