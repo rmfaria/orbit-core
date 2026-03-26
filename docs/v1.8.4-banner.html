@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit Core v1.8.4 — Database Scaling Engine</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #040713;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .banner {
+    width: 1200px;
+    height: 628px;
+    background: linear-gradient(135deg, #040713 0%, #0d1020 30%, #0c0a1e 55%, #0a0f1e 100%);
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 56px 80px;
+  }
+
+  /* Fuchsia glow — top right (scaling theme) */
+  .banner::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -60px;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(232, 121, 249, 0.10) 0%, rgba(85, 243, 255, 0.05) 40%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Cyan glow — bottom left */
+  .banner::after {
+    content: '';
+    position: absolute;
+    bottom: -120px;
+    left: -40px;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(85, 243, 255, 0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Grid pattern */
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232, 121, 249, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232, 121, 249, 0.02) 1px, transparent 1px);
+    background-size: 44px 44px;
+    pointer-events: none;
+  }
+
+  .content { position: relative; z-index: 1; }
+
+  .version-badge {
+    display: inline-block;
+    background: rgba(232, 121, 249, 0.12);
+    border: 1px solid rgba(232, 121, 249, 0.35);
+    color: #e879f9;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 22px;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: 46px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 14px;
+    letter-spacing: -0.02em;
+  }
+  h1 .white { color: #ffffff; }
+  h1 .accent {
+    background: linear-gradient(135deg, #e879f9 0%, #55f3ff 50%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    font-size: 19px;
+    color: #8892b0;
+    margin-bottom: 34px;
+    line-height: 1.5;
+    max-width: 620px;
+  }
+
+  .features {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+
+  .feature {
+    flex: 1;
+    background: rgba(13, 16, 32, 0.7);
+    border: 1px solid rgba(232, 121, 249, 0.12);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+
+  .feature-icon {
+    font-size: 22px;
+    margin-bottom: 7px;
+  }
+
+  .feature-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #e879f9;
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  .feature-desc {
+    font-size: 11px;
+    color: #7a8198;
+    line-height: 1.45;
+  }
+
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #e879f9, #55f3ff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 18px;
+    color: #040713;
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+
+  .url {
+    font-size: 16px;
+    color: #55f3ff;
+    font-weight: 600;
+  }
+
+  .tags {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tag {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .tag.scale {
+    background: rgba(232, 121, 249, 0.12);
+    border: 1px solid rgba(232, 121, 249, 0.25);
+    color: #e879f9;
+  }
+  .tag.sec {
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+  }
+  .tag.oss {
+    background: rgba(85, 243, 255, 0.08);
+    border: 1px solid rgba(85, 243, 255, 0.2);
+    color: #55f3ff;
+  }
+
+  /* Architecture decoration */
+  .arch-area {
+    position: absolute;
+    right: 55px;
+    top: 50px;
+    z-index: 1;
+    width: 280px;
+    opacity: 0.9;
+  }
+
+  .arch-card {
+    background: rgba(13, 16, 32, 0.95);
+    border: 1px solid rgba(232, 121, 249, 0.15);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.5), 0 0 60px rgba(232,121,249,0.08);
+  }
+
+  .arch-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .arch-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .arch-badge {
+    background: rgba(232, 121, 249, 0.15);
+    border: 1px solid rgba(232, 121, 249, 0.3);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 9px;
+    font-weight: 800;
+    color: #e879f9;
+  }
+
+  .pool-diagram {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .pool-box {
+    flex: 1;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .pool-box.api {
+    background: rgba(85, 243, 255, 0.08);
+    border: 1px solid rgba(85, 243, 255, 0.2);
+  }
+  .pool-box.worker {
+    background: rgba(232, 121, 249, 0.08);
+    border: 1px solid rgba(232, 121, 249, 0.2);
+  }
+
+  .pool-name {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 4px;
+  }
+  .pool-box.api .pool-name { color: #55f3ff; }
+  .pool-box.worker .pool-name { color: #e879f9; }
+
+  .pool-val {
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .pool-box.api .pool-val { color: #55f3ff; }
+  .pool-box.worker .pool-val { color: #e879f9; }
+
+  .pool-unit {
+    font-size: 9px;
+    color: #475569;
+    margin-top: 2px;
+  }
+
+  .arch-rows { display: flex; flex-direction: column; gap: 8px; }
+
+  .arch-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(4, 7, 19, 0.6);
+    border-radius: 8px;
+    border: 1px solid rgba(232, 121, 249, 0.06);
+  }
+
+  .arch-row-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .arch-row-icon { font-size: 12px; }
+
+  .arch-row-text {
+    font-size: 10px;
+    color: #94a3b8;
+    font-weight: 600;
+  }
+
+  .arch-row-val {
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .arch-row-val.fuchsia { color: #e879f9; }
+  .arch-row-val.cyan { color: #55f3ff; }
+  .arch-row-val.green { color: #4ade80; }
+  .arch-row-val.amber { color: #fbbf24; }
+
+  .conn-dot {
+    position: absolute;
+    right: 290px;
+    top: 155px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e879f9;
+    box-shadow: 0 0 12px rgba(232,121,249,0.5);
+    z-index: 1;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  .conn-line {
+    position: absolute;
+    right: 298px;
+    top: 159px;
+    width: 50px;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(232,121,249,0.4), rgba(232,121,249,0));
+    z-index: 1;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.7; box-shadow: 0 0 8px rgba(232,121,249,0.4); }
+    50% { opacity: 1; box-shadow: 0 0 18px rgba(232,121,249,0.7); }
+  }
+
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="grid-bg"></div>
+
+  <!-- Architecture decoration -->
+  <div class="arch-area">
+    <div class="arch-card">
+      <div class="arch-header">
+        <span class="arch-label">Connection Pools</span>
+        <span class="arch-badge">SPLIT</span>
+      </div>
+      <div class="pool-diagram">
+        <div class="pool-box api">
+          <div class="pool-name">API</div>
+          <div class="pool-val">35</div>
+          <div class="pool-unit">connections</div>
+        </div>
+        <div class="pool-box worker">
+          <div class="pool-name">Workers</div>
+          <div class="pool-val">15</div>
+          <div class="pool-unit">connections</div>
+        </div>
+      </div>
+      <div class="arch-rows">
+        <div class="arch-row">
+          <div class="arch-row-left">
+            <span class="arch-row-icon">&#x1F4CA;</span>
+            <span class="arch-row-text">Rollup Tables</span>
+          </div>
+          <span class="arch-row-val fuchsia">partitioned</span>
+        </div>
+        <div class="arch-row">
+          <div class="arch-row-left">
+            <span class="arch-row-icon">&#x26A1;</span>
+            <span class="arch-row-text">Catalog Query</span>
+          </div>
+          <span class="arch-row-val green">&lt; 5ms</span>
+        </div>
+        <div class="arch-row">
+          <div class="arch-row-left">
+            <span class="arch-row-icon">&#x1F418;</span>
+            <span class="arch-row-text">PG Memory</span>
+          </div>
+          <span class="arch-row-val cyan">1 GB</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="conn-dot"></div>
+  <div class="conn-line"></div>
+
+  <div class="content">
+    <div class="version-badge">v1.8.4 Release</div>
+    <h1>
+      <span class="white">Database</span> <span class="accent">Scaling Engine</span><br>
+      <span class="white">Phase 1</span>
+    </h1>
+    <p class="subtitle">
+      Split connection pools, partitioned rollup tables, materialized catalog cache, and doubled PostgreSQL resources. The foundation for horizontal scaling.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">&#x1F500;</div>
+        <div class="feature-title">Pool Isolation</div>
+        <div class="feature-desc">API pool (35 conn) and Worker pool (15 conn) are fully separated. Workers can never starve user queries again.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4CA;</div>
+        <div class="feature-title">Partitioned Rollups</div>
+        <div class="feature-desc">metric_rollup_5m and 1h are now monthly-partitioned. INSERT conflict checks hit one month, not 90 days.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x26A1;</div>
+        <div class="feature-title">Catalog Cache</div>
+        <div class="feature-desc">Events catalog is pre-computed every 5 min. Response drops from ~500ms to &lt;5ms. Zero GROUP BY scans on reads.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F418;</div>
+        <div class="feature-title">PG Resources 2x</div>
+        <div class="feature-desc">Container doubled to 1 GB. shared_buffers 384 MB, work_mem 8 MB, effective_cache_size 768 MB. Better hit ratio.</div>
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="logo-area">
+        <div class="logo-dot">O</div>
+        <span class="logo-text">Orbit Core</span>
+      </div>
+      <div class="tags">
+        <span class="tag scale">Scaling</span>
+        <span class="tag sec">Self-Hosted</span>
+        <span class="tag oss">Apache-2.0</span>
+      </div>
+      <div class="url">orbit-core.org</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -13,11 +13,25 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - orbit_pg:/var/lib/postgresql/data
-    shm_size: '256m'
+    shm_size: '512m'
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=384MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "random_page_cost=1.1"
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1024M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d orbit"]
       interval: 10s

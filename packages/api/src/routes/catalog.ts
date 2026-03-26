@@ -94,41 +94,26 @@ export async function catalogEventsHandler(req: Request, res: Response) {
   if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
 
   try {
-    const tsFilter = `WHERE ts > now() - interval '30 days'`;
-    const [nsRes, kindRes, agentRes, sevRes] = await Promise.all([
-      pool.query<{ namespace: string; total: number; last_seen: string | null }>(
-        `SELECT namespace, count(*)::int AS total, max(ts)::text AS last_seen
-         FROM orbit_events ${tsFilter} GROUP BY namespace ORDER BY total DESC LIMIT 30`
-      ),
-      pool.query<{ namespace: string; kind: string }>(
-        `SELECT namespace, kind FROM (
-           SELECT namespace, kind, count(*) AS cnt
-           FROM orbit_events ${tsFilter} GROUP BY namespace, kind ORDER BY cnt DESC LIMIT 200
-         ) t`
-      ),
-      pool.query<{ namespace: string; asset_id: string }>(
-        `SELECT namespace, asset_id FROM (
-           SELECT namespace, asset_id, count(*) AS cnt
-           FROM orbit_events ${tsFilter} GROUP BY namespace, asset_id ORDER BY cnt DESC LIMIT 100
-         ) t`
-      ),
-      pool.query<{ namespace: string; severity: string }>(
-        `SELECT namespace, severity
-         FROM orbit_events ${tsFilter}
-         GROUP BY namespace, severity
-         ORDER BY namespace, count(*) DESC`
-      ),
-    ]);
+    // Read from pre-computed cache (refreshed every 5 min by rollup worker).
+    const r = await pool.query<{
+      namespace: string; total: number; last_seen: string | null;
+      kinds: string[]; agents: string[]; severities: string[];
+    }>(
+      `SELECT namespace, total, last_seen::text, kinds, agents, severities
+       FROM catalog_event_cache
+       ORDER BY total DESC`
+    );
 
-    const nsMap = new Map<string, EventNsCatalog>();
-    for (const row of nsRes.rows) {
-      nsMap.set(row.namespace, { namespace: row.namespace, total: row.total, last_seen: row.last_seen, kinds: [], agents: [], severities: [] });
-    }
-    for (const row of kindRes.rows)  { nsMap.get(row.namespace)?.kinds.push(row.kind); }
-    for (const row of agentRes.rows) { nsMap.get(row.namespace)?.agents.push(row.asset_id); }
-    for (const row of sevRes.rows)   { nsMap.get(row.namespace)?.severities.push(row.severity); }
+    const namespaces: EventNsCatalog[] = r.rows.map(row => ({
+      namespace:  row.namespace,
+      total:      row.total,
+      last_seen:  row.last_seen,
+      kinds:      row.kinds,
+      agents:     row.agents,
+      severities: row.severities,
+    }));
 
-    return res.json({ ok: true, namespaces: Array.from(nsMap.values()) });
+    return res.json({ ok: true, namespaces });
   } catch (err) {
     console.error('[catalog] catalogEventsHandler error:', err);
     return res.status(500).json({ ok: false, error: 'failed to load events catalog' });

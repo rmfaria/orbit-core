@@ -112,9 +112,11 @@ export function systemHandler(pool: Pool | null) {
     } catch { /* statfs not available */ }
 
     // ── DB pool + PostgreSQL stats ────────────────────────────────────────────
-    const db = pool
-      ? { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount, connected: pool.totalCount > 0 }
-      : { total: 0, idle: 0, waiting: 0, connected: false };
+    const poolStats = (p: Pool | null, name: string) => p
+      ? { name, total: p.totalCount, idle: p.idleCount, waiting: p.waitingCount, connected: p.totalCount > 0 }
+      : { name, total: 0, idle: 0, waiting: 0, connected: false };
+    const db = poolStats(pool, 'api');
+    const db_worker = poolStats((globalThis as any).__orbitWorkerPool ?? null, 'worker');
 
     let pg_stats: {
       db_size_mb: number; cache_hit_pct: number; active_connections: number;
@@ -203,6 +205,7 @@ export function systemHandler(pool: Pool | null) {
       network,
       disk,
       db,
+      db_worker,
       pg_stats,
       workers,
       process: {

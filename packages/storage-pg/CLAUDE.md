@@ -11,7 +11,7 @@ migrate.ts        — Migration runner (tracks applied in DB)
 
 ## Conventions
 - Migration files: `NNNN_descriptive_name.sql` (zero-padded 4 digits)
-- Next available number: **0025**
+- Next available number: **0029**
 - Migrations are forward-only (no down migrations)
 - Each migration runs in a transaction
 - Key tables: `orbit_events`, `metric_points`, `orbit_settings`, `connector_specs`, `dashboards`, `alert_rules`, `alert_channels`, `threat_indicators`

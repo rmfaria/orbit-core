@@ -103,6 +103,11 @@ async function rollup1h(pool: Pool): Promise<void> {
   logger.info({ rows: res.rowCount }, 'rollup_1h done');
 }
 
+async function refreshCatalogCache(pool: Pool): Promise<void> {
+  await pool.query('SELECT refresh_catalog_event_cache()');
+  logger.debug('catalog cache refreshed');
+}
+
 async function runSafe(name: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
@@ -127,10 +132,11 @@ async function purgeOldData(pool: Pool): Promise<void> {
 
 export function startRollupWorker(pool: Pool): () => void {
   // Run rollups immediately on start (catches any gap since last restart),
-  // then on their respective intervals.
-  runSafe('rollup_5m', () => rollup5m(pool));
+  // then on their respective intervals.  Catalog cache refreshes after each 5m rollup.
+  const run5m = async () => { await rollup5m(pool); await refreshCatalogCache(pool); };
+  runSafe('rollup_5m', run5m);
 
-  const t5m = setInterval(() => runSafe('rollup_5m', () => rollup5m(pool)), ROLLUP_5M_INTERVAL_MS);
+  const t5m = setInterval(() => runSafe('rollup_5m', run5m), ROLLUP_5M_INTERVAL_MS);
   const t1h = setInterval(() => runSafe('rollup_1h', () => rollup1h(pool)), ROLLUP_1H_INTERVAL_MS);
 
   // Run 1h rollup once at start as well, offset by 30 s to avoid thundering.

@@ -38,7 +38,7 @@ import { startRollupWorker } from './rollup.js';
 import { startCorrelateWorker } from './correlate.js';
 import { startAlertWorker } from './alerting/worker.js';
 import { startTelemetryWorker } from './telemetry/worker.js';
-import { pool } from './db.js';
+import { pool, workerPool } from './db.js';
 import { makeLicenseMiddleware } from './license/middleware.js';
 import { licenseRouter } from './license/routes.js';
 import { authRouter } from './routes/auth.js';
@@ -187,14 +187,17 @@ let stopAlerts:      (() => void) | undefined;
 let stopConnectors:  (() => void) | undefined;
 let stopTelemetry:   (() => void) | undefined;
 let stopThreatIntel: (() => void) | undefined;
-if (pool) {
-  stopRollups     = startRollupWorker(pool);
-  stopCorrelate   = startCorrelateWorker(pool);
-  stopAlerts      = startAlertWorker(pool);
-  stopConnectors  = startConnectorWorker(pool);
-  stopThreatIntel = startThreatIntelWorker(pool);
+// Expose workerPool for /api/v1/system metrics (avoids circular import).
+(globalThis as any).__orbitWorkerPool = workerPool;
+
+if (pool && workerPool) {
+  stopRollups     = startRollupWorker(workerPool);
+  stopCorrelate   = startCorrelateWorker(workerPool);
+  stopAlerts      = startAlertWorker(workerPool);
+  stopConnectors  = startConnectorWorker(workerPool);
+  stopThreatIntel = startThreatIntelWorker(workerPool);
   if (env.ORBIT_TELEMETRY === 'true') {
-    stopTelemetry = startTelemetryWorker(pool);
+    stopTelemetry = startTelemetryWorker(workerPool);
   }
 }
 
