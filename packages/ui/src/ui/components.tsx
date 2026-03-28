@@ -46,46 +46,52 @@ export function FeedRow({ e }: { e: EventRow }) {
   const [open, setOpen] = React.useState(false);
   const src = eventSource(e);
   const sevColor = SEV_COLOR[e.severity] ?? '#60a5fa';
+  const nsColor  = NS_COLOR[src] ?? 'rgba(233,238,255,.55)';
   return (
-    <div className={`orbit-feed-row${open ? ' orbit-feed-row--open' : ''}`}
+    <div className={`feed-row${open ? ' feed-row--open' : ''}`}
       onClick={() => setOpen(x => !x)}
-      style={{ cursor: 'pointer', '--sev-color': sevColor } as React.CSSProperties}
+      style={{ '--sev-color': sevColor, '--ns-color': nsColor } as React.CSSProperties}
     >
+      {/* Main line */}
       <div className="feed-line">
-        <span className="feed-sev-dot" />
-        <NsBadge ns={src} />
+        <span className="feed-sev-indicator" />
+        <span className="feed-ns-tag">{src}</span>
         <span className="feed-title">{e.title}</span>
         <span className="feed-ts">{fmtTs(e.ts)}</span>
-        <span className="feed-chevron">{open ? '▾' : '▸'}</span>
+        <svg className="feed-chevron" viewBox="0 0 16 16" fill="none">
+          <path d={open ? 'M4 6l4 4 4-4' : 'M6 4l4 4-4 4'} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
       </div>
+
+      {/* Drilldown */}
       {open && (
-        <div className="feed-drilldown">
-          <div className="feed-drill-grid">
-            <div className="feed-drill-field">
-              <span className="feed-drill-label">Severity</span>
+        <div className="feed-drill">
+          <div className="feed-drill-cards">
+            <div className="feed-drill-card">
+              <span className="feed-drill-lbl">Severity</span>
               <SevBadge sev={e.severity} />
             </div>
-            <div className="feed-drill-field">
-              <span className="feed-drill-label">Source</span>
+            <div className="feed-drill-card">
+              <span className="feed-drill-lbl">Source</span>
               <NsBadge ns={src} />
             </div>
-            <div className="feed-drill-field">
-              <span className="feed-drill-label">Asset</span>
-              <span className="feed-drill-value">{e.asset_id || '—'}</span>
+            <div className="feed-drill-card">
+              <span className="feed-drill-lbl">Asset</span>
+              <span className="feed-drill-val">{e.asset_id || '—'}</span>
             </div>
-            <div className="feed-drill-field">
-              <span className="feed-drill-label">Kind</span>
-              <span className="feed-drill-value">{e.kind || '—'}</span>
+            <div className="feed-drill-card">
+              <span className="feed-drill-lbl">Kind</span>
+              <span className="feed-drill-val">{e.kind || '—'}</span>
             </div>
-            <div className="feed-drill-field">
-              <span className="feed-drill-label">Timestamp</span>
-              <span className="feed-drill-value">{fmtTs(e.ts)}</span>
+            <div className="feed-drill-card">
+              <span className="feed-drill-lbl">Timestamp</span>
+              <span className="feed-drill-val">{fmtTs(e.ts)}</span>
             </div>
           </div>
           {e.message && (
-            <div className="feed-drill-msg">
-              <span className="feed-drill-label">Detail</span>
-              <pre className="feed-drill-pre">{e.message}</pre>
+            <div className="feed-drill-detail">
+              <span className="feed-drill-lbl">Detail</span>
+              <pre className="feed-drill-code">{e.message}</pre>
             </div>
           )}
         </div>

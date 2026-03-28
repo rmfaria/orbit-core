@@ -261,8 +261,8 @@
 .orbit-feed {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  padding: 6px 12px 12px;
+  gap: 1px;
+  padding: 8px 10px 12px;
   max-height: min(560px, calc(100vh - 260px));
   overflow-y: auto;
 }
@@ -342,33 +342,63 @@
   .orbit-filter-sep { display: none; }
   .orbit-filters-row { gap: 4px; }
 }
-/* Feed row — slim single line with severity accent */
-.orbit-feed-row {
-  border-left: 2px solid var(--sev-color, rgba(140,160,255,.2));
-  border-bottom: 1px solid rgba(140,160,255,.06);
-  transition: background .12s, border-color .12s;
-}
-.orbit-feed-row:last-child { border-bottom: none; }
-.orbit-feed-row:hover { background: rgba(85,243,255,.03); }
-.orbit-feed-row--open {
-  background: rgba(12,18,40,.5);
-  border-left-width: 3px;
-}
+/* ── Feed rows ─────────────────────────────────────────────────────────────── */
 
-/* Collapsed line */
+.feed-row {
+  position: relative;
+  border-radius: 10px;
+  margin: 2px 0;
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s;
+}
+.feed-row::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--sev-color, rgba(140,160,255,.2));
+  opacity: .55;
+  transition: opacity .15s, width .15s;
+}
+.feed-row:hover {
+  background: rgba(140,160,255,.04);
+}
+.feed-row:hover::before { opacity: 1; }
+.feed-row--open {
+  background: rgba(85,243,255,.03);
+  box-shadow: 0 1px 8px rgba(0,0,0,.15);
+  margin: 4px 0;
+}
+.feed-row--open::before { opacity: 1; width: 3px; top: 0; bottom: 0; border-radius: 10px 0 0 10px; }
+
+/* Main line */
 .feed-line {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 5px 10px;
+  padding: 6px 10px 6px 12px;
   font-size: 12px;
-  line-height: 1.3;
+  line-height: 1.35;
 }
-.feed-sev-dot {
-  width: 6px;
-  height: 6px;
+.feed-sev-indicator {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--sev-color, rgba(140,160,255,.3));
+  flex-shrink: 0;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--sev-color) 40%, transparent);
+}
+.feed-ns-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ns-color) 12%, transparent);
+  color: var(--ns-color);
+  white-space: nowrap;
   flex-shrink: 0;
 }
 .feed-title {
@@ -377,76 +407,89 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: rgba(233,238,255,.82);
+  color: rgba(233,238,255,.80);
 }
+.feed-row:hover .feed-title { color: rgba(233,238,255,.95); }
 .feed-ts {
   font-size: 10px;
-  color: rgba(233,238,255,.30);
+  color: rgba(233,238,255,.28);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
 }
 .feed-chevron {
-  font-size: 9px;
-  color: rgba(140,160,255,.35);
+  width: 14px;
+  height: 14px;
+  color: rgba(140,160,255,.30);
   flex-shrink: 0;
-  width: 12px;
-  text-align: center;
+  transition: color .15s, transform .2s;
 }
+.feed-row:hover .feed-chevron { color: rgba(140,160,255,.55); }
+.feed-row--open .feed-chevron { color: rgba(85,243,255,.5); }
 
-/* Drilldown panel */
-.feed-drilldown {
-  padding: 8px 12px 10px 18px;
-  border-top: 1px solid rgba(140,160,255,.08);
-  animation: feed-drill-in .15s ease-out;
+/* ── Drilldown ─────────────────────────────────────────────────────────────── */
+
+.feed-drill {
+  padding: 0 12px 10px 20px;
+  animation: drill-slide .18s ease-out;
 }
-@keyframes feed-drill-in {
-  from { opacity: 0; transform: translateY(-4px); }
+@keyframes drill-slide {
+  from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.feed-drill-grid {
+
+.feed-drill-cards {
   display: flex;
-  gap: 16px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 6px;
+  padding: 6px 0 8px;
 }
-.feed-drill-field {
+.feed-drill-card {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(140,160,255,.04);
+  border: 1px solid rgba(140,160,255,.08);
+  min-width: 80px;
 }
-.feed-drill-label {
+.feed-drill-lbl {
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .08em;
-  color: rgba(233,238,255,.30);
+  color: rgba(233,238,255,.28);
 }
-.feed-drill-value {
+.feed-drill-val {
   font-size: 12px;
   color: rgba(233,238,255,.72);
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  letter-spacing: .01em;
 }
-.feed-drill-msg {
-  margin-top: 6px;
+
+.feed-drill-detail {
+  margin-top: 4px;
 }
-.feed-drill-pre {
+.feed-drill-code {
   margin: 4px 0 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(3,6,18,.6);
-  border: 1px solid rgba(140,160,255,.08);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(3,6,18,.55);
+  border: 1px solid rgba(140,160,255,.07);
   font-size: 11px;
-  line-height: 1.5;
-  color: rgba(233,238,255,.60);
+  line-height: 1.55;
+  color: rgba(233,238,255,.58);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
+  max-height: 220px;
   overflow-y: auto;
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  letter-spacing: .01em;
 }
-.feed-drill-pre::-webkit-scrollbar        { width: 4px; }
-.feed-drill-pre::-webkit-scrollbar-thumb  { background: rgba(140,160,255,.18); border-radius: 999px; }
-.feed-drill-pre::-webkit-scrollbar-track  { background: transparent; }
+.feed-drill-code::-webkit-scrollbar       { width: 4px; }
+.feed-drill-code::-webkit-scrollbar-thumb { background: rgba(140,160,255,.15); border-radius: 99px; }
+.feed-drill-code::-webkit-scrollbar-track { background: transparent; }
 
 /* ── Responsive utility grids ───────────────────────────────────────────────── */
 
@@ -487,10 +530,11 @@
 
 /* Feed: more compact on mobile */
 @media (max-width: 480px) {
-  .orbit-feed { padding: 4px 8px 8px; }
-  .feed-line { padding: 4px 8px; gap: 6px; }
-  .feed-drilldown { padding: 6px 8px 8px 14px; }
-  .feed-drill-grid { gap: 10px; }
+  .orbit-feed { padding: 4px 6px 8px; }
+  .feed-line { padding: 5px 8px 5px 10px; gap: 6px; }
+  .feed-drill { padding: 0 8px 8px 14px; }
+  .feed-drill-cards { gap: 6px; }
+  .feed-drill-card { padding: 5px 8px; min-width: 70px; }
 }
 
 /* Chart height reduction on small screens */
