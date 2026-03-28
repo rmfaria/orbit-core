@@ -45,20 +45,50 @@ export function NsBadge({ ns }: { ns: string }) {
 export function FeedRow({ e }: { e: EventRow }) {
   const [open, setOpen] = React.useState(false);
   const src = eventSource(e);
-  const expandable = (src === 'wazuh' || src === 'fortigate') && !!e.message;
+  const sevColor = SEV_COLOR[e.severity] ?? '#60a5fa';
   return (
-    <div
-      className="orbit-feed-row"
-      onClick={() => expandable && setOpen(x => !x)}
-      style={{ cursor: expandable ? 'pointer' : 'default' }}
+    <div className={`orbit-feed-row${open ? ' orbit-feed-row--open' : ''}`}
+      onClick={() => setOpen(x => !x)}
+      style={{ cursor: 'pointer', '--sev-color': sevColor } as React.CSSProperties}
     >
-      <SevBadge sev={e.severity} />
-      <NsBadge ns={src} />
-      <span className="feed-title">{e.title}</span>
-      <span className="feed-ts">{fmtTs(e.ts)}</span>
-      {expandable && !open && <span className="feed-expand">+</span>}
-      {open && e.message && (
-        <div className="feed-detail">{e.message}</div>
+      <div className="feed-line">
+        <span className="feed-sev-dot" />
+        <NsBadge ns={src} />
+        <span className="feed-title">{e.title}</span>
+        <span className="feed-ts">{fmtTs(e.ts)}</span>
+        <span className="feed-chevron">{open ? '▾' : '▸'}</span>
+      </div>
+      {open && (
+        <div className="feed-drilldown">
+          <div className="feed-drill-grid">
+            <div className="feed-drill-field">
+              <span className="feed-drill-label">Severity</span>
+              <SevBadge sev={e.severity} />
+            </div>
+            <div className="feed-drill-field">
+              <span className="feed-drill-label">Source</span>
+              <NsBadge ns={src} />
+            </div>
+            <div className="feed-drill-field">
+              <span className="feed-drill-label">Asset</span>
+              <span className="feed-drill-value">{e.asset_id || '—'}</span>
+            </div>
+            <div className="feed-drill-field">
+              <span className="feed-drill-label">Kind</span>
+              <span className="feed-drill-value">{e.kind || '—'}</span>
+            </div>
+            <div className="feed-drill-field">
+              <span className="feed-drill-label">Timestamp</span>
+              <span className="feed-drill-value">{fmtTs(e.ts)}</span>
+            </div>
+          </div>
+          {e.message && (
+            <div className="feed-drill-msg">
+              <span className="feed-drill-label">Detail</span>
+              <pre className="feed-drill-pre">{e.message}</pre>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
