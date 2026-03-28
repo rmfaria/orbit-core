@@ -46,7 +46,6 @@ export function FeedRow({ e }: { e: EventRow }) {
   const [open, setOpen] = React.useState(false);
   const src = eventSource(e);
   const expandable = (src === 'wazuh' || src === 'fortigate') && !!e.message;
-  const devname = e.message?.match(/devname="([^"]+)"/)?.[1] ?? null;
   return (
     <div
       className="orbit-feed-row"
@@ -55,28 +54,12 @@ export function FeedRow({ e }: { e: EventRow }) {
     >
       <SevBadge sev={e.severity} />
       <NsBadge ns={src} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <strong style={{ display: 'block' }}>{e.title}</strong>
-        {devname && !open && (
-          <div style={{ fontSize: 12, color: 'rgba(160,180,255,.55)', marginTop: 3 }}>{devname}</div>
-        )}
-        {(!expandable || open) && e.message && (
-          <div style={{
-            fontSize: 12,
-            color: 'rgba(233,238,255,.65)',
-            marginTop: 4,
-            lineHeight: 1.4,
-            wordBreak: 'break-word',
-            whiteSpace: expandable ? 'pre-wrap' : undefined,
-          }}>{e.message}</div>
-        )}
-        <div style={{ fontSize: 11, color: 'rgba(233,238,255,.38)', marginTop: 5, display: 'flex', gap: 10 }}>
-          <span>{fmtTs(e.ts)}</span>
-          {expandable && (
-            <span style={{ color: 'rgba(140,160,255,.5)' }}>{open ? t('events_close') : t('events_see_log')}</span>
-          )}
-        </div>
-      </div>
+      <span className="feed-title">{e.title}</span>
+      <span className="feed-ts">{fmtTs(e.ts)}</span>
+      {expandable && !open && <span className="feed-expand">+</span>}
+      {open && e.message && (
+        <div className="feed-detail">{e.message}</div>
+      )}
     </div>
   );
 }
