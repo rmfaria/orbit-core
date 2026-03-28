@@ -136,6 +136,23 @@
   margin-top: 7px;
 }
 
+/* Slim KPI variant */
+.orbit-kpi-strip--slim { gap: 8px; padding: 0 16px 12px; }
+.orbit-kpi--slim {
+  min-width: 80px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.orbit-kpi--slim .kpi-label { font-size: 9px; white-space: nowrap; }
+.orbit-kpi--slim .kpi-value { font-size: 13px; font-weight: 600; margin-top: 0; }
+.orbit-kpi--slim .kpi-hint  { font-size: 9px; margin-top: 0; display: none; }
+@media (min-width: 769px) {
+  .orbit-kpi--slim .kpi-hint { display: block; }
+}
+
 /* Chart area */
 .orbit-chart-wrap { position: relative; padding: 48px 16px 16px; }
 
@@ -248,6 +265,9 @@
   padding: 10px 16px 16px;
   max-height: min(560px, calc(100vh - 260px));
   overflow-y: auto;
+}
+.orbit-feed--full {
+  max-height: calc(100vh - 220px);
 }
 .orbit-feed-row {
   display: flex;
