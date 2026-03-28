@@ -137,6 +137,7 @@ export type EventsQuery = {
   to: string;
   severities?: Severity[];
   kinds?: string[];
+  search?: string;
   limit?: number;
 };
 

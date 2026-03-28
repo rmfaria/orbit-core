@@ -1,6 +1,6 @@
 import React from 'react';
 import { t } from '../i18n';
-import { S, Tab, AssetOpt, EventRow, NS_COLOR, NS_BG, SEV_COLOR, SEV_BG, apiHeaders, apiGetHeaders, relativeFrom, visibleInterval, eventSource } from '../shared';
+import { S, Tab, AssetOpt, EventRow, NS_COLOR, NS_BG, SEV_COLOR, SEV_BG, apiHeaders, apiGetHeaders, relativeFrom, isoToLocal, visibleInterval, eventSource } from '../shared';
 import { FeedRow } from '../components';
 import { SysData } from './SystemTab';
 
@@ -28,11 +28,16 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
   const [from, setFrom] = React.useState(() => relativeFrom(1));
   const [to, setTo] = React.useState(() => new Date().toISOString());
 
+  const ALL_NS  = ['nagios', 'wazuh', 'fortigate', 'misp', 'n8n', 'otel', 'suricata', 'openclaw'];
+  const ALL_SEV = ['critical', 'high', 'medium', 'low', 'info'] as const;
+
   const [feed, setFeed] = React.useState<EventRow[]>([]);
-  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata', 'openclaw', 'misp']);
-  const [feedSev, setFeedSev] = React.useState<string[]>(['critical', 'high', 'medium', 'low', 'info']);
+  const [feedNs, setFeedNs] = React.useState<string[]>([...ALL_NS]);
+  const [feedSev, setFeedSev] = React.useState<string[]>([...ALL_SEV]);
   const [search, setSearch] = React.useState('');
+  const [searching, setSearching] = React.useState(false);
   const pulseAbortRef = React.useRef<AbortController | null>(null);
+  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     fetch('api/v1/health', { headers: apiGetHeaders() })
@@ -41,12 +46,14 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
       .catch((e) => setErr(String(e)));
   }, []);
 
-  async function runPulse() {
+  async function runPulse(opts?: { searchTerm?: string }) {
     pulseAbortRef.current?.abort();
     const ctrl = new AbortController();
     pulseAbortRef.current = ctrl;
     const signal = ctrl.signal;
 
+    const term = opts?.searchTerm ?? search;
+    if (term) setSearching(true);
     setErr(null);
     try {
       const q = (query: object) => ({
@@ -56,10 +63,17 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
         signal,
       });
 
-      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n', 'suricata', 'misp'];
+      const activeNs = feedNs.length ? feedNs : ALL_NS;
+      const activeSev = feedSev.length < ALL_SEV.length ? feedSev : undefined;
+      const limit = term ? 200 : 40;
+
       const evResults = await Promise.all(
-        evNsList.map(ns =>
-          fetch('api/v1/query', q({ kind: 'events', namespace: ns, from, to, limit: 40 }))
+        activeNs.map(ns =>
+          fetch('api/v1/query', q({
+            kind: 'events', namespace: ns, from, to, limit,
+            ...(activeSev ? { severities: activeSev } : {}),
+            ...(term ? { search: term } : {}),
+          }))
             .then(r => r.json()).then(j => (j.result?.rows ?? []) as EventRow[])
         ),
       );
@@ -69,13 +83,16 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
       const mergedEvents = evResults.flat().sort((a, b) =>
         new Date(b.ts).getTime() - new Date(a.ts).getTime()
       );
-      setFeed(mergedEvents.slice(0, 200));
+      setFeed(mergedEvents.slice(0, 500));
     } catch (e: any) {
       if (e.name === 'AbortError') return;
       setErr(String(e));
+    } finally {
+      setSearching(false);
     }
   }
 
+  // Initial load + auto-refresh
   React.useEffect(() => {
     runPulse();
     const stop = visibleInterval(() => {
@@ -85,10 +102,21 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Re-fetch when filters change
   React.useEffect(() => {
     runPulse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to]);
+  }, [from, to, feedNs, feedSev]);
+
+  // Debounced search — re-fetches from API
+  React.useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      runPulse({ searchTerm: search });
+    }, 400);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const dbColor  = health?.db === 'ok' ? '#4ade80' : health?.db === 'error' ? '#f87171' : '#fbbf24';
   const apiColor = health?.ok ? '#4ade80' : '#fbbf24';
@@ -130,12 +158,18 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div className="orbit-pill">
-              <span className="orbit-badge">range</span>
-              {[['60m',1],['6h',6],['24h',24]].map(([lbl, h]) => (
-                <button key={lbl} className="orbit-badge" style={{ cursor: 'pointer', background: 'transparent' }}
-                  onClick={() => { setFrom(relativeFrom(Number(h))); setTo(new Date().toISOString()); }}>{lbl}</button>
-              ))}
+            <div className="orbit-pill" style={{ padding: '3px 4px', gap: 2 }}>
+              {[['1h',1],['6h',6],['24h',24],['7d',168]].map(([lbl, h]) => {
+                const active = from === relativeFrom(Number(h));
+                return (
+                  <button key={lbl} className="orbit-badge" style={{
+                    cursor: 'pointer',
+                    background: active ? 'rgba(85,243,255,.15)' : 'transparent',
+                    color: active ? '#55f3ff' : undefined,
+                  }}
+                    onClick={() => { setFrom(relativeFrom(Number(h))); setTo(new Date().toISOString()); }}>{lbl}</button>
+                );
+              })}
             </div>
             <div className="orbit-pill">
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: apiColor, display: 'inline-block' }} />
@@ -168,7 +202,7 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
                   <div className="orbit-panel-title">Live Feed</div>
                   <div className="orbit-panel-meta">consolidated events by source</div>
                 </div>
-                <span className="orbit-badge" style={{ marginLeft: 4 }}>stream</span>
+                <span className="orbit-badge" style={{ marginLeft: 4 }}>{searching ? 'searching…' : 'stream'}</span>
               </div>
 
               {/* Investigate search */}
@@ -177,84 +211,69 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Investigate — search events by title, message, asset..."
+                  placeholder="Investigate — deep search across all events..."
                   className="orbit-investigate"
                 />
               </div>
 
-              {/* Source filters */}
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, color: 'rgba(233,238,255,.35)', textTransform: 'uppercase', letterSpacing: '.08em', marginRight: 2 }}>source</span>
-                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'misp', 'n8n', 'otel', 'suricata', 'openclaw'])].sort().map(ns => {
+              {/* Filters: source + severity on same line */}
+              <div className="orbit-filters-row">
+                <span className="orbit-filter-label">source</span>
+                {ALL_NS.map(ns => {
                   const active = feedNs.includes(ns);
                   const color  = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
                   const bg     = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';
                   return (
-                    <button key={ns} onClick={() =>
+                    <button key={ns} className="orbit-filter-pill" onClick={() =>
                       setFeedNs(prev => prev.includes(ns) ? prev.filter(x => x !== ns) : [...prev, ns])
                     } style={{
-                      padding: '4px 11px',
-                      borderRadius: 999,
-                      fontSize: 11,
-                      fontWeight: 700,
                       border: `1px solid ${active ? color : 'rgba(140,160,255,.2)'}`,
                       background: active ? bg : 'transparent',
                       color: active ? color : 'rgba(233,238,255,.35)',
-                      cursor: 'pointer',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      transition: 'all .15s',
                     }}>{ns}</button>
                   );
                 })}
-              </div>
-
-              {/* Severity filters */}
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, color: 'rgba(233,238,255,.35)', textTransform: 'uppercase', letterSpacing: '.08em', marginRight: 2 }}>severity</span>
-                {['critical', 'high', 'medium', 'low', 'info'].map(sev => {
+                <span className="orbit-filter-sep" />
+                <span className="orbit-filter-label">severity</span>
+                {ALL_SEV.map(sev => {
                   const active = feedSev.includes(sev);
                   const color  = SEV_COLOR[sev] ?? 'rgba(233,238,255,.55)';
                   const bg     = SEV_BG[sev]    ?? 'rgba(30,40,80,.5)';
                   return (
-                    <button key={sev} onClick={() =>
+                    <button key={sev} className="orbit-filter-pill" onClick={() =>
                       setFeedSev(prev => prev.includes(sev) ? prev.filter(x => x !== sev) : [...prev, sev])
                     } style={{
-                      padding: '4px 11px',
-                      borderRadius: 999,
-                      fontSize: 11,
-                      fontWeight: 700,
                       border: `1px solid ${active ? color : 'rgba(140,160,255,.2)'}`,
                       background: active ? bg : 'transparent',
                       color: active ? color : 'rgba(233,238,255,.35)',
-                      cursor: 'pointer',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      transition: 'all .15s',
                     }}>{sev}</button>
                   );
                 })}
+                <span className="orbit-filter-sep" />
+                <span className="orbit-filter-label">from</span>
+                <input
+                  type="datetime-local"
+                  className="orbit-filter-datetime"
+                  value={isoToLocal(from)}
+                  onChange={e => { if (e.target.value) setFrom(new Date(e.target.value).toISOString()); }}
+                />
+                <span className="orbit-filter-label">to</span>
+                <input
+                  type="datetime-local"
+                  className="orbit-filter-datetime"
+                  value={isoToLocal(to)}
+                  onChange={e => { if (e.target.value) setTo(new Date(e.target.value).toISOString()); }}
+                />
               </div>
             </div>
             <div className="orbit-feed orbit-feed--full">
               {(() => {
-                const q = search.toLowerCase().trim();
-                const visible = feed.filter(e => {
-                  if (!feedNs.includes(eventSource(e))) return false;
-                  if (!feedSev.includes(e.severity ?? 'info')) return false;
-                  if (q && !(
-                    (e.title ?? '').toLowerCase().includes(q) ||
-                    (e.message ?? '').toLowerCase().includes(q) ||
-                    (e.asset_id ?? '').toLowerCase().includes(q)
-                  )) return false;
-                  return true;
-                });
-                if (visible.length === 0) return (
+                if (feed.length === 0) return (
                   <div style={{ color: 'rgba(233,238,255,.45)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
-                    {q ? 'No results for "' + search + '"' : t('home_no_events')}
+                    {search ? `No results for "${search}"` : t('home_no_events')}
                   </div>
                 );
-                return visible.slice(0, 50).map((e, idx) => (
+                return feed.slice(0, 100).map((e, idx) => (
                   <FeedRow key={idx} e={e} />
                 ));
               })()}

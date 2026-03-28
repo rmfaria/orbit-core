@@ -59,6 +59,7 @@ const EventsQuerySchema = z.object({
   to: z.string().min(1),
   severities: z.array(z.enum(['info', 'low', 'medium', 'high', 'critical'])).optional(),
   kinds: z.array(z.string().min(1)).optional(),
+  search: z.string().max(200).optional(),
   limit: z.number().int().positive().max(10000).optional()
 });
 
@@ -595,6 +596,10 @@ export async function queryHandler(req: Request, res: Response<QueryResponse>) {
     if (q.kinds?.length) {
       params.push(q.kinds);
       where.push(`kind = any($${params.length}::text[])`);
+    }
+    if (q.search) {
+      params.push(`%${q.search}%`);
+      where.push(`(title ilike $${params.length} or message ilike $${params.length} or asset_id ilike $${params.length})`);
     }
 
     params.push(limit);
