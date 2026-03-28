@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit Core v1.8.5 — Live Feed Redesign & Investigate</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #040713;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .banner {
+    width: 1200px;
+    height: 628px;
+    background: linear-gradient(135deg, #040713 0%, #0d1020 30%, #070a1e 55%, #0a0f1e 100%);
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 56px 80px;
+  }
+
+  /* Cyan glow — top right */
+  .banner::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -60px;
+    width: 520px;
+    height: 520px;
+    background: radial-gradient(circle, rgba(85, 243, 255, 0.09) 0%, rgba(74, 222, 128, 0.04) 40%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Green glow — bottom left */
+  .banner::after {
+    content: '';
+    position: absolute;
+    bottom: -120px;
+    left: -40px;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(74, 222, 128, 0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Grid pattern */
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(85, 243, 255, 0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(85, 243, 255, 0.015) 1px, transparent 1px);
+    background-size: 44px 44px;
+    pointer-events: none;
+  }
+
+  .content { position: relative; z-index: 1; }
+
+  .version-badge {
+    display: inline-block;
+    background: rgba(85, 243, 255, 0.10);
+    border: 1px solid rgba(85, 243, 255, 0.30);
+    color: #55f3ff;
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 22px;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: 46px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 14px;
+    letter-spacing: -0.02em;
+  }
+  h1 .white { color: #ffffff; }
+  h1 .accent {
+    background: linear-gradient(135deg, #55f3ff 0%, #4ade80 50%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    font-size: 19px;
+    color: #8892b0;
+    margin-bottom: 34px;
+    line-height: 1.5;
+    max-width: 620px;
+  }
+
+  .features {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+
+  .feature {
+    flex: 1;
+    background: rgba(13, 16, 32, 0.7);
+    border: 1px solid rgba(85, 243, 255, 0.10);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+
+  .feature-icon {
+    font-size: 22px;
+    margin-bottom: 7px;
+  }
+
+  .feature-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #55f3ff;
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  .feature-desc {
+    font-size: 11px;
+    color: #7a8198;
+    line-height: 1.45;
+  }
+
+  .bottom-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #55f3ff, #4ade80);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 18px;
+    color: #040713;
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+
+  .url {
+    font-size: 16px;
+    color: #55f3ff;
+    font-weight: 600;
+  }
+
+  .tags {
+    display: flex;
+    gap: 8px;
+  }
+
+  .tag {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .tag.feed {
+    background: rgba(85, 243, 255, 0.10);
+    border: 1px solid rgba(85, 243, 255, 0.22);
+    color: #55f3ff;
+  }
+  .tag.sec {
+    background: rgba(251, 191, 36, 0.08);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+  }
+  .tag.oss {
+    background: rgba(74, 222, 128, 0.08);
+    border: 1px solid rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+  }
+
+  /* Feed decoration */
+  .feed-area {
+    position: absolute;
+    right: 50px;
+    top: 44px;
+    z-index: 1;
+    width: 300px;
+    opacity: 0.92;
+  }
+
+  .feed-card {
+    background: rgba(13, 16, 32, 0.95);
+    border: 1px solid rgba(85, 243, 255, 0.12);
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.5), 0 0 60px rgba(85,243,255,0.06);
+  }
+
+  .feed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .feed-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .feed-live {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #4ade80;
+  }
+
+  .feed-live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 8px rgba(74,222,128,0.6);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  .feed-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    border-left: 2px solid var(--row-color, #55f3ff);
+    background: rgba(4, 7, 19, 0.5);
+  }
+
+  .feed-row-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--row-color, #55f3ff);
+    box-shadow: 0 0 4px color-mix(in srgb, var(--row-color) 50%, transparent);
+    flex-shrink: 0;
+  }
+
+  .feed-row-ns {
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--row-color) 12%, transparent);
+    color: var(--row-color);
+    flex-shrink: 0;
+  }
+
+  .feed-row-title {
+    font-size: 10px;
+    color: rgba(233,238,255,.7);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .feed-row-ts {
+    font-size: 8px;
+    color: rgba(233,238,255,.25);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Drilldown preview */
+  .feed-drill-preview {
+    margin-top: 4px;
+    padding: 10px;
+    border-radius: 10px;
+    background: rgba(85,243,255,0.02);
+    border: 1px solid rgba(85,243,255,0.08);
+  }
+
+  .drill-meta {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .drill-chip {
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 8px;
+    font-weight: 600;
+    background: rgba(140,160,255,0.06);
+    border: 1px solid rgba(140,160,255,0.08);
+  }
+
+  .drill-chip-label {
+    color: rgba(233,238,255,0.25);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+
+  .drill-chip-val {
+    color: rgba(233,238,255,0.65);
+    margin-left: 4px;
+    font-family: 'SF Mono', monospace;
+  }
+
+  .drill-code {
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(3,6,18,0.7);
+    border: 1px solid rgba(140,160,255,0.06);
+    font-size: 8px;
+    color: rgba(233,238,255,0.4);
+    font-family: 'SF Mono', monospace;
+    line-height: 1.5;
+  }
+
+  /* Search bar preview */
+  .search-bar {
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(3,6,18,0.5);
+    border: 1px solid rgba(85,243,255,0.15);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .search-icon {
+    font-size: 12px;
+    color: rgba(85,243,255,0.4);
+  }
+
+  .search-text {
+    font-size: 10px;
+    color: rgba(233,238,255,0.3);
+    font-style: italic;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 0.7; box-shadow: 0 0 6px rgba(74,222,128,0.4); }
+    50% { opacity: 1; box-shadow: 0 0 14px rgba(74,222,128,0.7); }
+  }
+
+</style>
+</head>
+<body>
+<div class="banner">
+  <div class="grid-bg"></div>
+
+  <!-- Feed decoration -->
+  <div class="feed-area">
+    <div class="feed-card">
+      <div class="feed-header">
+        <span class="feed-label">Live Feed</span>
+        <span class="feed-live"><span class="feed-live-dot"></span> stream</span>
+      </div>
+
+      <div class="search-bar">
+        <span class="search-icon">&#x1F50D;</span>
+        <span class="search-text">Investigate — deep search across all events...</span>
+      </div>
+
+      <div class="feed-row" style="--row-color: #f87171;">
+        <span class="feed-row-dot"></span>
+        <span class="feed-row-ns">wazuh</span>
+        <span class="feed-row-title">Brute force attempt on SSH (5 failures)</span>
+        <span class="feed-row-ts">03:42</span>
+      </div>
+      <div class="feed-row" style="--row-color: #fb923c;">
+        <span class="feed-row-dot"></span>
+        <span class="feed-row-ns">suricata</span>
+        <span class="feed-row-title">ET SCAN Potential VNC scan port 5900</span>
+        <span class="feed-row-ts">03:41</span>
+      </div>
+      <div class="feed-row" style="--row-color: #fbbf24;">
+        <span class="feed-row-dot"></span>
+        <span class="feed-row-ns">nagios</span>
+        <span class="feed-row-title">Disk_Queue_sda WARNING - aqu=4.2</span>
+        <span class="feed-row-ts">03:40</span>
+      </div>
+
+      <!-- Drilldown preview on the nagios row -->
+      <div class="feed-drill-preview">
+        <div class="drill-meta">
+          <div class="drill-chip">
+            <span class="drill-chip-label">asset</span>
+            <span class="drill-chip-val">host:portn8n</span>
+          </div>
+          <div class="drill-chip">
+            <span class="drill-chip-label">kind</span>
+            <span class="drill-chip-val">service_check</span>
+          </div>
+        </div>
+        <div class="drill-code">aqu-sz=4.21 %util=78.3 svctm=2.1 await=12.8</div>
+      </div>
+
+      <div class="feed-row" style="--row-color: #60a5fa;">
+        <span class="feed-row-dot"></span>
+        <span class="feed-row-ns">misp</span>
+        <span class="feed-row-title">IoC match: 185.220.101.x (Tor exit node)</span>
+        <span class="feed-row-ts">03:38</span>
+      </div>
+      <div class="feed-row" style="--row-color: #a3e635;">
+        <span class="feed-row-dot"></span>
+        <span class="feed-row-ns">n8n</span>
+        <span class="feed-row-title">Workflow "daily-report" completed OK</span>
+        <span class="feed-row-ts">03:35</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="version-badge">v1.8.5 Release</div>
+    <h1>
+      <span class="white">Live Feed</span> <span class="accent">Redesign</span><br>
+      <span class="white">& Investigate</span>
+    </h1>
+    <p class="subtitle">
+      Full-width event feed with deep search, severity filtering, drilldown details, and CI/CD pipelines. A new home for your security operations.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">&#x1F50D;</div>
+        <div class="feature-title">Investigate</div>
+        <div class="feature-desc">Deep search across all events via API. Debounced queries on title, message, and asset with instant results.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F4CB;</div>
+        <div class="feature-title">Drilldown</div>
+        <div class="feature-desc">Click any event to expand metadata cards and full log detail in a polished slide-in panel.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x1F3AF;</div>
+        <div class="feature-title">Smart Filters</div>
+        <div class="feature-desc">Instant client-side filtering by source and severity. Date/time pickers and range presets for precise queries.</div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">&#x2699;&#xFE0F;</div>
+        <div class="feature-title">CI/CD</div>
+        <div class="feature-desc">GitHub Actions CI (lint, typecheck, test, build) and CD (auto-deploy to prod via SSH on merge).</div>
+      </div>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="logo-area">
+        <div class="logo-dot">O</div>
+        <span class="logo-text">Orbit Core</span>
+      </div>
+      <div class="tags">
+        <span class="tag feed">Live Feed</span>
+        <span class="tag sec">Self-Hosted</span>
+        <span class="tag oss">Apache-2.0</span>
+      </div>
+      <div class="url">orbit-core.org</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
