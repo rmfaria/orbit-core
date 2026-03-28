@@ -4,7 +4,7 @@ import { S, Tab, AssetOpt, EventRow, NS_COLOR, NS_BG, SEV_COLOR, SEV_BG, apiHead
 import { FeedRow } from '../components';
 import { SysData } from './SystemTab';
 
-export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Tab) => void }) {
+export function HomeTab({ assets }: { assets: AssetOpt[]; setTab: (t: Tab) => void }) {
   const [health, setHealth] = React.useState<any>(null);
   const [err, setErr] = React.useState<string | null>(null);
   const [sysData, setSysData] = React.useState<SysData | null>(null);
@@ -160,39 +160,6 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
       <div className="orbit-stars" />
 
       <div className="orbit-panel">
-        {/* Header: brand + status + range */}
-        <div className="orbit-panel-head">
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 20, letterSpacing: '.4px' }}>◎ Orbit Core</div>
-            <div style={{ color: 'rgba(233,238,255,.65)', fontSize: 12, marginTop: 4 }}>
-              {t('home_subtitle')}<a href="#" onClick={(e) => { e.preventDefault(); setTab('src-nagios'); }} style={{ color: '#55f3ff', textDecoration: 'none' }}>{t('home_subtitle_link')}</a>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div className="orbit-pill" style={{ padding: '3px 4px', gap: 2 }}>
-              {[['1h',1],['6h',6],['24h',24],['7d',168]].map(([lbl, h]) => {
-                const active = from === relativeFrom(Number(h));
-                return (
-                  <button key={lbl} className="orbit-badge" style={{
-                    cursor: 'pointer',
-                    background: active ? 'rgba(85,243,255,.15)' : 'transparent',
-                    color: active ? '#55f3ff' : undefined,
-                  }}
-                    onClick={() => { setFrom(relativeFrom(Number(h))); setTo(new Date().toISOString()); }}>{lbl}</button>
-                );
-              })}
-            </div>
-            <div className="orbit-pill">
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: apiColor, display: 'inline-block' }} />
-              <span>{health ? (health.ok ? 'live' : 'degraded') : 'connecting…'}</span>
-            </div>
-            <div className="orbit-pill">
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: dbColor, display: 'inline-block' }} />
-              <span>db: {health?.db ?? '…'}</span>
-            </div>
-          </div>
-        </div>
-
         {/* Slim KPI strip */}
         <div className="orbit-kpi-strip orbit-kpi-strip--slim">
           {kpis.map((k) => (

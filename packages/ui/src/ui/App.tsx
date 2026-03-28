@@ -186,7 +186,7 @@ function TopBar({ tab, setTab, onLocaleChange }: { tab: Tab; setTab: (t: Tab) =>
       <div style={S.topbar}>
         {/* Logo */}
         <span style={{ fontSize: 15, fontWeight: 800, color: '#55f3ff', letterSpacing: '0.2px', marginRight: 8, whiteSpace: 'nowrap' }}>
-          ◎ Orbit
+          ◎ Orbit Core
         </span>
 
         {/* Divider */}
