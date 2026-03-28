@@ -146,9 +146,9 @@
   align-items: center;
   gap: 8px;
 }
-.orbit-kpi--slim .kpi-label { font-size: 9px; white-space: nowrap; }
-.orbit-kpi--slim .kpi-value { font-size: 13px; font-weight: 600; margin-top: 0; }
-.orbit-kpi--slim .kpi-hint  { font-size: 9px; margin-top: 0; display: none; }
+.orbit-kpi--slim .kpi-label { font-size: 10px; white-space: nowrap; }
+.orbit-kpi--slim .kpi-value { font-size: 15px; font-weight: 600; margin-top: 0; }
+.orbit-kpi--slim .kpi-hint  { font-size: 10px; margin-top: 0; display: none; }
 @media (min-width: 769px) {
   .orbit-kpi--slim .kpi-hint { display: block; }
 }
@@ -267,7 +267,28 @@
   overflow-y: auto;
 }
 .orbit-feed--full {
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - 340px);
+}
+
+/* Investigate search box */
+.orbit-investigate {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid rgba(140,160,255,.18);
+  border-radius: 12px;
+  background: rgba(3,6,18,.45);
+  color: rgba(233,238,255,.85);
+  font-size: 13px;
+  letter-spacing: .02em;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.orbit-investigate::placeholder {
+  color: rgba(233,238,255,.30);
+}
+.orbit-investigate:focus {
+  border-color: rgba(85,243,255,.40);
+  box-shadow: 0 0 0 2px rgba(85,243,255,.08);
 }
 .orbit-feed-row {
   display: flex;

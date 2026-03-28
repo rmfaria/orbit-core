@@ -1,6 +1,6 @@
 import React from 'react';
 import { t } from '../i18n';
-import { S, Tab, AssetOpt, EventRow, NS_COLOR, NS_BG, apiHeaders, apiGetHeaders, relativeFrom, visibleInterval, eventSource } from '../shared';
+import { S, Tab, AssetOpt, EventRow, NS_COLOR, NS_BG, SEV_COLOR, SEV_BG, apiHeaders, apiGetHeaders, relativeFrom, visibleInterval, eventSource } from '../shared';
 import { FeedRow } from '../components';
 import { SysData } from './SystemTab';
 
@@ -29,7 +29,9 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
   const [to, setTo] = React.useState(() => new Date().toISOString());
 
   const [feed, setFeed] = React.useState<EventRow[]>([]);
-  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata', 'openclaw']);
+  const [feedNs, setFeedNs] = React.useState<string[]>(['nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata', 'openclaw', 'misp']);
+  const [feedSev, setFeedSev] = React.useState<string[]>(['critical', 'high', 'medium', 'low', 'info']);
+  const [search, setSearch] = React.useState('');
   const pulseAbortRef = React.useRef<AbortController | null>(null);
 
   React.useEffect(() => {
@@ -54,7 +56,7 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
         signal,
       });
 
-      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n', 'suricata'];
+      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n', 'suricata', 'misp'];
       const evResults = await Promise.all(
         evNsList.map(ns =>
           fetch('api/v1/query', q({ kind: 'events', namespace: ns, from, to, limit: 40 }))
@@ -160,13 +162,30 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
         {/* Full-width Live Feed */}
         <div style={{ padding: '0 16px 16px' }}>
           <div className="orbit-panel" style={{ margin: 0 }}>
-            <div className="orbit-panel-head">
-              <div>
-                <div className="orbit-panel-title">Live Feed</div>
-                <div className="orbit-panel-meta">consolidated events by source</div>
+            <div className="orbit-panel-head" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                  <div className="orbit-panel-title">Live Feed</div>
+                  <div className="orbit-panel-meta">consolidated events by source</div>
+                </div>
+                <span className="orbit-badge" style={{ marginLeft: 4 }}>stream</span>
               </div>
+
+              {/* Investigate search */}
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Investigate — search events by title, message, asset..."
+                  className="orbit-investigate"
+                />
+              </div>
+
+              {/* Source filters */}
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'n8n', 'otel', 'suricata', 'openclaw'])].sort().map(ns => {
+                <span style={{ fontSize: 10, color: 'rgba(233,238,255,.35)', textTransform: 'uppercase', letterSpacing: '.08em', marginRight: 2 }}>source</span>
+                {[...new Set([...feed.map(e => eventSource(e)), 'nagios', 'wazuh', 'fortigate', 'misp', 'n8n', 'otel', 'suricata', 'openclaw'])].sort().map(ns => {
                   const active = feedNs.includes(ns);
                   const color  = NS_COLOR[ns] ?? 'rgba(233,238,255,.55)';
                   const bg     = NS_BG[ns]    ?? 'rgba(30,40,80,.5)';
@@ -188,15 +207,51 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
                     }}>{ns}</button>
                   );
                 })}
-                <span className="orbit-badge" style={{ marginLeft: 4 }}>stream</span>
+              </div>
+
+              {/* Severity filters */}
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 10, color: 'rgba(233,238,255,.35)', textTransform: 'uppercase', letterSpacing: '.08em', marginRight: 2 }}>severity</span>
+                {['critical', 'high', 'medium', 'low', 'info'].map(sev => {
+                  const active = feedSev.includes(sev);
+                  const color  = SEV_COLOR[sev] ?? 'rgba(233,238,255,.55)';
+                  const bg     = SEV_BG[sev]    ?? 'rgba(30,40,80,.5)';
+                  return (
+                    <button key={sev} onClick={() =>
+                      setFeedSev(prev => prev.includes(sev) ? prev.filter(x => x !== sev) : [...prev, sev])
+                    } style={{
+                      padding: '4px 11px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      border: `1px solid ${active ? color : 'rgba(140,160,255,.2)'}`,
+                      background: active ? bg : 'transparent',
+                      color: active ? color : 'rgba(233,238,255,.35)',
+                      cursor: 'pointer',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      transition: 'all .15s',
+                    }}>{sev}</button>
+                  );
+                })}
               </div>
             </div>
             <div className="orbit-feed orbit-feed--full">
               {(() => {
-                const visible = feed.filter(e => feedNs.includes(eventSource(e)));
+                const q = search.toLowerCase().trim();
+                const visible = feed.filter(e => {
+                  if (!feedNs.includes(eventSource(e))) return false;
+                  if (!feedSev.includes(e.severity ?? 'info')) return false;
+                  if (q && !(
+                    (e.title ?? '').toLowerCase().includes(q) ||
+                    (e.message ?? '').toLowerCase().includes(q) ||
+                    (e.asset_id ?? '').toLowerCase().includes(q)
+                  )) return false;
+                  return true;
+                });
                 if (visible.length === 0) return (
                   <div style={{ color: 'rgba(233,238,255,.45)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
-                    {t('home_no_events')}
+                    {q ? 'No results for "' + search + '"' : t('home_no_events')}
                   </div>
                 );
                 return visible.slice(0, 50).map((e, idx) => (
