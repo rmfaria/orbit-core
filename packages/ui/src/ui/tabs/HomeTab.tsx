@@ -38,6 +38,8 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
   const [searching, setSearching] = React.useState(false);
   const pulseAbortRef = React.useRef<AbortController | null>(null);
   const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRef = React.useRef(search);
+  searchRef.current = search;
 
   React.useEffect(() => {
     fetch('api/v1/health', { headers: apiGetHeaders() })
@@ -46,14 +48,16 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
       .catch((e) => setErr(String(e)));
   }, []);
 
-  async function runPulse(opts?: { searchTerm?: string }) {
+  // Fetch events from API — only filters by search + date range.
+  // Namespace and severity are filtered client-side for instant response.
+  const runPulse = React.useCallback(async (fromISO: string, toISO: string, term?: string) => {
     pulseAbortRef.current?.abort();
     const ctrl = new AbortController();
     pulseAbortRef.current = ctrl;
     const signal = ctrl.signal;
 
-    const term = opts?.searchTerm ?? search;
-    if (term) setSearching(true);
+    const searchTerm = term ?? searchRef.current;
+    if (searchTerm) setSearching(true);
     setErr(null);
     try {
       const q = (query: object) => ({
@@ -63,16 +67,14 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
         signal,
       });
 
-      const activeNs = feedNs.length ? feedNs : ALL_NS;
-      const activeSev = feedSev.length < ALL_SEV.length ? feedSev : undefined;
-      const limit = term ? 200 : 40;
+      const limit = searchTerm ? 200 : 40;
+      const evNsList = ['nagios', 'wazuh', 'otel', 'n8n', 'suricata', 'misp'];
 
       const evResults = await Promise.all(
-        activeNs.map(ns =>
+        evNsList.map(ns =>
           fetch('api/v1/query', q({
-            kind: 'events', namespace: ns, from, to, limit,
-            ...(activeSev ? { severities: activeSev } : {}),
-            ...(term ? { search: term } : {}),
+            kind: 'events', namespace: ns, from: fromISO, to: toISO, limit,
+            ...(searchTerm ? { search: searchTerm } : {}),
           }))
             .then(r => r.json()).then(j => (j.result?.rows ?? []) as EventRow[])
         ),
@@ -90,11 +92,11 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
     } finally {
       setSearching(false);
     }
-  }
+  }, []);
 
   // Initial load + auto-refresh
   React.useEffect(() => {
-    runPulse();
+    runPulse(from, to);
     const stop = visibleInterval(() => {
       setTo(new Date().toISOString());
     }, 30_000);
@@ -102,21 +104,30 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-fetch when filters change
+  // Re-fetch when date range changes
   React.useEffect(() => {
-    runPulse();
+    runPulse(from, to);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, feedNs, feedSev]);
+  }, [from, to]);
 
-  // Debounced search — re-fetches from API
+  // Debounced search — deep API search
   React.useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
-      runPulse({ searchTerm: search });
+      runPulse(from, to, search);
     }, 400);
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
+
+  // Client-side filtered view (instant)
+  const visibleFeed = React.useMemo(() =>
+    feed.filter(e =>
+      feedNs.includes(eventSource(e)) &&
+      feedSev.includes(e.severity ?? 'info')
+    ),
+    [feed, feedNs, feedSev]
+  );
 
   const dbColor  = health?.db === 'ok' ? '#4ade80' : health?.db === 'error' ? '#f87171' : '#fbbf24';
   const apiColor = health?.ok ? '#4ade80' : '#fbbf24';
@@ -268,12 +279,12 @@ export function HomeTab({ assets, setTab }: { assets: AssetOpt[]; setTab: (t: Ta
             </div>
             <div className="orbit-feed orbit-feed--full">
               {(() => {
-                if (feed.length === 0) return (
+                if (visibleFeed.length === 0) return (
                   <div style={{ color: 'rgba(233,238,255,.45)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
                     {search ? `No results for "${search}"` : t('home_no_events')}
                   </div>
                 );
-                return feed.slice(0, 100).map((e, idx) => (
+                return visibleFeed.slice(0, 100).map((e, idx) => (
                   <FeedRow key={idx} e={e} />
                 ));
               })()}
