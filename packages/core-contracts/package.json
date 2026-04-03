@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo 'lint:todo'",
+    "lint": "eslint src/",
     "test": "echo 'test:todo'"
   },
   "dependencies": {

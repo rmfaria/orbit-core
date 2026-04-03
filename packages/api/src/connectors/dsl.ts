@@ -11,16 +11,16 @@
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface FieldMapping {
-  path?:      string;
-  value?:     unknown;
+  path?: string;
+  value?: unknown;
   transform?: string;
-  default?:   unknown;
+  default?: unknown;
 }
 
 export interface ConnectorSpec {
-  type:        'metric' | 'event';
+  type: "metric" | "event";
   items_path?: string;
-  mappings:    Record<string, FieldMapping>;
+  mappings: Record<string, FieldMapping>;
 }
 
 // ── Path resolver ─────────────────────────────────────────────────────────────
@@ -30,12 +30,12 @@ export interface ConnectorSpec {
  * Supports: "data.items", "$.host.name", "results[0].value"
  */
 export function getPath(obj: unknown, path: string): unknown {
-  const clean = path.replace(/^\$\.?/, '');
+  const clean = path.replace(/^\$\.?/, "");
   if (!clean) return obj;
 
   const tokens: string[] = [];
-  for (const segment of clean.split('.')) {
-    const m = segment.match(/^([^\[]+)(\[(\d+)\])?$/);
+  for (const segment of clean.split(".")) {
+    const m = segment.match(/^([^[]+)(\[(\d+)\])?$/);
     if (m) {
       tokens.push(m[1]);
       if (m[3] !== undefined) tokens.push(m[3]);
@@ -46,7 +46,7 @@ export function getPath(obj: unknown, path: string): unknown {
 
   let cur: unknown = obj;
   for (const token of tokens) {
-    if (cur == null || typeof cur !== 'object') return undefined;
+    if (cur == null || typeof cur !== "object") return undefined;
     if (Array.isArray(cur)) {
       const idx = parseInt(token, 10);
       if (isNaN(idx)) return undefined;
@@ -61,31 +61,48 @@ export function getPath(obj: unknown, path: string): unknown {
 // ── Transforms ────────────────────────────────────────────────────────────────
 
 const SEVERITY_MAP: Record<string, string> = {
-  '0': 'info', '1': 'low', '2': 'medium', '3': 'high', '4': 'critical',
-  low: 'low', medium: 'medium', high: 'high', critical: 'critical',
-  info: 'info', warning: 'medium', warn: 'medium', error: 'high',
-  alert: 'high', emergency: 'critical',
+  "0": "info",
+  "1": "low",
+  "2": "medium",
+  "3": "high",
+  "4": "critical",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  critical: "critical",
+  info: "info",
+  warning: "medium",
+  warn: "medium",
+  error: "high",
+  alert: "high",
+  emergency: "critical",
 };
 
 export function applyTransform(value: unknown, transform: string): unknown {
   if (value == null) return value;
   switch (transform) {
-    case 'number':   return Number(value);
-    case 'string':   return String(value);
-    case 'boolean':  return Boolean(value);
-    case 'round':    return Math.round(Number(value));
-    case 'abs':      return Math.abs(Number(value));
-    case 'iso8601': {
-      if (typeof value === 'number') {
+    case "number":
+      return Number(value);
+    case "string":
+      return String(value);
+    case "boolean":
+      return Boolean(value);
+    case "round":
+      return Math.round(Number(value));
+    case "abs":
+      return Math.abs(Number(value));
+    case "iso8601": {
+      if (typeof value === "number") {
         return new Date(value < 1e12 ? value * 1000 : value).toISOString();
       }
       return new Date(String(value)).toISOString();
     }
-    case 'severity_map': {
+    case "severity_map": {
       const key = String(value).toLowerCase();
-      return SEVERITY_MAP[key] ?? 'medium';
+      return SEVERITY_MAP[key] ?? "medium";
     }
-    default: return value;
+    default:
+      return value;
   }
 }
 
@@ -93,25 +110,31 @@ export function applyTransform(value: unknown, transform: string): unknown {
 
 export function resolveField(item: unknown, mapping: FieldMapping): unknown {
   if (mapping.value !== undefined) return mapping.value;
-  const raw = mapping.path !== undefined ? getPath(item, mapping.path) : undefined;
+  const raw =
+    mapping.path !== undefined ? getPath(item, mapping.path) : undefined;
   const val = raw !== undefined ? raw : mapping.default;
-  return (val !== undefined && mapping.transform) ? applyTransform(val, mapping.transform) : val;
+  return val !== undefined && mapping.transform
+    ? applyTransform(val, mapping.transform)
+    : val;
 }
 
 // ── Apply spec ────────────────────────────────────────────────────────────────
 
-export function applySpec(payload: unknown, spec: ConnectorSpec): Record<string, unknown>[] {
+export function applySpec(
+  payload: unknown,
+  spec: ConnectorSpec,
+): Record<string, unknown>[] {
   let items: unknown[];
   if (spec.items_path) {
     const found = getPath(payload, spec.items_path);
-    items = Array.isArray(found) ? found : (found != null ? [found] : []);
+    items = Array.isArray(found) ? found : found != null ? [found] : [];
   } else if (Array.isArray(payload)) {
     items = payload;
   } else {
     items = [payload];
   }
 
-  return items.map(item => {
+  return items.map((item) => {
     const result: Record<string, unknown> = {};
     for (const [field, mapping] of Object.entries(spec.mappings)) {
       const v = resolveField(item, mapping);

@@ -101,6 +101,9 @@ def _os_session() -> requests.Session:
     if not OS_VERIFY_TLS:
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    retry = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.mount("http://",  HTTPAdapter(max_retries=retry))
     return s
 
 
@@ -123,13 +126,18 @@ def load_state() -> dict:
 
 
 def save_state(st: dict):
-    os.makedirs(os.path.dirname(os.path.abspath(STATE_PATH)), exist_ok=True)
-    with open(STATE_PATH, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
+    import tempfile
+    path = os.path.abspath(STATE_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
             json.dump(st, f)
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+        os.rename(tmp, path)
+    except BaseException:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
 
 
 # ── alert → orbit event ───────────────────────────────────────────────────────

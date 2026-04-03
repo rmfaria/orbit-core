@@ -100,13 +100,19 @@ def load_state() -> dict:
 
 
 def save_state(state: dict):
-    """Save state to JSON file."""
-    path = Path(STATE_PATH)
+    """Save state to JSON file (atomic write-temp → rename)."""
+    import tempfile
+    path = Path(STATE_PATH).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        json.dump(state, f)
-        fcntl.flock(f, fcntl.LOCK_UN)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f)
+        os.rename(tmp, str(path))
+    except BaseException:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
 
 
 # ── MISP client ─────────────────────────────────────────────────────────────

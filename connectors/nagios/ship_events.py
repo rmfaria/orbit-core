@@ -4,9 +4,11 @@
 # Created by Rodrigo Menchio <rodrigomenchio@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-import os, json, fcntl
+import os, json, fcntl, tempfile
 from datetime import datetime, timezone
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 SPOOL      = os.environ.get("NAGIOS_HARD_EVENTS_JSONL", "/var/log/nagios4/neb-hard-events.jsonl")
 STATE_PATH = os.environ.get("STATE_PATH", "/var/lib/orbit-core/nagios-events.state.json")
@@ -72,13 +74,17 @@ def load_state():
 
 
 def save_state(st):
-    os.makedirs(os.path.dirname(os.path.abspath(STATE_PATH)), exist_ok=True)
-    with open(STATE_PATH, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
+    path = os.path.abspath(STATE_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
             json.dump(st, f)
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+        os.rename(tmp, path)
+    except BaseException:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
 
 
 def read_new_lines(path, offset):
@@ -160,6 +166,9 @@ def main():
         basic = _load_basic_auth()
         if basic:
             s.auth = basic
+    retry = Retry(total=3, backoff_factor=0.5, status_forcelist=[502, 503, 504])
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.mount("http://",  HTTPAdapter(max_retries=retry))
 
     for i in range(0, len(events), BATCH_SIZE):
         batch = events[i : i + BATCH_SIZE]

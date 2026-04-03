@@ -5,18 +5,88 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Request, Response } from 'express';
-import { z } from 'zod';
-import type { IngestEventsRequest, IngestMetricsRequest } from '@orbit/core-contracts';
-import { pool } from '../db.js';
-import { ensureAssets, logRun } from '../connectors/ingest.js';
-import { recordEvents } from '../eps-tracker.js';
+import type { Request, Response } from "express";
+import { z } from "zod";
+import type {
+  IngestEventsRequest,
+  IngestMetricsRequest,
+} from "@orbit/core-contracts";
+import { pool } from "../db.js";
+import { ensureAssets, logRun } from "../connectors/ingest.js";
+import { recordEvents } from "../eps-tracker.js";
 
-const ISO8601_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
-const isoTs = z.string().regex(ISO8601_RE, 'ts must be ISO 8601 with timezone (e.g. 2024-01-01T00:00:00Z)');
+const ISO8601_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const isoTs = z
+  .string()
+  .regex(
+    ISO8601_RE,
+    "ts must be ISO 8601 with timezone (e.g. 2024-01-01T00:00:00Z)",
+  );
 
 // Helper: accept null from JSON and coerce to undefined for TS compat.
-const nullToUndef = <T>(s: z.ZodType<T>) => s.nullable().transform(v => v ?? undefined).optional();
+const nullToUndef = <T>(s: z.ZodType<T>) =>
+  s
+    .nullable()
+    .transform((v) => v ?? undefined)
+    .optional();
+
+const MAX_JSONB_SIZE = 4096; // 4 KB
+
+function checkJsonbSize(
+  val: Record<string, unknown> | undefined,
+  field: string,
+) {
+  if (!val) return val;
+  const len = JSON.stringify(val).length;
+  if (len > MAX_JSONB_SIZE)
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path: [field],
+        message: `${field} exceeds ${MAX_JSONB_SIZE} bytes (got ${len})`,
+      },
+    ]);
+  return val;
+}
+
+function checkJsonbDepth(obj: unknown, depth = 0): unknown {
+  if (depth > 3)
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path: ["attributes"],
+        message: "object exceeds max nesting depth of 3",
+      },
+    ]);
+  if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+    for (const v of Object.values(obj)) checkJsonbDepth(v, depth + 1);
+  }
+  if (Array.isArray(obj)) {
+    for (const v of obj) checkJsonbDepth(v, depth + 1);
+  }
+  return obj;
+}
+
+const boundedJsonb = nullToUndef(
+  z
+    .record(z.any())
+    .transform((v) => {
+      checkJsonbDepth(v);
+      return v;
+    })
+    .transform((v) => {
+      checkJsonbSize(v, "attributes");
+      return v;
+    }),
+);
+
+const boundedDimensions = nullToUndef(
+  z.record(z.string()).transform((v) => {
+    checkJsonbSize(v as Record<string, unknown>, "dimensions");
+    return v;
+  }),
+);
 
 const MetricPointSchema = z.object({
   ts: isoTs,
@@ -25,7 +95,7 @@ const MetricPointSchema = z.object({
   metric: z.string().min(1),
   value: z.number(),
   unit: nullToUndef(z.string()),
-  dimensions: nullToUndef(z.record(z.string()))
+  dimensions: boundedDimensions,
 });
 
 const EventSchema = z.object({
@@ -33,31 +103,37 @@ const EventSchema = z.object({
   asset_id: z.string().min(1),
   namespace: z.string().min(1),
   kind: z.string().min(1),
-  severity: z.enum(['info','low','medium','high','critical']),
+  severity: z.enum(["info", "low", "medium", "high", "critical"]),
   title: z.string().min(1),
   message: nullToUndef(z.string()),
   fingerprint: nullToUndef(z.string()),
-  attributes: nullToUndef(z.record(z.any()))
+  attributes: boundedJsonb,
 });
 
 const IngestMetricsSchema = z.object({
-  metrics: z.array(MetricPointSchema).max(5000)
+  metrics: z.array(MetricPointSchema).max(5000),
 });
 
 const IngestEventsSchema = z.object({
-  events: z.array(EventSchema).max(5000)
+  events: z.array(EventSchema).max(5000),
 });
 
 export async function ingestMetricsHandler(req: Request, res: Response) {
   const startedAt = new Date();
   const body: IngestMetricsRequest = IngestMetricsSchema.parse(req.body);
-  if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
+  if (!pool)
+    return res
+      .status(500)
+      .json({ ok: false, error: "DATABASE_URL not configured" });
 
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
-    await ensureAssets(client, body.metrics.map(m => m.asset_id));
+    await ensureAssets(
+      client,
+      body.metrics.map((m) => m.asset_id),
+    );
 
     if (body.metrics.length) {
       await client.query(
@@ -65,34 +141,37 @@ export async function ingestMetricsHandler(req: Request, res: Response) {
          SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::jsonb[])
            AS t(ts, asset_id, namespace, metric, value, unit, dimensions)`,
         [
-          body.metrics.map(m => m.ts),
-          body.metrics.map(m => m.asset_id),
-          body.metrics.map(m => m.namespace),
-          body.metrics.map(m => m.metric),
-          body.metrics.map(m => m.value),
-          body.metrics.map(m => m.unit ?? null),
-          body.metrics.map(m => JSON.stringify(m.dimensions ?? {})),
-        ]
+          body.metrics.map((m) => m.ts),
+          body.metrics.map((m) => m.asset_id),
+          body.metrics.map((m) => m.namespace),
+          body.metrics.map((m) => m.metric),
+          body.metrics.map((m) => m.value),
+          body.metrics.map((m) => m.unit ?? null),
+          body.metrics.map((m) => JSON.stringify(m.dimensions ?? {})),
+        ],
       );
     }
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
   }
 
   // Record connector run when X-Source-Id header is present (best-effort, outside tx)
-  const sourceId = req.headers['x-source-id'] as string | undefined;
+  const sourceId = req.headers["x-source-id"] as string | undefined;
   if (sourceId && pool) {
-    const rawSize = req.headers['content-length'] ? parseInt(req.headers['content-length'] as string, 10) : 0;
+    const rawSize = req.headers["content-length"]
+      ? parseInt(req.headers["content-length"] as string, 10)
+      : 0;
     await logRun(pool, sourceId, startedAt, body.metrics.length, rawSize, null);
   }
 
   // Infer source from namespace if no X-Source-Id header
-  const inferredSource = sourceId ?? inferSource(body.metrics.map(m => m.namespace));
+  const inferredSource =
+    sourceId ?? inferSource(body.metrics.map((m) => m.namespace));
   recordEvents(inferredSource, body.metrics.length);
 
   res.json({ ok: true, inserted: body.metrics.length });
@@ -100,12 +179,16 @@ export async function ingestMetricsHandler(req: Request, res: Response) {
 
 /** Infer source label from the most common namespace in the batch */
 function inferSource(namespaces: string[]): string {
-  if (!namespaces.length) return 'unknown';
+  if (!namespaces.length) return "unknown";
   const counts: Record<string, number> = {};
   for (const ns of namespaces) counts[ns] = (counts[ns] ?? 0) + 1;
-  let best = 'unknown'; let max = 0;
+  let best = "unknown";
+  let max = 0;
   for (const [ns, c] of Object.entries(counts)) {
-    if (c > max) { max = c; best = ns; }
+    if (c > max) {
+      max = c;
+      best = ns;
+    }
   }
   return best;
 }
@@ -113,7 +196,10 @@ function inferSource(namespaces: string[]): string {
 export async function ingestEventsHandler(req: Request, res: Response) {
   const startedAt = new Date();
   const body: IngestEventsRequest = IngestEventsSchema.parse(req.body);
-  if (!pool) return res.status(500).json({ ok: false, error: 'DATABASE_URL not configured' });
+  if (!pool)
+    return res
+      .status(500)
+      .json({ ok: false, error: "DATABASE_URL not configured" });
 
   // Deduplicate by fingerprint within the batch (keep last = latest ts).
   // ON CONFLICT DO UPDATE fails if the same fingerprint appears twice in one INSERT.
@@ -122,7 +208,10 @@ export async function ingestEventsHandler(req: Request, res: Response) {
   for (let i = body.events.length - 1; i >= 0; i--) {
     const ev = body.events[i];
     if (ev.fingerprint) {
-      if (!fpSeen.has(ev.fingerprint)) { fpSeen.add(ev.fingerprint); events.push(ev); }
+      if (!fpSeen.has(ev.fingerprint)) {
+        fpSeen.add(ev.fingerprint);
+        events.push(ev);
+      }
     } else {
       events.push(ev);
     }
@@ -130,9 +219,12 @@ export async function ingestEventsHandler(req: Request, res: Response) {
 
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
-    await ensureAssets(client, events.map(e => e.asset_id));
+    await ensureAssets(
+      client,
+      events.map((e) => e.asset_id),
+    );
 
     if (events.length) {
       await client.query(
@@ -147,35 +239,38 @@ export async function ingestEventsHandler(req: Request, res: Response) {
            attributes  = excluded.attributes,
            ingested_at = now()`,
         [
-          events.map(e => e.ts),
-          events.map(e => e.asset_id),
-          events.map(e => e.namespace),
-          events.map(e => e.kind),
-          events.map(e => e.severity),
-          events.map(e => e.title),
-          events.map(e => e.message ?? null),
-          events.map(e => e.fingerprint ?? null),
-          events.map(e => JSON.stringify(e.attributes ?? {})),
-        ]
+          events.map((e) => e.ts),
+          events.map((e) => e.asset_id),
+          events.map((e) => e.namespace),
+          events.map((e) => e.kind),
+          events.map((e) => e.severity),
+          events.map((e) => e.title),
+          events.map((e) => e.message ?? null),
+          events.map((e) => e.fingerprint ?? null),
+          events.map((e) => JSON.stringify(e.attributes ?? {})),
+        ],
       );
     }
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
   }
 
   // Record connector run when X-Source-Id header is present (best-effort, outside tx)
-  const sourceId = req.headers['x-source-id'] as string | undefined;
+  const sourceId = req.headers["x-source-id"] as string | undefined;
   if (sourceId && pool) {
-    const rawSize = req.headers['content-length'] ? parseInt(req.headers['content-length'] as string, 10) : 0;
+    const rawSize = req.headers["content-length"]
+      ? parseInt(req.headers["content-length"] as string, 10)
+      : 0;
     await logRun(pool, sourceId, startedAt, events.length, rawSize, null);
   }
 
-  const inferredSource = sourceId ?? inferSource(events.map(e => e.namespace));
+  const inferredSource =
+    sourceId ?? inferSource(events.map((e) => e.namespace));
   recordEvents(inferredSource, events.length);
 
   res.json({ ok: true, inserted: body.events.length });
