@@ -2,7 +2,7 @@
   "name": "orbit-core",
   "private": true,
   "type": "module",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=22"

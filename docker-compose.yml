@@ -3,17 +3,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 services:
-
   # ── PostgreSQL ────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB:       orbit
-      POSTGRES_USER:     postgres
+      POSTGRES_DB: orbit
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - orbit_pg:/var/lib/postgresql/data
-    shm_size: '512m'
+    shm_size: "512m"
     command:
       - "postgres"
       - "-c"
@@ -58,16 +57,17 @@ services:
       context: .
       target: api
     environment:
-      DATABASE_URL:  postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/orbit
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/orbit
       ORBIT_API_KEY: ${ORBIT_API_KEY:-}
       ORBIT_WEBHOOK_ALLOWLIST: ${ORBIT_WEBHOOK_ALLOWLIST:-}
-      PORT:          3000
-      NODE_ENV:      production
-      LOG_LEVEL:     ${LOG_LEVEL:-info}
+      PORT: 3000
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       migrate:
         condition: service_completed_successfully
     deploy:
+      replicas: ${API_REPLICAS:-2}
       resources:
         limits:
           memory: 512M

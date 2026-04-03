@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.8.6] - 2026-04-03
+
+### Added
+
+- **ESLint + pre-commit hooks**: flat config with typescript-eslint across all packages; husky pre-commit runs lint-staged (eslint --fix + prettier)
+- **Unit tests for @orbit/engine**: 5 tests covering `compileQuery()` for SQL and OrbitQL queries
+- **Unit tests for @orbit/core-contracts**: 15 tests covering dashboard Zod schemas (WidgetKind, Layout, WidgetSpec, DashboardSpec)
+- **Integration tests**: testcontainers + PostgreSQL for end-to-end ingest/query validation (auto-skipped when Docker unavailable)
+- **Metrics dedup**: new migration `0029_metrics_dedup.sql` adds unique index on (ts, asset_id, namespace, metric, dimensions); ingest uses ON CONFLICT DO UPDATE (last write wins)
+- **API replicas**: docker-compose.yml supports `API_REPLICAS` env var (default: 2)
+
+### Changed
+
+- **PG pool**: API connection pool increased from 35 to 50 (`packages/api/src/db.ts`)
+- **JSONB validation**: ingest now enforces max nesting depth (3) and max size (4KB) on `attributes` and `dimensions` fields
+- **Connector resilience**: urllib3.Retry (3x with backoff) added to all 9 Python shippers; atomic state files (write-temp + os.rename) in all 7 stateful shippers; retry added to OpenSearch client
+
+### Security
+
+- **Non-root container**: Dockerfile api and migrate stages now run as `appuser` (uid 1001) instead of root
+
+### Fixed
+
+- **Test infrastructure**: vitest excludes `dist/` directory; fixed mock headers and case-sensitive SQL assertions in ingest tests
+- **Lint errors**: fixed `no-useless-escape` in dsl.ts and parsePerfdata.ts
+
+---
+
 ## [1.8.2] - 2026-03-22
 
 ### Added

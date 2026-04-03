@@ -139,7 +139,10 @@ export async function ingestMetricsHandler(req: Request, res: Response) {
       await client.query(
         `INSERT INTO metric_points(ts, asset_id, namespace, metric, value, unit, dimensions)
          SELECT * FROM unnest($1::timestamptz[], $2::text[], $3::text[], $4::text[], $5::float8[], $6::text[], $7::jsonb[])
-           AS t(ts, asset_id, namespace, metric, value, unit, dimensions)`,
+           AS t(ts, asset_id, namespace, metric, value, unit, dimensions)
+         ON CONFLICT (ts, asset_id, namespace, metric, dimensions) DO UPDATE SET
+           value = excluded.value,
+           unit  = excluded.unit`,
         [
           body.metrics.map((m) => m.ts),
           body.metrics.map((m) => m.asset_id),

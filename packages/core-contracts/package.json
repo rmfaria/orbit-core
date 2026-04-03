@@ -1,6 +1,6 @@
 {
   "name": "@orbit/core-contracts",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
@@ -15,9 +15,12 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src/",
-    "test": "echo 'test:todo'"
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
   }
 }
