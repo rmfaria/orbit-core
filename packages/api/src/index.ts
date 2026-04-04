@@ -5,74 +5,99 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import express, { type Request, type Response, type NextFunction, type RequestHandler } from 'express';
-import cors from 'cors';
-import pino from 'pino';
-import { pinoHttp } from 'pino-http';
-import { ZodError } from 'zod';
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import { randomUUID } from 'crypto';
-import { isPrivateUrl } from './ssrf-guard.js';
+import express, {
+  type Request,
+  type Response,
+  type NextFunction,
+  type RequestHandler,
+} from "express";
+import cors from "cors";
+import pino from "pino";
+import { pinoHttp } from "pino-http";
+import { ZodError } from "zod";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { randomUUID } from "crypto";
+import { isPrivateUrl } from "./ssrf-guard.js";
 
-import { loadEnv } from './env.js';
-import { makeAuthMiddleware } from './auth.js';
-import { healthHandler } from './routes/health.js';
-import { queryHandler } from './routes/query.js';
-import { ingestEventsHandler, ingestMetricsHandler } from './routes/ingest.js';
-import { catalogAssetsHandler, catalogMetricsHandler, catalogDimensionsHandler, catalogEventsHandler } from './routes/catalog.js';
-import { metricsHandler, metricsMiddleware } from './metrics.js';
-import { metricsPromHandler } from './metrics_prom.js';
-import { dashboardsRouter } from './routes/dashboards.js';
-import { smartDashboardsRouter } from './routes/smart-dashboards.js';
-import { aiRouter } from './routes/ai.js';
-import { alertsRouter } from './routes/alerts.js';
-import { correlationsHandler, correlationsSummaryHandler } from './routes/correlations.js';
-import { connectorsRouter } from './routes/connectors.js';
-import { systemHandler } from './routes/system.js';
-import { otlpRouter } from './routes/otlp.js';
-import { wazuhRouter } from './routes/wazuh.js';
-import { threatIntelRouter } from './routes/threat-intel.js';
-import { startThreatIntelWorker } from './threat-intel-worker.js';
-import { startConnectorWorker } from './connectors/worker.js';
-import { startRollupWorker } from './rollup.js';
-import { startCorrelateWorker } from './correlate.js';
-import { startAlertWorker } from './alerting/worker.js';
-import { startTelemetryWorker } from './telemetry/worker.js';
-import { pool, workerPool } from './db.js';
-import { makeLicenseMiddleware } from './license/middleware.js';
-import { licenseRouter } from './license/routes.js';
-import { authRouter } from './routes/auth.js';
+import { loadEnv } from "./env.js";
+import { makeAuthMiddleware } from "./auth.js";
+import { healthHandler } from "./routes/health.js";
+import { queryHandler } from "./routes/query.js";
+import { ingestEventsHandler, ingestMetricsHandler } from "./routes/ingest.js";
+import {
+  catalogAssetsHandler,
+  catalogMetricsHandler,
+  catalogDimensionsHandler,
+  catalogEventsHandler,
+} from "./routes/catalog.js";
+import { metricsHandler, metricsMiddleware } from "./metrics.js";
+import { metricsPromHandler } from "./metrics_prom.js";
+import { dashboardsRouter } from "./routes/dashboards.js";
+import { smartDashboardsRouter } from "./routes/smart-dashboards.js";
+import { aiRouter } from "./routes/ai.js";
+import { alertsRouter } from "./routes/alerts.js";
+import {
+  correlationsHandler,
+  correlationsSummaryHandler,
+} from "./routes/correlations.js";
+import { connectorsRouter } from "./routes/connectors.js";
+import { systemHandler } from "./routes/system.js";
+import { otlpRouter } from "./routes/otlp.js";
+import { wazuhRouter } from "./routes/wazuh.js";
+import { threatIntelRouter } from "./routes/threat-intel.js";
+import { startThreatIntelWorker } from "./threat-intel-worker.js";
+import { startConnectorWorker } from "./connectors/worker.js";
+import { startRollupWorker } from "./rollup.js";
+import { startCorrelateWorker } from "./correlate.js";
+import { startAlertWorker } from "./alerting/worker.js";
+import { startTelemetryWorker } from "./telemetry/worker.js";
+import { pool, workerPool } from "./db.js";
+import { makeLicenseMiddleware } from "./license/middleware.js";
+import { licenseRouter } from "./license/routes.js";
+import { authRouter } from "./routes/auth.js";
 
 // Wrap async Express handlers so their rejected promises reach the error handler.
-function a(fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler {
+function a(
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
+): RequestHandler {
   return (req, res, next) => fn(req, res, next).catch(next);
 }
 
 const env = loadEnv();
-const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
 
 const app = express();
 // CORS: only allow explicitly listed origins. If ORBIT_CORS_ORIGINS is unset, no
 // Access-Control-Allow-Origin header is sent (same-origin only — secure default).
-const allowedOrigins = (process.env.ORBIT_CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-app.use(cors(allowedOrigins.length ? { origin: allowedOrigins, credentials: true } : { origin: false }));
-app.use(express.json({ limit: '5mb' }));
+const allowedOrigins = (process.env.ORBIT_CORS_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(
+  cors(
+    allowedOrigins.length
+      ? { origin: allowedOrigins, credentials: true }
+      : { origin: false },
+  ),
+);
+app.use(express.json({ limit: "5mb" }));
 app.use(pinoHttp({ logger }));
 app.use(metricsMiddleware);
 
 // Attach a unique request ID for log correlation.
 app.use((req, _res, next) => {
-  req.headers['x-request-id'] ??= randomUUID();
+  req.headers["x-request-id"] ??= randomUUID();
   next();
 });
 
-// Health is always public — used by load-balancers and readiness probes.
-app.get('/api/v1/health', a(healthHandler));
+// Health and metrics are always public — used by load-balancers, Prometheus, and readiness probes.
+app.get("/api/v1/health", a(healthHandler));
+app.get("/metrics", metricsPromHandler);
 
 // License and auth endpoints are public — required before auth for first-run setup.
 if (pool) {
-  app.use('/api/v1', licenseRouter(pool));
-  app.use('/api/v1', authRouter(pool));
+  app.use("/api/v1", licenseRouter(pool));
+  app.use("/api/v1", authRouter(pool));
 }
 
 // Rate limiting: 300 req/min for general API, 3000 req/min for ingest.
@@ -82,17 +107,19 @@ const limiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req.headers['x-api-key'] as string) || ipKeyGenerator(req.ip ?? 'anon'),
+  keyGenerator: (req) =>
+    (req.headers["x-api-key"] as string) || ipKeyGenerator(req.ip ?? "anon"),
 });
 const ingestLimiter = rateLimit({
   windowMs: 60_000,
   max: 3000,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req.headers['x-api-key'] as string) || ipKeyGenerator(req.ip ?? 'anon'),
+  keyGenerator: (req) =>
+    (req.headers["x-api-key"] as string) || ipKeyGenerator(req.ip ?? "anon"),
 });
-app.use('/api/v1/ingest', ingestLimiter);
-app.use('/api/v1', limiter);
+app.use("/api/v1/ingest", ingestLimiter);
+app.use("/api/v1", limiter);
 
 // H3-fix: strict rate limiter on login/setup (5 req/min per IP)
 const authLimiter = rateLimit({
@@ -100,11 +127,11 @@ const authLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => ipKeyGenerator(req.ip ?? 'anon'),
-  message: { ok: false, error: 'Too many attempts, try again later' },
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? "anon"),
+  message: { ok: false, error: "Too many attempts, try again later" },
 });
-app.use('/api/v1/auth/login', authLimiter);
-app.use('/api/v1/auth/setup', authLimiter);
+app.use("/api/v1/auth/login", authLimiter);
+app.use("/api/v1/auth/setup", authLimiter);
 
 // License check: blocks requests when unlicensed and grace period expired.
 app.use(makeLicenseMiddleware(pool));
@@ -112,98 +139,105 @@ app.use(makeLicenseMiddleware(pool));
 // All other endpoints require authentication when ORBIT_API_KEY is set or DB key exists.
 app.use(makeAuthMiddleware(env, pool));
 
-app.get('/api/v1/metrics', metricsHandler);
-app.get('/api/v1/metrics/prom', metricsPromHandler);
+app.get("/api/v1/metrics", metricsHandler);
+app.get("/api/v1/metrics/prom", metricsPromHandler);
 
 // catalog (MVP)
-app.get('/api/v1/catalog/assets', a(catalogAssetsHandler));
-app.get('/api/v1/catalog/metrics', a(catalogMetricsHandler));
-app.get('/api/v1/catalog/dimensions', a(catalogDimensionsHandler));
-app.get('/api/v1/catalog/events', a(catalogEventsHandler));
+app.get("/api/v1/catalog/assets", a(catalogAssetsHandler));
+app.get("/api/v1/catalog/metrics", a(catalogMetricsHandler));
+app.get("/api/v1/catalog/dimensions", a(catalogDimensionsHandler));
+app.get("/api/v1/catalog/events", a(catalogEventsHandler));
 
-app.post('/api/v1/query', a(queryHandler));
+app.post("/api/v1/query", a(queryHandler));
 
 // ingestion (MVP1)
-app.post('/api/v1/ingest/metrics', a(ingestMetricsHandler));
-app.post('/api/v1/ingest/events', a(ingestEventsHandler));
+app.post("/api/v1/ingest/metrics", a(ingestMetricsHandler));
+app.post("/api/v1/ingest/events", a(ingestEventsHandler));
 
 // dashboards — CRUD + AI agent proxy
-app.use('/api/v1', dashboardsRouter(pool));
-app.use('/api/v1', smartDashboardsRouter(pool));
-app.use('/api/v1', aiRouter(pool));
+app.use("/api/v1", dashboardsRouter(pool));
+app.use("/api/v1", smartDashboardsRouter(pool));
+app.use("/api/v1", aiRouter(pool));
 
 // alerts — rules, channels, history
-app.use('/api/v1', alertsRouter(pool));
+app.use("/api/v1", alertsRouter(pool));
 
 // correlations
-app.get('/api/v1/correlations', a(correlationsHandler));
-app.get('/api/v1/correlations/summary', a(correlationsSummaryHandler));
+app.get("/api/v1/correlations", a(correlationsHandler));
+app.get("/api/v1/correlations/summary", a(correlationsSummaryHandler));
 
 // AI connector framework — specs CRUD + universal raw ingest
-app.use('/api/v1', connectorsRouter(pool));
+app.use("/api/v1", connectorsRouter(pool));
 
 // OpenTelemetry OTLP/HTTP receiver — traces, metrics, logs from instrumented apps
-app.use('/', otlpRouter(pool));
+app.use("/", otlpRouter(pool));
 
 // Wazuh dashboard — structured data for the Wazuh UI tab
-app.use('/api/v1', wazuhRouter(pool));
+app.use("/api/v1", wazuhRouter(pool));
 
 // Threat intelligence — MISP IoC indicators
-app.use('/api/v1', threatIntelRouter(pool));
+app.use("/api/v1", threatIntelRouter(pool));
 
 // System / infra metrics — process, CPU, memory, network, workers, DB pool
-app.get('/api/v1/system', a(systemHandler(pool)));
+app.get("/api/v1/system", a(systemHandler(pool)));
 
 // Global error handler — catches ZodErrors (→ 400) and all other thrown errors (→ 500).
 // Must have 4 parameters for Express to recognise it as an error handler.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof ZodError) {
     // M1-fix: return field names only, not full Zod schema details
-    const fields = err.errors.map(e => e.path.join('.') || e.message);
-    return res.status(400).json({ ok: false, error: 'validation error', fields });
+    const fields = err.errors.map((e) => e.path.join(".") || e.message);
+    return res
+      .status(400)
+      .json({ ok: false, error: "validation error", fields });
   }
-  logger.error({ err }, 'unhandled error');
-  res.status(500).json({ ok: false, error: 'internal server error' });
+  logger.error({ err }, "unhandled error");
+  res.status(500).json({ ok: false, error: "internal server error" });
 });
 
 // Bootstrap license from env var (Docker / CI deployments).
 if (pool && env.ORBIT_LICENSE_KEY) {
-  pool.query(
-    `INSERT INTO orbit_settings (key, value, updated_at) VALUES ('license_key', $1, now())
+  pool
+    .query(
+      `INSERT INTO orbit_settings (key, value, updated_at) VALUES ('license_key', $1, now())
      ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
-    [env.ORBIT_LICENSE_KEY],
-  ).catch(err => logger.error({ err }, 'failed to store ORBIT_LICENSE_KEY'));
+      [env.ORBIT_LICENSE_KEY],
+    )
+    .catch((err) => logger.error({ err }, "failed to store ORBIT_LICENSE_KEY"));
 }
 
 const server = app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT, auth: !!env.ORBIT_API_KEY }, 'orbit-api listening');
+  logger.info(
+    { port: env.PORT, auth: !!env.ORBIT_API_KEY },
+    "orbit-api listening",
+  );
 });
 
 // Start background workers if DB is available.
-let stopRollups:     (() => void) | undefined;
-let stopCorrelate:   (() => void) | undefined;
-let stopAlerts:      (() => void) | undefined;
-let stopConnectors:  (() => void) | undefined;
-let stopTelemetry:   (() => void) | undefined;
+let stopRollups: (() => void) | undefined;
+let stopCorrelate: (() => void) | undefined;
+let stopAlerts: (() => void) | undefined;
+let stopConnectors: (() => void) | undefined;
+let stopTelemetry: (() => void) | undefined;
 let stopThreatIntel: (() => void) | undefined;
 // Expose workerPool for /api/v1/system metrics (avoids circular import).
 (globalThis as any).__orbitWorkerPool = workerPool;
 
 if (pool && workerPool) {
-  stopRollups     = startRollupWorker(workerPool);
-  stopCorrelate   = startCorrelateWorker(workerPool);
-  stopAlerts      = startAlertWorker(workerPool);
-  stopConnectors  = startConnectorWorker(workerPool);
+  stopRollups = startRollupWorker(workerPool);
+  stopCorrelate = startCorrelateWorker(workerPool);
+  stopAlerts = startAlertWorker(workerPool);
+  stopConnectors = startConnectorWorker(workerPool);
   stopThreatIntel = startThreatIntelWorker(workerPool);
-  if (env.ORBIT_TELEMETRY === 'true') {
+  if (env.ORBIT_TELEMETRY === "true") {
     stopTelemetry = startTelemetryWorker(workerPool);
   }
 }
 
 // Graceful shutdown.
 function shutdown(signal: string) {
-  logger.info({ signal }, 'shutting down');
+  logger.info({ signal }, "shutting down");
   stopRollups?.();
   stopCorrelate?.();
   stopAlerts?.();
@@ -213,5 +247,5 @@ function shutdown(signal: string) {
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10_000).unref();
 }
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
